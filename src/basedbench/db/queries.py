@@ -1,0 +1,956 @@
+"""All database query methods, ported from v4 queries.rs."""
+
+from __future__ import annotations
+
+import json
+from dataclasses import dataclass
+from datetime import datetime, timezone
+
+from basedbench.db.connection import Database
+from basedbench.llm.record import LlmCallRecord
+from basedbench.schemas import RawPost, RedditComment
+
+
+# ═══════════════════════════════════════════════════════
+# Supporting dataclasses for query results
+# ═══════════════════════════════════════════════════════
+
+
+@dataclass
+class MemeForPrediction:
+    post_id: str
+    subreddit: str
+    title: str
+    image_url: str | None
+    local_image_path: str | None
+    permalink: str
+    ground_truth_explanation: str
+    consensus_confidence: float
+    source_comment_ids: str  # JSON array
+    num_agreeing_comments: int
+    avg_comment_score: float
+    created_utc: str | None
+    ground_truth_created_at: str
+
+
+@dataclass
+class PredictionForJudging:
+    prediction_id: int
+    post_id: str
+    model_id: str
+    prediction: str
+    ground_truth: str
+
+
+@dataclass
+class StatusCounts:
+    total_memes: int
+    with_consensus: int
+    validated: int
+    excluded: int
+    unreviewed: int
+
+
+@dataclass
+class ModelPredictionCount:
+    model_id: str
+    predicted: int
+    total_available: int
+
+
+@dataclass
+class ModelJudgmentCount:
+    model_id: str
+    judged: int
+    correct: int
+    incorrect: int
+    accuracy: float
+
+
+@dataclass
+class SnapshotInfo:
+    snapshot_id: str
+    name: str
+    description: str | None
+    meme_count: int
+    created_at: str
+
+
+@dataclass
+class ExportMeme:
+    post_id: str
+    title: str
+    subreddit: str
+    ground_truth: str
+    local_image_path: str | None
+
+
+@dataclass
+class ExportPrediction:
+    post_id: str
+    prediction: str
+    verdict: str | None
+    reasoning: str | None
+
+
+@dataclass
+class LeaderboardEntry:
+    model_id: str
+    correct: int
+    total: int
+    accuracy: float
+
+
+@dataclass
+class LlmCallSummary:
+    id: int
+    created_at: str
+    role: str
+    post_id: str
+    model: str
+    latency_ms: int
+    verdict: str | None
+    error: str | None
+
+
+@dataclass
+class LlmCallDetail:
+    id: int
+    created_at: str
+    session_id: str
+    role: str
+    post_id: str
+    model: str
+    system_prompt: str
+    user_prompt: str
+    prompt_version: str
+    latency_ms: int
+    response: str | None
+    error: str | None
+    verdict: str | None
+    reasoning: str | None
+    image_path: str | None
+    completion_tokens: int | None
+    prompt_tokens: int | None
+
+
+def _now() -> str:
+    return datetime.now(timezone.utc).isoformat()
+
+
+# ═══════════════════════════════════════════════════════
+# MEMES
+# ═══════════════════════════════════════════════════════
+
+
+def insert_meme(db: Database, post: RawPost) -> bool:
+    """Insert a meme. Returns True if inserted, False if already existed."""
+    cursor = db.conn.execute(
+        """INSERT OR IGNORE INTO memes
+           (post_id, subreddit, title, image_url, local_image_path,
+            permalink, post_score, created_utc, retrieved_at)
+           VALUES (?, ?, ?, ?, NULL, ?, ?, ?, ?)""",
+        (
+            post.post_id,
+            post.subreddit,
+            post.title,
+            post.image_url,
+            post.permalink,
+            post.score,
+            post.created_utc,
+            post.retrieved_at,
+        ),
+    )
+    return cursor.rowcount > 0
+
+
+def update_meme_image_path(db: Database, post_id: str, path: str) -> None:
+    """Update the local_image_path for a meme after downloading."""
+    db.conn.execute(
+        "UPDATE memes SET local_image_path = ? WHERE post_id = ?",
+        (path, post_id),
+    )
+
+
+def meme_exists(db: Database, post_id: str) -> bool:
+    """Check if a meme exists by post_id."""
+    row = db.conn.execute(
+        "SELECT COUNT(*) FROM memes WHERE post_id = ?", (post_id,)
+    ).fetchone()
+    return row[0] > 0
+
+
+# ═══════════════════════════════════════════════════════
+# COMMENTS
+# ═══════════════════════════════════════════════════════
+
+
+def insert_comment(db: Database, post_id: str, comment: RedditComment) -> bool:
+    """Insert a comment. Uses INSERT OR IGNORE for idempotency."""
+    cursor = db.conn.execute(
+        """INSERT OR IGNORE INTO comments
+           (comment_id, post_id, author, body, score, is_moderator, created_utc)
+           VALUES (?, ?, ?, ?, ?, ?, ?)""",
+        (
+            comment.comment_id,
+            post_id,
+            comment.author,
+            comment.body,
+            comment.score,
+            1 if comment.is_moderator else 0,
+            comment.created_utc,
+        ),
+    )
+    return cursor.rowcount > 0
+
+
+def get_comments(db: Database, post_id: str) -> list[RedditComment]:
+    """Get all comments for a post, ordered by score descending."""
+    rows = db.conn.execute(
+        """SELECT comment_id, author, body, score, is_moderator, created_utc
+           FROM comments WHERE post_id = ? ORDER BY score DESC""",
+        (post_id,),
+    ).fetchall()
+    return [
+        RedditComment(
+            comment_id=r[0],
+            author=r[1] or "",
+            body=r[2],
+            score=r[3],
+            is_moderator=bool(r[4]),
+            created_utc=r[5],
+        )
+        for r in rows
+    ]
+
+
+# ═══════════════════════════════════════════════════════
+# GROUND TRUTHS
+# ═══════════════════════════════════════════════════════
+
+
+def upsert_ground_truth(
+    db: Database,
+    post_id: str,
+    explanation: str,
+    confidence: float,
+    source_comment_ids: list[str],
+    num_agreeing: int,
+    avg_score: float,
+    model: str,
+    prompt_version: str,
+) -> None:
+    """Insert or replace ground truth."""
+    ids_json = json.dumps(source_comment_ids)
+    db.conn.execute(
+        """INSERT OR REPLACE INTO ground_truths
+           (post_id, explanation, consensus_confidence, source_comment_ids,
+            num_agreeing_comments, avg_comment_score, consensus_model,
+            consensus_prompt_version, created_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+        (
+            post_id,
+            explanation,
+            confidence,
+            ids_json,
+            num_agreeing,
+            avg_score,
+            model,
+            prompt_version,
+            _now(),
+        ),
+    )
+
+
+def get_all_ground_truths(db: Database) -> list[tuple[str, str]]:
+    """Get all (post_id, explanation) pairs for computing DatasetVersion."""
+    rows = db.conn.execute(
+        "SELECT post_id, explanation FROM ground_truths ORDER BY post_id"
+    ).fetchall()
+    return [(r[0], r[1]) for r in rows]
+
+
+def memes_without_ground_truth(db: Database) -> list[str]:
+    """Find memes that have no ground truth, excluding already-excluded memes."""
+    rows = db.conn.execute(
+        """SELECT m.post_id FROM memes m
+           LEFT JOIN ground_truths gt ON m.post_id = gt.post_id
+           LEFT JOIN reviews r ON m.post_id = r.post_id
+           WHERE gt.post_id IS NULL
+             AND (r.status IS NULL OR r.status != 'excluded')"""
+    ).fetchall()
+    return [r[0] for r in rows]
+
+
+def reconstruct_raw_post(db: Database, post_id: str) -> RawPost | None:
+    """Reconstruct a RawPost from memes + comments tables."""
+    row = db.conn.execute(
+        """SELECT post_id, subreddit, title, image_url, permalink,
+                  post_score, created_utc, retrieved_at
+           FROM memes WHERE post_id = ?""",
+        (post_id,),
+    ).fetchone()
+    if row is None:
+        return None
+    comments = get_comments(db, post_id)
+    return RawPost(
+        post_id=row[0],
+        subreddit=row[1],
+        title=row[2],
+        image_url=row[3],
+        permalink=row[4] or "",
+        score=row[5] or 0,
+        created_utc=row[6],
+        retrieved_at=row[7],
+        comments=comments,
+    )
+
+
+# ═══════════════════════════════════════════════════════
+# REVIEWS
+# ═══════════════════════════════════════════════════════
+
+
+def memes_needing_quality_gate(db: Database) -> list[str]:
+    """Find memes that need the quality gate: no review and no ground truth."""
+    rows = db.conn.execute(
+        """SELECT m.post_id FROM memes m
+           LEFT JOIN reviews r ON m.post_id = r.post_id
+           LEFT JOIN ground_truths gt ON m.post_id = gt.post_id
+           WHERE r.post_id IS NULL
+             AND gt.post_id IS NULL"""
+    ).fetchall()
+    return [r[0] for r in rows]
+
+
+def insert_auto_review(db: Database, post_id: str, reason: str) -> bool:
+    """Insert an auto-exclusion review.
+
+    Uses INSERT OR IGNORE to never overwrite a human review (TOCTOU-safe).
+    Returns True if the review was written, False if one already existed.
+    """
+    cursor = db.conn.execute(
+        """INSERT OR IGNORE INTO reviews (post_id, status, reason, reviewed_at)
+           VALUES (?, 'excluded', ?, ?)""",
+        (post_id, reason, _now()),
+    )
+    return cursor.rowcount > 0
+
+
+def upsert_review(
+    db: Database, post_id: str, status: str, reason: str | None = None
+) -> None:
+    """Validate or exclude a meme."""
+    db.conn.execute(
+        """INSERT OR REPLACE INTO reviews (post_id, status, reason, reviewed_at)
+           VALUES (?, ?, ?, ?)""",
+        (post_id, status, reason, _now()),
+    )
+
+
+# ═══════════════════════════════════════════════════════
+# PREDICTIONS
+# ═══════════════════════════════════════════════════════
+
+
+def insert_prediction(db: Database, pred: "ModelPrediction") -> bool:
+    """Insert a prediction. Upsert: overwrites only if existing row has an error.
+
+    Successful predictions are never overwritten.
+    """
+    from basedbench.schemas import ModelPrediction  # noqa: F811
+
+    cursor = db.conn.execute(
+        """INSERT INTO predictions
+           (post_id, model_id, prediction, latency_ms, token_count, error,
+            dataset_version, created_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+           ON CONFLICT(post_id, model_id) DO UPDATE SET
+               prediction = excluded.prediction,
+               latency_ms = excluded.latency_ms,
+               token_count = excluded.token_count,
+               error = excluded.error,
+               dataset_version = excluded.dataset_version,
+               created_at = excluded.created_at
+           WHERE predictions.error IS NOT NULL""",
+        (
+            pred.post_id,
+            pred.model_id,
+            pred.prediction,
+            pred.latency_ms,
+            pred.token_count,
+            pred.error,
+            pred.dataset_version,
+            pred.timestamp,
+        ),
+    )
+    return cursor.rowcount > 0
+
+
+def find_prediction_id(db: Database, post_id: str, model_id: str) -> int | None:
+    """Find the prediction ID for a given post_id + model_id."""
+    row = db.conn.execute(
+        "SELECT id FROM predictions WHERE post_id = ? AND model_id = ?",
+        (post_id, model_id),
+    ).fetchone()
+    return row[0] if row else None
+
+
+def memes_needing_prediction(
+    db: Database,
+    model_id: str,
+    snapshot_id: str | None = None,
+    validated_only: bool = True,
+) -> list[MemeForPrediction]:
+    """Query memes that need prediction for a given model.
+
+    When snapshot_id is set, only returns memes within that snapshot.
+    When validated_only is True, only returns memes with a 'validated' review.
+    When False, returns any non-excluded meme.
+    """
+    review_filter = (
+        "AND r.status = 'validated'"
+        if validated_only
+        else "AND (r.status IS NULL OR r.status != 'excluded')"
+    )
+    review_join = (
+        "JOIN reviews r ON m.post_id = r.post_id"
+        if validated_only
+        else "LEFT JOIN reviews r ON m.post_id = r.post_id"
+    )
+
+    if snapshot_id is not None:
+        query = f"""
+            SELECT m.post_id, m.subreddit, m.title, m.image_url, m.local_image_path,
+                   m.permalink, gt.explanation, gt.consensus_confidence,
+                   gt.source_comment_ids, gt.num_agreeing_comments,
+                   gt.avg_comment_score, m.created_utc, gt.created_at
+            FROM memes m
+            JOIN ground_truths gt ON m.post_id = gt.post_id
+            JOIN snapshot_memes sm ON m.post_id = sm.post_id AND sm.snapshot_id = ?
+            {review_join}
+            LEFT JOIN predictions p ON m.post_id = p.post_id AND p.model_id = ?
+                AND p.error IS NULL
+            WHERE p.id IS NULL
+              {review_filter}"""
+        params: tuple = (snapshot_id, model_id)
+    else:
+        query = f"""
+            SELECT m.post_id, m.subreddit, m.title, m.image_url, m.local_image_path,
+                   m.permalink, gt.explanation, gt.consensus_confidence,
+                   gt.source_comment_ids, gt.num_agreeing_comments,
+                   gt.avg_comment_score, m.created_utc, gt.created_at
+            FROM memes m
+            JOIN ground_truths gt ON m.post_id = gt.post_id
+            {review_join}
+            LEFT JOIN predictions p ON m.post_id = p.post_id AND p.model_id = ?
+                AND p.error IS NULL
+            WHERE p.id IS NULL
+              {review_filter}"""
+        params = (model_id,)
+
+    rows = db.conn.execute(query, params).fetchall()
+    return [
+        MemeForPrediction(
+            post_id=r[0],
+            subreddit=r[1],
+            title=r[2],
+            image_url=r[3],
+            local_image_path=r[4],
+            permalink=r[5] or "",
+            ground_truth_explanation=r[6],
+            consensus_confidence=r[7],
+            source_comment_ids=r[8] or "[]",
+            num_agreeing_comments=r[9] or 0,
+            avg_comment_score=r[10] or 0.0,
+            created_utc=r[11],
+            ground_truth_created_at=r[12],
+        )
+        for r in rows
+    ]
+
+
+# ═══════════════════════════════════════════════════════
+# JUDGMENTS
+# ═══════════════════════════════════════════════════════
+
+
+def insert_judgment(
+    db: Database,
+    prediction_id: int,
+    verdict: str,
+    reasoning: str,
+    judge_model: str,
+    prompt_version: str,
+) -> None:
+    """Insert a judgment. NOT idempotent — allows multiple judgments per prediction."""
+    db.conn.execute(
+        """INSERT INTO judgments
+           (prediction_id, verdict, judge_reasoning, judge_model,
+            judge_prompt_version, judged_at)
+           VALUES (?, ?, ?, ?, ?, ?)""",
+        (prediction_id, verdict, reasoning, judge_model, prompt_version, _now()),
+    )
+
+
+def predictions_needing_judgment(
+    db: Database, model_id: str | None = None
+) -> list[PredictionForJudging]:
+    """Query predictions that need judgment. Only returns validated memes."""
+    if model_id is not None:
+        query = """
+            SELECT p.id, p.post_id, p.model_id, p.prediction, gt.explanation
+            FROM predictions p
+            JOIN ground_truths gt ON p.post_id = gt.post_id
+            JOIN reviews r ON p.post_id = r.post_id
+            LEFT JOIN judgments j ON p.id = j.prediction_id
+            WHERE j.id IS NULL
+              AND p.error IS NULL
+              AND r.status = 'validated'
+              AND p.model_id = ?"""
+        rows = db.conn.execute(query, (model_id,)).fetchall()
+    else:
+        query = """
+            SELECT p.id, p.post_id, p.model_id, p.prediction, gt.explanation
+            FROM predictions p
+            JOIN ground_truths gt ON p.post_id = gt.post_id
+            JOIN reviews r ON p.post_id = r.post_id
+            LEFT JOIN judgments j ON p.id = j.prediction_id
+            WHERE j.id IS NULL
+              AND p.error IS NULL
+              AND r.status = 'validated'"""
+        rows = db.conn.execute(query).fetchall()
+
+    return [
+        PredictionForJudging(
+            prediction_id=r[0],
+            post_id=r[1],
+            model_id=r[2],
+            prediction=r[3],
+            ground_truth=r[4],
+        )
+        for r in rows
+    ]
+
+
+def predictions_needing_rejudgment(
+    db: Database, old_prompt_id: str
+) -> list[PredictionForJudging]:
+    """Query predictions needing re-judgment (used a specific old prompt version)."""
+    rows = db.conn.execute(
+        """SELECT p.id, p.post_id, p.model_id, p.prediction, gt.explanation
+           FROM predictions p
+           JOIN ground_truths gt ON p.post_id = gt.post_id
+           JOIN reviews r ON p.post_id = r.post_id
+           JOIN judgments j ON p.id = j.prediction_id
+           WHERE r.status = 'validated'
+             AND j.id = (
+               SELECT MAX(j2.id) FROM judgments j2 WHERE j2.prediction_id = p.id
+             )
+             AND j.judge_prompt_version = ?""",
+        (old_prompt_id,),
+    ).fetchall()
+    return [
+        PredictionForJudging(
+            prediction_id=r[0],
+            post_id=r[1],
+            model_id=r[2],
+            prediction=r[3],
+            ground_truth=r[4],
+        )
+        for r in rows
+    ]
+
+
+# ═══════════════════════════════════════════════════════
+# PROMPT VERSIONS
+# ═══════════════════════════════════════════════════════
+
+
+def register_prompt(
+    db: Database,
+    prompt_id: str,
+    role: str,
+    system_prompt: str,
+    user_prompt_template: str,
+    version: str,
+) -> None:
+    """Register a prompt version. Uses INSERT OR IGNORE."""
+    db.conn.execute(
+        """INSERT OR IGNORE INTO prompt_versions
+           (prompt_id, role, system_prompt, user_prompt_template, version, created_at)
+           VALUES (?, ?, ?, ?, ?, ?)""",
+        (prompt_id, role, system_prompt, user_prompt_template, version, _now()),
+    )
+
+
+# ═══════════════════════════════════════════════════════
+# SNAPSHOTS
+# ═══════════════════════════════════════════════════════
+
+
+def validated_meme_pairs(db: Database) -> list[tuple[str, str]]:
+    """Get all validated memes with ground truths as (post_id, explanation) pairs."""
+    rows = db.conn.execute(
+        """SELECT m.post_id, gt.explanation
+           FROM memes m
+           JOIN ground_truths gt ON m.post_id = gt.post_id
+           JOIN reviews r ON m.post_id = r.post_id
+           WHERE r.status = 'validated'
+           ORDER BY m.post_id"""
+    ).fetchall()
+    return [(r[0], r[1]) for r in rows]
+
+
+def create_snapshot(
+    db: Database, name: str, description: str | None = None
+) -> str:
+    """Create a snapshot from all validated memes. Uses a transaction."""
+    from basedbench.errors import ConfigError
+    from basedbench.schemas import dataset_version
+
+    pairs = validated_meme_pairs(db)
+    if not pairs:
+        raise ConfigError("No validated memes to snapshot")
+
+    snapshot_id = dataset_version(pairs)
+    meme_count = len(pairs)
+
+    with db.conn:
+        db.conn.execute(
+            """INSERT INTO snapshots (snapshot_id, name, description, meme_count, created_at)
+               VALUES (?, ?, ?, ?, ?)""",
+            (snapshot_id, name, description, meme_count, _now()),
+        )
+        for post_id, _ in pairs:
+            db.conn.execute(
+                "INSERT INTO snapshot_memes (snapshot_id, post_id) VALUES (?, ?)",
+                (snapshot_id, post_id),
+            )
+
+    return snapshot_id
+
+
+def list_snapshots(db: Database) -> list[SnapshotInfo]:
+    """List all snapshots."""
+    rows = db.conn.execute(
+        """SELECT snapshot_id, name, description, meme_count, created_at
+           FROM snapshots ORDER BY created_at DESC"""
+    ).fetchall()
+    return [
+        SnapshotInfo(
+            snapshot_id=r[0], name=r[1], description=r[2],
+            meme_count=r[3], created_at=r[4],
+        )
+        for r in rows
+    ]
+
+
+def snapshot_meme_ids(db: Database, snapshot_id: str) -> list[str]:
+    """Get meme post_ids in a snapshot."""
+    rows = db.conn.execute(
+        "SELECT post_id FROM snapshot_memes WHERE snapshot_id = ? ORDER BY post_id",
+        (snapshot_id,),
+    ).fetchall()
+    return [r[0] for r in rows]
+
+
+def snapshot_ground_truths(db: Database, snapshot_id: str) -> list[tuple[str, str]]:
+    """Get ground truths for memes in a snapshot."""
+    rows = db.conn.execute(
+        """SELECT gt.post_id, gt.explanation
+           FROM ground_truths gt
+           JOIN snapshot_memes sm ON gt.post_id = sm.post_id
+           WHERE sm.snapshot_id = ?
+           ORDER BY gt.post_id""",
+        (snapshot_id,),
+    ).fetchall()
+    return [(r[0], r[1]) for r in rows]
+
+
+def find_snapshot(db: Database, name_or_id: str) -> SnapshotInfo | None:
+    """Look up a snapshot by name or ID prefix."""
+    # Try exact name match first
+    row = db.conn.execute(
+        """SELECT snapshot_id, name, description, meme_count, created_at
+           FROM snapshots WHERE name = ?""",
+        (name_or_id,),
+    ).fetchone()
+    if row:
+        return SnapshotInfo(
+            snapshot_id=row[0], name=row[1], description=row[2],
+            meme_count=row[3], created_at=row[4],
+        )
+
+    # Try ID prefix match
+    row = db.conn.execute(
+        """SELECT snapshot_id, name, description, meme_count, created_at
+           FROM snapshots WHERE snapshot_id LIKE ?""",
+        (f"{name_or_id}%",),
+    ).fetchone()
+    if row:
+        return SnapshotInfo(
+            snapshot_id=row[0], name=row[1], description=row[2],
+            meme_count=row[3], created_at=row[4],
+        )
+    return None
+
+
+# ═══════════════════════════════════════════════════════
+# EXPORT HELPERS
+# ═══════════════════════════════════════════════════════
+
+
+def snapshot_meme_details(db: Database, snapshot_id: str) -> list[ExportMeme]:
+    """Get full meme details for all memes in a snapshot."""
+    rows = db.conn.execute(
+        """SELECT m.post_id, m.title, m.subreddit, gt.explanation,
+                  m.local_image_path
+           FROM snapshot_memes sm
+           JOIN memes m ON sm.post_id = m.post_id
+           JOIN ground_truths gt ON m.post_id = gt.post_id
+           WHERE sm.snapshot_id = ?
+           ORDER BY m.post_id""",
+        (snapshot_id,),
+    ).fetchall()
+    return [
+        ExportMeme(
+            post_id=r[0], title=r[1], subreddit=r[2],
+            ground_truth=r[3], local_image_path=r[4],
+        )
+        for r in rows
+    ]
+
+
+def snapshot_model_ids(db: Database, snapshot_id: str) -> list[str]:
+    """Get all distinct model IDs that have predictions for memes in a snapshot."""
+    rows = db.conn.execute(
+        """SELECT DISTINCT p.model_id
+           FROM predictions p
+           JOIN snapshot_memes sm ON p.post_id = sm.post_id
+           WHERE sm.snapshot_id = ?
+           ORDER BY p.model_id""",
+        (snapshot_id,),
+    ).fetchall()
+    return [r[0] for r in rows]
+
+
+def snapshot_predictions_for_model(
+    db: Database, snapshot_id: str, model_id: str
+) -> list[ExportPrediction]:
+    """Get predictions for a model within a snapshot, with latest judgment."""
+    rows = db.conn.execute(
+        """SELECT p.post_id, p.prediction, j.verdict, j.judge_reasoning
+           FROM predictions p
+           JOIN snapshot_memes sm ON p.post_id = sm.post_id
+           LEFT JOIN judgments j ON p.id = j.prediction_id
+             AND j.id = (SELECT MAX(j2.id) FROM judgments j2 WHERE j2.prediction_id = p.id)
+           WHERE sm.snapshot_id = ? AND p.model_id = ?
+           ORDER BY p.post_id""",
+        (snapshot_id, model_id),
+    ).fetchall()
+    return [
+        ExportPrediction(
+            post_id=r[0], prediction=r[1], verdict=r[2], reasoning=r[3],
+        )
+        for r in rows
+    ]
+
+
+def snapshot_leaderboard(db: Database, snapshot_id: str) -> list[LeaderboardEntry]:
+    """Get leaderboard data for a snapshot: per-model accuracy from latest judgments."""
+    rows = db.conn.execute(
+        """SELECT p.model_id,
+                  SUM(CASE WHEN j.verdict = 'correct' THEN 1 ELSE 0 END) as correct,
+                  COUNT(j.verdict) as total
+           FROM predictions p
+           JOIN snapshot_memes sm ON p.post_id = sm.post_id
+           LEFT JOIN judgments j ON p.id = j.prediction_id
+             AND j.id = (SELECT MAX(j2.id) FROM judgments j2 WHERE j2.prediction_id = p.id)
+           WHERE sm.snapshot_id = ?
+           GROUP BY p.model_id
+           ORDER BY correct DESC""",
+        (snapshot_id,),
+    ).fetchall()
+    return [
+        LeaderboardEntry(
+            model_id=r[0],
+            correct=r[1],
+            total=r[2],
+            accuracy=r[1] / r[2] if r[2] > 0 else 0.0,
+        )
+        for r in rows
+    ]
+
+
+# ═══════════════════════════════════════════════════════
+# LLM CALL LOGGING
+# ═══════════════════════════════════════════════════════
+
+
+def insert_llm_call(db: Database, record: LlmCallRecord) -> None:
+    """Insert an LLM API call record."""
+    db.conn.execute(
+        """INSERT INTO llm_calls
+           (session_id, role, post_id, model, system_prompt, user_prompt,
+            prompt_version, latency_ms, response, error, verdict, reasoning,
+            image_path, completion_tokens, prompt_tokens)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+        (
+            record.session_id,
+            record.role,
+            record.post_id,
+            record.model,
+            record.system_prompt,
+            record.user_prompt,
+            record.prompt_version,
+            record.latency_ms,
+            record.response,
+            record.error,
+            record.verdict,
+            record.reasoning,
+            record.image_path,
+            record.completion_tokens,
+            record.prompt_tokens,
+        ),
+    )
+
+
+def list_llm_calls(
+    db: Database,
+    role: str | None = None,
+    post_id: str | None = None,
+    session: str | None = None,
+    errors_only: bool = False,
+    limit: int = 20,
+) -> list[LlmCallSummary]:
+    """Query LLM calls with optional filters."""
+    conditions: list[str] = []
+    params: list[str | int] = []
+
+    if role is not None:
+        conditions.append("role = ?")
+        params.append(role)
+    if post_id is not None:
+        conditions.append("post_id = ?")
+        params.append(post_id)
+    if session is not None:
+        conditions.append("session_id = ?")
+        params.append(session)
+    if errors_only:
+        conditions.append("error IS NOT NULL")
+
+    where = f"WHERE {' AND '.join(conditions)}" if conditions else ""
+    query = f"""SELECT id, created_at, role, post_id, model, latency_ms, verdict, error
+                FROM llm_calls {where}
+                ORDER BY id DESC LIMIT ?"""
+    params.append(limit)
+
+    rows = db.conn.execute(query, params).fetchall()
+    return [
+        LlmCallSummary(
+            id=r[0], created_at=r[1], role=r[2], post_id=r[3],
+            model=r[4], latency_ms=r[5], verdict=r[6], error=r[7],
+        )
+        for r in rows
+    ]
+
+
+def get_llm_call(db: Database, call_id: int) -> LlmCallDetail | None:
+    """Get full details of a single LLM call."""
+    row = db.conn.execute(
+        """SELECT id, created_at, session_id, role, post_id, model,
+                  system_prompt, user_prompt, prompt_version, latency_ms,
+                  response, error, verdict, reasoning, image_path,
+                  completion_tokens, prompt_tokens
+           FROM llm_calls WHERE id = ?""",
+        (call_id,),
+    ).fetchone()
+    if row is None:
+        return None
+    return LlmCallDetail(
+        id=row[0], created_at=row[1], session_id=row[2], role=row[3],
+        post_id=row[4], model=row[5], system_prompt=row[6],
+        user_prompt=row[7], prompt_version=row[8], latency_ms=row[9],
+        response=row[10], error=row[11], verdict=row[12],
+        reasoning=row[13], image_path=row[14],
+        completion_tokens=row[15], prompt_tokens=row[16],
+    )
+
+
+# ═══════════════════════════════════════════════════════
+# STATUS / REPORTING
+# ═══════════════════════════════════════════════════════
+
+
+def get_status_counts(db: Database) -> StatusCounts:
+    """Get aggregate counts for the status command."""
+    total_memes = db.conn.execute("SELECT COUNT(*) FROM memes").fetchone()[0]
+    with_consensus = db.conn.execute("SELECT COUNT(*) FROM ground_truths").fetchone()[0]
+    validated = db.conn.execute(
+        "SELECT COUNT(*) FROM reviews WHERE status = 'validated'"
+    ).fetchone()[0]
+    excluded = db.conn.execute(
+        "SELECT COUNT(*) FROM reviews WHERE status = 'excluded'"
+    ).fetchone()[0]
+    unreviewed = with_consensus - validated - excluded
+
+    return StatusCounts(
+        total_memes=total_memes,
+        with_consensus=with_consensus,
+        validated=validated,
+        excluded=excluded,
+        unreviewed=unreviewed,
+    )
+
+
+def get_prediction_counts(db: Database) -> list[ModelPredictionCount]:
+    """Get per-model prediction counts. total_available only counts validated memes."""
+    total_available = db.conn.execute(
+        """SELECT COUNT(*) FROM ground_truths gt
+           JOIN reviews r ON gt.post_id = r.post_id
+           WHERE r.status = 'validated'"""
+    ).fetchone()[0]
+
+    rows = db.conn.execute(
+        """SELECT model_id, COUNT(*) as predicted
+           FROM predictions
+           WHERE error IS NULL
+           GROUP BY model_id
+           ORDER BY model_id"""
+    ).fetchall()
+    return [
+        ModelPredictionCount(
+            model_id=r[0], predicted=r[1], total_available=total_available,
+        )
+        for r in rows
+    ]
+
+
+def get_judgment_counts(db: Database) -> list[ModelJudgmentCount]:
+    """Get per-model judgment counts with accuracy. Only counts validated memes."""
+    rows = db.conn.execute(
+        """SELECT p.model_id,
+                  COUNT(*) as judged,
+                  SUM(CASE WHEN j.verdict = 'correct' THEN 1 ELSE 0 END) as correct,
+                  SUM(CASE WHEN j.verdict = 'incorrect' THEN 1 ELSE 0 END) as incorrect
+           FROM predictions p
+           JOIN judgments j ON p.id = j.prediction_id
+           JOIN reviews r ON p.post_id = r.post_id
+           WHERE r.status = 'validated'
+             AND j.id = (
+               SELECT MAX(j2.id) FROM judgments j2 WHERE j2.prediction_id = p.id
+             )
+           GROUP BY p.model_id
+           ORDER BY p.model_id"""
+    ).fetchall()
+    return [
+        ModelJudgmentCount(
+            model_id=r[0],
+            judged=r[1],
+            correct=r[2],
+            incorrect=r[3],
+            accuracy=r[2] / r[1] if r[1] > 0 else 0.0,
+        )
+        for r in rows
+    ]
