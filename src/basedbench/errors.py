@@ -50,9 +50,19 @@ class RedditRateLimitError(BasedBenchError):
 class OpenAIError(BasedBenchError):
     """OpenAI API error."""
 
+    def __init__(self, msg: str, *, fatal: bool = False, code: str | None = None) -> None:
+        super().__init__(msg)
+        self.fatal = fatal
+        self.code = code
+
 
 class AnthropicError(BasedBenchError):
     """Anthropic API error."""
+
+    def __init__(self, msg: str, *, fatal: bool = False, code: str | None = None) -> None:
+        super().__init__(msg)
+        self.fatal = fatal
+        self.code = code
 
 
 class LlmJsonParseError(BasedBenchError):
@@ -151,4 +161,46 @@ def is_retryable(error: Exception) -> bool:
         return True
     if isinstance(error, RedditApiError) and error.status in RETRYABLE_REDDIT_STATUSES:
         return True
+    return False
+
+
+# --- LLM provider fatal errors (auth, quota, billing) ---
+
+# Codes seen in the wild from OpenAI & Anthropic SDK exceptions
+# (these never resolve on retry — the caller needs to fix billing/keys).
+FATAL_LLM_ERROR_CODES = frozenset(
+    {
+        "insufficient_quota",
+        "invalid_api_key",
+        "account_deactivated",
+        "invalid_organization",
+        "billing_not_active",
+    }
+)
+
+# HTTP statuses that signal auth/billing failure regardless of code field.
+FATAL_LLM_STATUS_CODES = frozenset({401, 402, 403})
+
+
+def is_fatal_llm_error(error: BaseException) -> bool:
+    """Return True if this LLM provider error will not resolve on retry.
+
+    Recognises:
+    - ``fatal=True`` on our own wrapper exceptions
+    - the ``code`` field exposed by openai/anthropic SDK exceptions
+    - HTTP-level auth/payment statuses (401, 402, 403)
+    """
+    if getattr(error, "fatal", False):
+        return True
+    status = getattr(error, "status_code", None)
+    if isinstance(status, int) and status in FATAL_LLM_STATUS_CODES:
+        return True
+    code = getattr(error, "code", None)
+    if isinstance(code, str) and code in FATAL_LLM_ERROR_CODES:
+        return True
+    body = getattr(error, "body", None)
+    if isinstance(body, dict):
+        inner = body.get("error")
+        if isinstance(inner, dict) and inner.get("code") in FATAL_LLM_ERROR_CODES:
+            return True
     return False

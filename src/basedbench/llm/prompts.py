@@ -5,7 +5,9 @@ All prompt text is copied verbatim from v4 to ensure identical behavior.
 
 from __future__ import annotations
 
+import base64
 import hashlib
+from pathlib import Path
 
 # ═══════════════════════════════════════════════════════
 # Prediction prompt — sent to VLMs when explaining memes
@@ -159,3 +161,27 @@ def prompt_id(role: str, system: str, user_template: str) -> str:
     hasher.update(system.encode())
     hasher.update(user_template.encode())
     return hasher.hexdigest()[:16]
+
+
+# ═══════════════════════════════════════════════════════
+# Image encoding helper
+# ═══════════════════════════════════════════════════════
+
+
+_MIME_BY_EXT = {
+    "png": "image/png",
+    "gif": "image/gif",
+    "webp": "image/webp",
+}
+
+
+def load_image_base64(path: Path) -> tuple[str, str]:
+    """Read an image file and return (base64_data, mime_type).
+
+    Mirrors v4 behavior: jpg/unknown extensions are reported as image/jpeg.
+    """
+    data = path.read_bytes()
+    b64 = base64.standard_b64encode(data).decode("ascii")
+    ext = path.suffix.lstrip(".").lower()
+    mime = _MIME_BY_EXT.get(ext, "image/jpeg")
+    return b64, mime
