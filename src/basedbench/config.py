@@ -36,9 +36,12 @@ class Config(BaseSettings):
     openai_api_key: str
     anthropic_api_key: str | None = None
 
-    # Model selection
-    consensus_model: str = "gpt-4o-mini"
-    judge_model: str = "gpt-4o-mini"
+    # Model selection.
+    # consensus + judge are text-only inner-loop calls (run on every meme),
+    # so default to the modern cheap tier. The flagship gpt-5.5 is what you'd
+    # actually benchmark via `basedbench predict gpt-5.5`.
+    consensus_model: str = "gpt-5.4-mini"
+    judge_model: str = "gpt-5.4-mini"
 
     # Quality thresholds (same defaults as v4)
     min_agreeing_comments: int = 3

@@ -616,7 +616,11 @@ def create_snapshot(
     snapshot_id = dataset_version(pairs)
     meme_count = len(pairs)
 
-    with db.conn:
+    # Explicit transaction so a partial failure can't leave an orphan snapshot
+    # with missing snapshot_memes rows. (Connection is in autocommit mode,
+    # so `with db.conn:` would be a no-op here.)
+    db.conn.execute("BEGIN")
+    try:
         db.conn.execute(
             """INSERT INTO snapshots (snapshot_id, name, description, meme_count, created_at)
                VALUES (?, ?, ?, ?, ?)""",
@@ -627,6 +631,10 @@ def create_snapshot(
                 "INSERT INTO snapshot_memes (snapshot_id, post_id) VALUES (?, ?)",
                 (snapshot_id, post_id),
             )
+    except Exception:
+        db.conn.execute("ROLLBACK")
+        raise
+    db.conn.execute("COMMIT")
 
     return snapshot_id
 
@@ -893,7 +901,14 @@ def get_status_counts(db: Database) -> StatusCounts:
     excluded = db.conn.execute(
         "SELECT COUNT(*) FROM reviews WHERE status = 'excluded'"
     ).fetchone()[0]
-    unreviewed = with_consensus - validated - excluded
+    # Memes that have ground truth but no review row yet. Computing this
+    # directly (not as a subtraction) avoids going negative when there are
+    # more auto-excluded memes than there were consensus-found ones.
+    unreviewed = db.conn.execute(
+        """SELECT COUNT(*) FROM ground_truths gt
+           LEFT JOIN reviews r ON gt.post_id = r.post_id
+           WHERE r.post_id IS NULL"""
+    ).fetchone()[0]
 
     return StatusCounts(
         total_memes=total_memes,
@@ -954,3 +969,40 @@ def get_judgment_counts(db: Database) -> list[ModelJudgmentCount]:
         )
         for r in rows
     ]
+
+
+# ═══════════════════════════════════════════════════════
+# DATASET PUSHES (HuggingFace Hub)
+# ═══════════════════════════════════════════════════════
+
+
+def insert_dataset_push(
+    db: Database,
+    snapshot_id: str,
+    hf_repo: str,
+    meme_count: int,
+    model_count: int,
+) -> int:
+    """Record a successful HuggingFace push. Returns the row id."""
+    cursor = db.conn.execute(
+        """INSERT INTO dataset_pushes (snapshot_id, hf_repo, pushed_at, meme_count, model_count)
+           VALUES (?, ?, ?, ?, ?)""",
+        (snapshot_id, hf_repo, _now(), meme_count, model_count),
+    )
+    return int(cursor.lastrowid or 0)
+
+
+def list_dataset_pushes(db: Database, snapshot_id: str | None = None) -> list[tuple[str, str, str, int, int]]:
+    """List dataset pushes. Returns (snapshot_id, hf_repo, pushed_at, meme_count, model_count)."""
+    if snapshot_id is not None:
+        rows = db.conn.execute(
+            """SELECT snapshot_id, hf_repo, pushed_at, meme_count, model_count
+               FROM dataset_pushes WHERE snapshot_id = ? ORDER BY id DESC""",
+            (snapshot_id,),
+        ).fetchall()
+    else:
+        rows = db.conn.execute(
+            """SELECT snapshot_id, hf_repo, pushed_at, meme_count, model_count
+               FROM dataset_pushes ORDER BY id DESC"""
+        ).fetchall()
+    return [(r[0], r[1], r[2], r[3], r[4]) for r in rows]

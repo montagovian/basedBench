@@ -8,3 +8,16 @@ wheels/
 
 # Virtual environments
 .venv
+
+# Local data (sqlite db, downloaded images, exports)
+data/
+export/
+
+# Secrets
+.env
+
+# Editor / OS
+.DS_Store
+
+# Test runner cache
+.pytest_cache/

@@ -23,9 +23,15 @@ class Database:
         """Open (or create) the database at the given path.
 
         Sets WAL mode, foreign keys, busy timeout. Runs migrations.
+
+        ``isolation_level=None`` puts the connection in autocommit mode so each
+        write statement is durably persisted on its own — matching the v4
+        Rust/rusqlite default and avoiding the silent data-loss footgun where
+        Python's default deferred-transaction mode requires explicit ``commit()``
+        calls in every write helper.
         """
         path.parent.mkdir(parents=True, exist_ok=True)
-        conn = sqlite3.connect(str(path), check_same_thread=False)
+        conn = sqlite3.connect(str(path), check_same_thread=False, isolation_level=None)
         conn.execute("PRAGMA journal_mode = WAL")
         conn.execute("PRAGMA foreign_keys = ON")
         conn.execute("PRAGMA busy_timeout = 5000")
@@ -36,7 +42,7 @@ class Database:
     @classmethod
     def open_in_memory(cls) -> Database:
         """Open an in-memory database (for testing)."""
-        conn = sqlite3.connect(":memory:")
+        conn = sqlite3.connect(":memory:", isolation_level=None)
         conn.execute("PRAGMA foreign_keys = ON")
         run_migrations(conn)
         return cls(conn)
