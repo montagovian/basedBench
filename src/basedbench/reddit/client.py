@@ -116,7 +116,10 @@ class RedditClient:
         while len(posts) < limit:
             remaining = limit - len(posts)
             count = min(batch, remaining)
-            url = f"https://oauth.reddit.com/r/{subreddit}/top?t=week&limit={count}"
+            # t=year for temporal diversity. Tradeoff: lumpy distribution
+            # (older posts have accumulated more upvotes), but a much bigger
+            # pool than past-week-only.
+            url = f"https://oauth.reddit.com/r/{subreddit}/top?t=year&limit={count}"
             if after:
                 url += f"&after={after}"
 
