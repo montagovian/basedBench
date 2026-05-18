@@ -91,12 +91,24 @@ def judge(
     rejudge_prompt: str | None = typer.Option(
         None, help="Re-judge predictions whose judge used this prompt id."
     ),
+    judge_model: list[str] = typer.Option(  # noqa: B008
+        None,
+        "--judge-model",
+        "-j",
+        help="Judge model (repeat to use multiple). Defaults to config.judge_models.",
+    ),
 ) -> None:
-    """Judge unjudged predictions with the LLM judge."""
+    """Judge predictions. Each prediction is scored by every judge model."""
     _configure_logging()
     db, config = _load()
     asyncio.run(
-        judge_pipe.run(db, config, model=model, rejudge_prompt=rejudge_prompt)
+        judge_pipe.run(
+            db,
+            config,
+            model=model,
+            judge_models=judge_model or None,
+            rejudge_prompt=rejudge_prompt,
+        )
     )
 
 
@@ -132,10 +144,21 @@ def status() -> None:
                 (pc.predicted for pc in pred_counts if pc.model_id == jc.model_id),
                 jc.judged,
             )
+            label = f"{jc.model_id} ← {jc.judge_model}"
             console.print(
-                f"  {jc.model_id:<30} {jc.judged}/{total} judged "
+                f"  {label:<50} {jc.judged}/{total} judged "
                 f"(accuracy: {jc.accuracy * 100:.1f}%)"
             )
+
+        agreement = queries.get_judge_agreement(db)
+        agreement_rows = [a for a in agreement if a.judged_by_multiple > 0]
+        if agreement_rows:
+            console.print("\n[bold]Judge agreement (predictions scored by ≥2 judges):[/bold]")
+            for a in agreement_rows:
+                console.print(
+                    f"  {a.model_id:<30} {a.agreements}/{a.judged_by_multiple} "
+                    f"({a.rate * 100:.1f}% agree)"
+                )
 
     console.print("\n[bold]Snapshots:[/bold]")
     if not snapshots:
