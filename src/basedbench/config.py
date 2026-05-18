@@ -5,6 +5,7 @@ from __future__ import annotations
 import os
 from pathlib import Path
 
+from pydantic import model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -37,11 +38,14 @@ class Config(BaseSettings):
     anthropic_api_key: str | None = None
 
     # Model selection.
-    # consensus + judge are text-only inner-loop calls (run on every meme),
+    # consensus is text-only inner-loop calls (run on every meme),
     # so default to the modern cheap tier. The flagship gpt-5.5 is what you'd
     # actually benchmark via `basedbench predict gpt-5.5`.
     consensus_model: str = "gpt-5.4-mini"
-    judge_model: str = "gpt-5.4-mini"
+
+    # Judge ensemble: each prediction is judged by every model in this list to
+    # surface judge-family bias. Override via JUDGE_MODELS='["m1","m2"]' (JSON).
+    judge_models: list[str] = ["gpt-5.4-mini", "claude-sonnet-4-6"]
 
     # Quality thresholds (same defaults as v4)
     min_agreeing_comments: int = 3
@@ -76,3 +80,13 @@ class Config(BaseSettings):
         """Create data directories if they don't exist."""
         self.data_dir.mkdir(parents=True, exist_ok=True)
         self.images_dir.mkdir(parents=True, exist_ok=True)
+
+    @model_validator(mode="after")
+    def _require_anthropic_key_for_claude_judges(self) -> "Config":
+        needs_anthropic = any(m.startswith("claude-") for m in self.judge_models)
+        if needs_anthropic and not self.anthropic_api_key:
+            raise ValueError(
+                "ANTHROPIC_API_KEY is required when judge_models contains a "
+                f"claude-* model. Got judge_models={self.judge_models}"
+            )
+        return self
