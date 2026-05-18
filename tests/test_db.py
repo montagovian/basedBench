@@ -471,14 +471,19 @@ def test_snapshot_export_helpers(db: Database):
     models = q.snapshot_model_ids(db, sid)
     assert models == ["gpt-4o"]
 
-    # Predictions for model
+    # Predictions for model — verdicts dict keyed by judge_model
     preds = q.snapshot_predictions_for_model(db, sid, "gpt-4o")
     assert len(preds) == 2
+    assert all("gpt-4o-mini" in p.verdicts for p in preds)
+    p_by_post = {p.post_id: p for p in preds}
+    assert p_by_post["post1"].verdicts["gpt-4o-mini"]["verdict"] == "correct"
+    assert p_by_post["post2"].verdicts["gpt-4o-mini"]["verdict"] == "incorrect"
 
-    # Leaderboard
+    # Leaderboard — one row per (target, judge)
     lb = q.snapshot_leaderboard(db, sid)
     assert len(lb) == 1
     assert lb[0].model_id == "gpt-4o"
+    assert lb[0].judge_model == "gpt-4o-mini"
     assert lb[0].correct == 1
     assert lb[0].total == 2
     assert lb[0].accuracy == 0.5

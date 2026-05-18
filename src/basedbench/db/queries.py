@@ -61,10 +61,22 @@ class ModelPredictionCount:
 @dataclass
 class ModelJudgmentCount:
     model_id: str
+    judge_model: str
     judged: int
     correct: int
     incorrect: int
     accuracy: float
+
+
+@dataclass
+class JudgeAgreement:
+    model_id: str
+    judged_by_multiple: int
+    agreements: int
+
+    @property
+    def rate(self) -> float:
+        return self.agreements / self.judged_by_multiple if self.judged_by_multiple else 0.0
 
 
 @dataclass
@@ -89,13 +101,14 @@ class ExportMeme:
 class ExportPrediction:
     post_id: str
     prediction: str
-    verdict: str | None
-    reasoning: str | None
+    verdicts: dict[str, dict[str, str | None]]
+    """Map of judge_model -> {"verdict": str, "reasoning": str | None}."""
 
 
 @dataclass
 class LeaderboardEntry:
     model_id: str
+    judge_model: str
     correct: int
     total: int
     accuracy: float
@@ -494,33 +507,47 @@ def insert_judgment(
 
 
 def predictions_needing_judgment(
-    db: Database, model_id: str | None = None
+    db: Database,
+    model_id: str | None = None,
+    judge_model: str | None = None,
 ) -> list[PredictionForJudging]:
-    """Query predictions that need judgment. Only returns validated memes."""
-    if model_id is not None:
-        query = """
-            SELECT p.id, p.post_id, p.model_id, p.prediction, gt.explanation
-            FROM predictions p
-            JOIN ground_truths gt ON p.post_id = gt.post_id
-            JOIN reviews r ON p.post_id = r.post_id
-            LEFT JOIN judgments j ON p.id = j.prediction_id
+    """Query predictions that need judgment from a particular judge.
+
+    Only returns validated memes. When `judge_model` is provided, "needs
+    judgment" means no judgment row exists for this prediction *from that
+    specific judge model* — letting a second judge fill in alongside an
+    existing first judge's verdict. When `judge_model` is None, falls back
+    to "no judgments at all".
+    """
+    if judge_model is not None:
+        joins_and_filter = """
+            LEFT JOIN judgments j
+              ON p.id = j.prediction_id AND j.judge_model = ?
             WHERE j.id IS NULL
               AND p.error IS NULL
-              AND r.status = 'validated'
-              AND p.model_id = ?"""
-        rows = db.conn.execute(query, (model_id,)).fetchall()
+              AND r.status = 'validated'"""
+        params: tuple = (judge_model,)
     else:
-        query = """
-            SELECT p.id, p.post_id, p.model_id, p.prediction, gt.explanation
-            FROM predictions p
-            JOIN ground_truths gt ON p.post_id = gt.post_id
-            JOIN reviews r ON p.post_id = r.post_id
+        joins_and_filter = """
             LEFT JOIN judgments j ON p.id = j.prediction_id
             WHERE j.id IS NULL
               AND p.error IS NULL
               AND r.status = 'validated'"""
-        rows = db.conn.execute(query).fetchall()
+        params = ()
 
+    query = (
+        """SELECT p.id, p.post_id, p.model_id, p.prediction, gt.explanation
+            FROM predictions p
+            JOIN ground_truths gt ON p.post_id = gt.post_id
+            JOIN reviews r ON p.post_id = r.post_id"""
+        + joins_and_filter
+    )
+
+    if model_id is not None:
+        query += " AND p.model_id = ?"
+        params = (*params, model_id)
+
+    rows = db.conn.execute(query, params).fetchall()
     return [
         PredictionForJudging(
             prediction_id=r[0],
@@ -536,16 +563,17 @@ def predictions_needing_judgment(
 def predictions_needing_rejudgment(
     db: Database, old_prompt_id: str
 ) -> list[PredictionForJudging]:
-    """Query predictions needing re-judgment (used a specific old prompt version)."""
+    """Predictions where any judge's latest verdict used the old prompt version."""
     rows = db.conn.execute(
-        """SELECT p.id, p.post_id, p.model_id, p.prediction, gt.explanation
+        """SELECT DISTINCT p.id, p.post_id, p.model_id, p.prediction, gt.explanation
            FROM predictions p
            JOIN ground_truths gt ON p.post_id = gt.post_id
            JOIN reviews r ON p.post_id = r.post_id
            JOIN judgments j ON p.id = j.prediction_id
            WHERE r.status = 'validated'
              AND j.id = (
-               SELECT MAX(j2.id) FROM judgments j2 WHERE j2.prediction_id = p.id
+               SELECT MAX(j2.id) FROM judgments j2
+               WHERE j2.prediction_id = p.id AND j2.judge_model = j.judge_model
              )
              AND j.judge_prompt_version = ?""",
         (old_prompt_id,),
@@ -746,46 +774,78 @@ def snapshot_model_ids(db: Database, snapshot_id: str) -> list[str]:
 def snapshot_predictions_for_model(
     db: Database, snapshot_id: str, model_id: str
 ) -> list[ExportPrediction]:
-    """Get predictions for a model within a snapshot, with latest judgment."""
-    rows = db.conn.execute(
-        """SELECT p.post_id, p.prediction, j.verdict, j.judge_reasoning
+    """Predictions for a model within a snapshot, with verdicts from every judge.
+
+    Returns one ExportPrediction per (post_id); the `verdicts` dict carries
+    one entry per judge_model. Latest judgment per (prediction, judge) wins.
+    """
+    pred_rows = db.conn.execute(
+        """SELECT p.id, p.post_id, p.prediction
            FROM predictions p
            JOIN snapshot_memes sm ON p.post_id = sm.post_id
-           LEFT JOIN judgments j ON p.id = j.prediction_id
-             AND j.id = (SELECT MAX(j2.id) FROM judgments j2 WHERE j2.prediction_id = p.id)
            WHERE sm.snapshot_id = ? AND p.model_id = ?
            ORDER BY p.post_id""",
         (snapshot_id, model_id),
     ).fetchall()
+
+    verdict_rows = db.conn.execute(
+        """SELECT j.prediction_id, j.judge_model, j.verdict, j.judge_reasoning
+           FROM judgments j
+           JOIN predictions p ON p.id = j.prediction_id
+           JOIN snapshot_memes sm ON p.post_id = sm.post_id
+           WHERE sm.snapshot_id = ? AND p.model_id = ?
+             AND j.id = (
+               SELECT MAX(j2.id) FROM judgments j2
+               WHERE j2.prediction_id = j.prediction_id
+                 AND j2.judge_model = j.judge_model
+             )""",
+        (snapshot_id, model_id),
+    ).fetchall()
+
+    verdicts_by_pred: dict[int, dict[str, dict[str, str | None]]] = {}
+    for prediction_id, judge_model, verdict, reasoning in verdict_rows:
+        key = judge_model or "(unknown)"
+        verdicts_by_pred.setdefault(prediction_id, {})[key] = {
+            "verdict": verdict,
+            "reasoning": reasoning,
+        }
+
     return [
         ExportPrediction(
-            post_id=r[0], prediction=r[1], verdict=r[2], reasoning=r[3],
+            post_id=r[1],
+            prediction=r[2],
+            verdicts=verdicts_by_pred.get(r[0], {}),
         )
-        for r in rows
+        for r in pred_rows
     ]
 
 
 def snapshot_leaderboard(db: Database, snapshot_id: str) -> list[LeaderboardEntry]:
-    """Get leaderboard data for a snapshot: per-model accuracy from latest judgments."""
+    """Per-(target, judge) accuracy for a snapshot. Latest judgment per pair wins."""
     rows = db.conn.execute(
         """SELECT p.model_id,
+                  j.judge_model,
                   SUM(CASE WHEN j.verdict = 'correct' THEN 1 ELSE 0 END) as correct,
                   COUNT(j.verdict) as total
            FROM predictions p
            JOIN snapshot_memes sm ON p.post_id = sm.post_id
-           LEFT JOIN judgments j ON p.id = j.prediction_id
-             AND j.id = (SELECT MAX(j2.id) FROM judgments j2 WHERE j2.prediction_id = p.id)
+           JOIN judgments j ON p.id = j.prediction_id
            WHERE sm.snapshot_id = ?
-           GROUP BY p.model_id
-           ORDER BY correct DESC""",
+             AND j.id = (
+               SELECT MAX(j2.id) FROM judgments j2
+               WHERE j2.prediction_id = p.id AND j2.judge_model = j.judge_model
+             )
+           GROUP BY p.model_id, j.judge_model
+           ORDER BY p.model_id, j.judge_model""",
         (snapshot_id,),
     ).fetchall()
     return [
         LeaderboardEntry(
             model_id=r[0],
-            correct=r[1],
-            total=r[2],
-            accuracy=r[1] / r[2] if r[2] > 0 else 0.0,
+            judge_model=r[1] or "(unknown)",
+            correct=r[2],
+            total=r[3],
+            accuracy=r[2] / r[3] if r[3] > 0 else 0.0,
         )
         for r in rows
     ]
@@ -943,9 +1003,14 @@ def get_prediction_counts(db: Database) -> list[ModelPredictionCount]:
 
 
 def get_judgment_counts(db: Database) -> list[ModelJudgmentCount]:
-    """Get per-model judgment counts with accuracy. Only counts validated memes."""
+    """Per-(target model, judge model) judgment counts. Only validated memes.
+
+    Latest-per-(prediction, judge) wins, so re-judging the same prediction
+    with the same judge model is idempotent for stats purposes.
+    """
     rows = db.conn.execute(
         """SELECT p.model_id,
+                  j.judge_model,
                   COUNT(*) as judged,
                   SUM(CASE WHEN j.verdict = 'correct' THEN 1 ELSE 0 END) as correct,
                   SUM(CASE WHEN j.verdict = 'incorrect' THEN 1 ELSE 0 END) as incorrect
@@ -954,19 +1019,73 @@ def get_judgment_counts(db: Database) -> list[ModelJudgmentCount]:
            JOIN reviews r ON p.post_id = r.post_id
            WHERE r.status = 'validated'
              AND j.id = (
-               SELECT MAX(j2.id) FROM judgments j2 WHERE j2.prediction_id = p.id
+               SELECT MAX(j2.id) FROM judgments j2
+               WHERE j2.prediction_id = p.id AND j2.judge_model = j.judge_model
              )
-           GROUP BY p.model_id
-           ORDER BY p.model_id"""
+           GROUP BY p.model_id, j.judge_model
+           ORDER BY p.model_id, j.judge_model"""
     ).fetchall()
     return [
         ModelJudgmentCount(
             model_id=r[0],
-            judged=r[1],
-            correct=r[2],
-            incorrect=r[3],
-            accuracy=r[2] / r[1] if r[1] > 0 else 0.0,
+            judge_model=r[1] or "(unknown)",
+            judged=r[2],
+            correct=r[3],
+            incorrect=r[4],
+            accuracy=r[3] / r[2] if r[2] > 0 else 0.0,
         )
+        for r in rows
+    ]
+
+
+def get_judge_agreement(
+    db: Database, snapshot_id: str | None = None
+) -> list[JudgeAgreement]:
+    """Per-target-model agreement rate across judges.
+
+    A prediction "agrees" if every judge that scored it returned the same
+    verdict. Predictions scored by only one judge are excluded from the
+    denominator. If `snapshot_id` is given, restricts to that snapshot;
+    otherwise considers all validated memes.
+    """
+    if snapshot_id is not None:
+        scope_join = "JOIN snapshot_memes sm ON p.post_id = sm.post_id"
+        scope_filter = "AND sm.snapshot_id = ?"
+        params: tuple = (snapshot_id,)
+    else:
+        scope_join = "JOIN reviews r ON p.post_id = r.post_id"
+        scope_filter = "AND r.status = 'validated'"
+        params = ()
+
+    query = f"""
+        WITH latest_per_judge AS (
+            SELECT j.prediction_id, p.model_id, j.judge_model, j.verdict
+            FROM predictions p
+            JOIN judgments j ON p.id = j.prediction_id
+            {scope_join}
+            WHERE j.id = (
+                SELECT MAX(j2.id) FROM judgments j2
+                WHERE j2.prediction_id = p.id AND j2.judge_model = j.judge_model
+            )
+            {scope_filter}
+        ),
+        per_prediction AS (
+            SELECT prediction_id, model_id,
+                   COUNT(DISTINCT judge_model) as n_judges,
+                   COUNT(DISTINCT verdict) as n_verdicts
+            FROM latest_per_judge
+            GROUP BY prediction_id, model_id
+        )
+        SELECT model_id,
+               SUM(CASE WHEN n_judges > 1 THEN 1 ELSE 0 END) as judged_by_multiple,
+               SUM(CASE WHEN n_judges > 1 AND n_verdicts = 1 THEN 1 ELSE 0 END) as agreements
+        FROM per_prediction
+        GROUP BY model_id
+        ORDER BY model_id
+    """
+    rows = db.conn.execute(query, params).fetchall()
+    return [
+        JudgeAgreement(model_id=r[0], judged_by_multiple=r[1], agreements=r[2])
         for r in rows
     ]
 
