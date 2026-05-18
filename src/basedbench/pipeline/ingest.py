@@ -51,6 +51,7 @@ async def run(
     config: Config,
     limit: int,
     subreddit: str | None = None,
+    time_filter: str = "year",
     console: Console | None = None,
 ) -> IngestStats:
     console = console or Console()
@@ -58,11 +59,13 @@ async def run(
     subs = [subreddit] if subreddit else list(DEFAULT_SUBREDDITS)
 
     # ─── Phase 1: fetch + image download ───
-    console.print("[bold]Phase 1:[/bold] Fetching from Reddit...")
+    console.print(
+        f"[bold]Phase 1:[/bold] Fetching from Reddit (t={time_filter})..."
+    )
     async with RedditClient(config) as reddit, ImageDownloader(config.images_dir) as imgs:
         await reddit.authenticate()
         for sub in subs:
-            posts = await reddit.fetch_posts(sub, limit)
+            posts = await reddit.fetch_posts(sub, limit, time_filter=time_filter)
             console.print(f"  r/{sub}: fetched {len(posts)} posts")
             if not posts:
                 continue

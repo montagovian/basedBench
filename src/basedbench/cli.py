@@ -50,11 +50,21 @@ def _configure_logging() -> None:
 def ingest(
     limit: int = typer.Option(50, help="Max posts to fetch per subreddit."),
     subreddit: str | None = typer.Option(None, help="Single subreddit (defaults to all)."),
+    time_filter: str = typer.Option(
+        "year",
+        "--time-filter",
+        "-t",
+        help="Reddit top window: hour, day, week, month, year, all.",
+    ),
 ) -> None:
     """Fetch memes from Reddit, download images, run quality gate + consensus."""
     _configure_logging()
     db, config = _load()
-    asyncio.run(ingest_pipe.run(db, config, limit=limit, subreddit=subreddit))
+    asyncio.run(
+        ingest_pipe.run(
+            db, config, limit=limit, subreddit=subreddit, time_filter=time_filter
+        )
+    )
 
 
 # ───────────────────────── predict ─────────────────────────

@@ -105,9 +105,13 @@ class RedditClient:
             raise RedditAuthError("missing access_token in response")
         self._access_token = token
 
-    async def fetch_posts(self, subreddit: str, limit: int) -> list[RawPost]:
+    async def fetch_posts(
+        self, subreddit: str, limit: int, time_filter: str = "year"
+    ) -> list[RawPost]:
         if self._access_token is None:
             raise RedditAuthError("not authenticated")
+        if time_filter not in {"hour", "day", "week", "month", "year", "all"}:
+            raise ValueError(f"invalid Reddit time filter: {time_filter!r}")
 
         posts: list[RawPost] = []
         after: str | None = None
@@ -116,10 +120,13 @@ class RedditClient:
         while len(posts) < limit:
             remaining = limit - len(posts)
             count = min(batch, remaining)
-            # t=year for temporal diversity. Tradeoff: lumpy distribution
-            # (older posts have accumulated more upvotes), but a much bigger
-            # pool than past-week-only.
-            url = f"https://oauth.reddit.com/r/{subreddit}/top?t=year&limit={count}"
+            # Time filter controls Reddit's "top of" window. year is the
+            # default (broad pool); month surfaces recent posts that
+            # haven't had time to crack the year-best list.
+            url = (
+                f"https://oauth.reddit.com/r/{subreddit}/top"
+                f"?t={time_filter}&limit={count}"
+            )
             if after:
                 url += f"&after={after}"
 
