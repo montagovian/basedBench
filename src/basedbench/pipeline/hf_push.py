@@ -10,6 +10,7 @@ Anyone can then `datasets.load_dataset("user/basedbench", "memes")`.
 
 from __future__ import annotations
 
+import json
 import logging
 from pathlib import Path
 
@@ -122,25 +123,25 @@ def run(
             {
                 "post_id": [p.post_id for p in preds],
                 "prediction": [p.prediction for p in preds],
-                "verdict": [p.verdict or "" for p in preds],
-                "reasoning": [p.reasoning or "" for p in preds],
+                "verdicts_json": [json.dumps(p.verdicts) for p in preds],
             }
         )
         cfg = _safe_config_name(model_id)
         console.print(f"Pushing '{cfg}' ({len(preds)} predictions)...")
         pred_ds.push_to_hub(repo, config_name=cfg, token=config.hf_token, private=private)
 
-    # ─── leaderboard config ───
+    # ─── leaderboard config (per-(target, judge) rows) ───
     leaderboard = queries.snapshot_leaderboard(db, snapshot.snapshot_id)
     lb_ds = Dataset.from_dict(
         {
             "model_id": [e.model_id for e in leaderboard],
+            "judge_model": [e.judge_model for e in leaderboard],
             "correct": [e.correct for e in leaderboard],
             "total": [e.total for e in leaderboard],
             "accuracy": [e.accuracy for e in leaderboard],
         }
     )
-    console.print(f"Pushing 'leaderboard' ({len(leaderboard)} models)...")
+    console.print(f"Pushing 'leaderboard' ({len(leaderboard)} rows)...")
     lb_ds.push_to_hub(repo, config_name="leaderboard", token=config.hf_token, private=private)
 
     queries.insert_dataset_push(

@@ -68,25 +68,37 @@ def run(
                         {
                             "post_id": p.post_id,
                             "prediction": p.prediction,
-                            "verdict": p.verdict,
-                            "reasoning": p.reasoning,
+                            "verdicts": p.verdicts,
                         }
                     )
                     + "\n"
                 )
 
     leaderboard = queries.snapshot_leaderboard(db, snapshot.snapshot_id)
+    agreement = queries.get_judge_agreement(db, snapshot.snapshot_id)
     with (output_dir / "data" / "leaderboard.json").open("w") as f:
         json.dump(
-            [
-                {
-                    "model_id": e.model_id,
-                    "correct": e.correct,
-                    "total": e.total,
-                    "accuracy": f"{e.accuracy:.4f}",
-                }
-                for e in leaderboard
-            ],
+            {
+                "entries": [
+                    {
+                        "model_id": e.model_id,
+                        "judge_model": e.judge_model,
+                        "correct": e.correct,
+                        "total": e.total,
+                        "accuracy": f"{e.accuracy:.4f}",
+                    }
+                    for e in leaderboard
+                ],
+                "agreement": [
+                    {
+                        "model_id": a.model_id,
+                        "judged_by_multiple": a.judged_by_multiple,
+                        "agreements": a.agreements,
+                        "rate": f"{a.rate:.4f}",
+                    }
+                    for a in agreement
+                ],
+            },
             f,
             indent=2,
         )

@@ -282,17 +282,31 @@ def compare_predictions(meme_selection: str):
         )
 
     preds = conn.execute(
-        """SELECT p.model_id, p.prediction,
-                  j.verdict, j.judge_reasoning
+        """SELECT p.id, p.model_id, p.prediction
            FROM predictions p
-           LEFT JOIN judgments j
-             ON p.id = j.prediction_id
-             AND j.id = (SELECT MAX(j2.id) FROM judgments j2 WHERE j2.prediction_id = p.id)
            WHERE p.post_id = ? AND p.error IS NULL
            ORDER BY p.model_id""",
         (post_id,),
     ).fetchall()
+    verdict_rows = conn.execute(
+        """SELECT j.prediction_id, j.judge_model, j.verdict, j.judge_reasoning
+           FROM judgments j
+           JOIN predictions p ON j.prediction_id = p.id
+           WHERE p.post_id = ?
+             AND j.id = (
+               SELECT MAX(j2.id) FROM judgments j2
+               WHERE j2.prediction_id = j.prediction_id
+                 AND j2.judge_model = j.judge_model
+             )""",
+        (post_id,),
+    ).fetchall()
     conn.close()
+
+    verdicts_by_pred: dict[int, list[tuple[str, str | None, str | None]]] = {}
+    for vr in verdict_rows:
+        verdicts_by_pred.setdefault(vr["prediction_id"], []).append(
+            (vr["judge_model"] or "(unknown)", vr["verdict"], vr["judge_reasoning"])
+        )
 
     img = _resolve_image(meme["local_image_path"])
     gt_text = f"**Ground Truth:**\n\n{meme['explanation']}"
@@ -303,25 +317,48 @@ def compare_predictions(meme_selection: str):
             gr.update(value="_No predictions for this meme yet. Run `basedbench predict <model>`._", visible=True),
         )
 
-    lines = []
+    def _badge(v: str | None) -> str:
+        if v == "correct":
+            return "\U0001f7e2"
+        if v == "incorrect":
+            return "\U0001f534"
+        return "⚪"
+
+    blocks = []
     for p in preds:
-        verdict = p["verdict"]
-        badge = "\U0001f7e2" if verdict == "correct" else (
-            "\U0001f534" if verdict == "incorrect" else "⚪"
+        verdicts = sorted(verdicts_by_pred.get(p["id"], []), key=lambda r: r[0])
+        if not verdicts:
+            header = f"### ⚪ {p['model_id']}"
+            verdict_section = "_unjudged_"
+            agreement = ""
+        else:
+            distinct = {v for _, v, _ in verdicts if v is not None}
+            if len(verdicts) > 1:
+                agreement = (
+                    " · ✅ judges agree"
+                    if len(distinct) == 1
+                    else " · ⚠️ judges disagree"
+                )
+            else:
+                agreement = ""
+            badges = " ".join(_badge(v) for _, v, _ in verdicts)
+            header = f"### {badges} {p['model_id']}{agreement}"
+            verdict_lines = []
+            for judge_model, verdict, reasoning in verdicts:
+                line = f"**{_badge(verdict)} {judge_model}:** {verdict or 'unjudged'}"
+                if reasoning:
+                    line += f"\n  - _reasoning:_ {reasoning}"
+                verdict_lines.append(line)
+            verdict_section = "\n\n".join(verdict_lines)
+
+        blocks.append(
+            f"{header}\n\n**Prediction:** {p['prediction']}\n\n{verdict_section}"
         )
-        body = (
-            f"### {badge} {p['model_id']}\n\n"
-            f"**Prediction:** {p['prediction']}\n\n"
-            f"**Verdict:** {verdict or 'unjudged'}"
-        )
-        if p["judge_reasoning"]:
-            body += f"\n**Reasoning:** {p['judge_reasoning']}"
-        lines.append(body)
 
     return (
         gr.update(value=img, visible=True),
         gr.update(value=gt_text, visible=True),
-        gr.update(value="\n\n---\n\n".join(lines), visible=True),
+        gr.update(value="\n\n---\n\n".join(blocks), visible=True),
     )
 
 
