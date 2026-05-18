@@ -421,7 +421,7 @@ def build_app() -> gr.Blocks:
             btn_skip.click(skip_meme, inputs=[], outputs=review_outputs)
             app.load(load_next_unreviewed, outputs=review_outputs)
 
-        with gr.Tab("Browse"):
+        with gr.Tab("Browse") as browse_tab:
             with gr.Row():
                 browse_status = gr.Dropdown(
                     choices=["all", "validated", "excluded", "unreviewed"],
@@ -446,8 +446,14 @@ def build_app() -> gr.Blocks:
                 inputs=[browse_status, browse_subreddit, browse_search, browse_page],
                 outputs=[browse_results, browse_page_info],
             )
+            # Refresh subreddit options whenever the user activates the tab —
+            # otherwise the dropdown is frozen at app-startup state.
+            browse_tab.select(
+                lambda: gr.update(choices=_subreddits()),
+                outputs=[browse_subreddit],
+            )
 
-        with gr.Tab("Prediction Comparison"):
+        with gr.Tab("Prediction Comparison") as compare_tab:
             _initial_choices = _reviewed_memes() if _DB_PATH.exists() else []
             _initial_value = _initial_choices[0] if _initial_choices else None
             meme_selector = gr.Dropdown(
@@ -461,6 +467,20 @@ def build_app() -> gr.Blocks:
                     "_No validated memes yet. Use the Review Queue tab to validate at least "
                     "one meme, then come back here._"
                 ),
+            )
+
+            def _refresh_compare_choices():
+                """Re-query validated memes when the user opens this tab."""
+                choices = _reviewed_memes()
+                # Preserve the current selection if it's still valid; else pick the first.
+                return (
+                    gr.update(choices=choices),
+                    gr.update(visible=not choices),
+                )
+
+            compare_tab.select(
+                _refresh_compare_choices,
+                outputs=[meme_selector, compare_empty],
             )
             with gr.Row():
                 with gr.Column(scale=1):
