@@ -324,8 +324,8 @@ def reconstruct_raw_post(db: Database, post_id: str) -> RawPost | None:
 # ═══════════════════════════════════════════════════════
 
 
-def memes_needing_quality_gate(db: Database) -> list[str]:
-    """Find memes that need the quality gate: no review and no ground truth."""
+def _memes_pending_gate(db: Database) -> list[str]:
+    """Shared predicate: memes with no review row and no ground truth."""
     rows = db.conn.execute(
         """SELECT m.post_id FROM memes m
            LEFT JOIN reviews r ON m.post_id = r.post_id
@@ -334,6 +334,21 @@ def memes_needing_quality_gate(db: Database) -> list[str]:
              AND gt.post_id IS NULL"""
     ).fetchall()
     return [r[0] for r in rows]
+
+
+def memes_needing_safety_gate(db: Database) -> list[str]:
+    """Memes pending a safety-appropriateness decision (no prior auto/human review)."""
+    return _memes_pending_gate(db)
+
+
+def memes_needing_quality_gate(db: Database) -> list[str]:
+    """Memes pending a quality-gate decision (no prior auto/human review).
+
+    Same predicate as memes_needing_safety_gate; safety runs first in the
+    pipeline so its exclusions are already in the reviews table by the
+    time this is called.
+    """
+    return _memes_pending_gate(db)
 
 
 def insert_auto_review(db: Database, post_id: str, reason: str) -> bool:

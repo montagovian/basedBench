@@ -1,4 +1,4 @@
-"""Ingest pipeline: Reddit fetch → image download → quality gate → consensus detection."""
+"""Ingest pipeline: Reddit fetch → image download → safety gate → quality gate → consensus."""
 
 from __future__ import annotations
 
@@ -23,8 +23,11 @@ from basedbench.llm.prompts import (
     CONSENSUS_USER_TEMPLATE,
     QUALITY_GATE_SYSTEM_PROMPT,
     QUALITY_GATE_USER_TEMPLATE,
+    SAFETY_GATE_SYSTEM_PROMPT,
+    SAFETY_GATE_USER_TEMPLATE,
 )
 from basedbench.llm.quality_gate import QualityGate
+from basedbench.llm.safety_gate import SafetyGate
 from basedbench.pipeline._progress import make_progress
 from basedbench.reddit.client import RedditClient
 from basedbench.reddit.images import ImageDownloader
@@ -39,6 +42,9 @@ class IngestStats:
     new_memes: int = 0
     new_comments: int = 0
     images_downloaded: int = 0
+    safety_passed: int = 0
+    safety_failed: int = 0
+    safety_skipped: int = 0
     gate_passed: int = 0
     gate_failed: int = 0
     gate_skipped: int = 0
@@ -91,6 +97,69 @@ async def run(
         f"  Added {stats.new_memes} memes, {stats.new_comments} comments, "
         f"{stats.images_downloaded} images"
     )
+
+    # ─── Phase 1.4: safety gate ───
+    console.print("\n[bold]Phase 1.4:[/bold] Running safety gate...")
+    safety_candidates = queries.memes_needing_safety_gate(db)
+    console.print(f"  {len(safety_candidates)} memes need safety check")
+    if safety_candidates:
+        safety = SafetyGate(config)
+        queries.register_prompt(
+            db,
+            safety.prompt_id,
+            "safety_gate",
+            SAFETY_GATE_SYSTEM_PROMPT,
+            SAFETY_GATE_USER_TEMPLATE,
+            "1.0",
+        )
+        aborted = False
+        with make_progress() as prog:
+            task = prog.add_task("safety gate", total=len(safety_candidates))
+            for post_id in safety_candidates:
+                post = queries.reconstruct_raw_post(db, post_id)
+                if post is None:
+                    log.warning("Could not reconstruct post %s", post_id)
+                    stats.safety_skipped += 1
+                    prog.update(task, advance=1)
+                    continue
+
+                try:
+                    result, record = await safety.check(post)
+                except OpenAIError as e:
+                    if is_fatal_llm_error(e):
+                        console.print(
+                            f"\n[bold red]Fatal OpenAI error during safety gate:[/bold red] {e}"
+                        )
+                        console.print(
+                            "[red]Aborting phase. Fix the API key / billing and rerun.[/red]"
+                        )
+                        aborted = True
+                        break
+                    log.warning("Safety gate failed for %s: %s", post_id, e)
+                    stats.safety_skipped += 1
+                    prog.update(task, advance=1)
+                    continue
+                except LlmJsonParseError as e:
+                    log.warning("Safety gate parse failed for %s: %s", post_id, e)
+                    stats.safety_skipped += 1
+                    prog.update(task, advance=1)
+                    continue
+
+                queries.insert_llm_call(db, record)
+                if result.keep:
+                    stats.safety_passed += 1
+                else:
+                    queries.insert_auto_review(
+                        db, post_id, f"safety: {result.category}"
+                    )
+                    stats.safety_failed += 1
+                prog.update(task, advance=1)
+        if aborted:
+            return stats
+        console.print(
+            f"  Kept: {stats.safety_passed}, Excluded: {stats.safety_failed}, "
+            f"Skipped: {stats.safety_skipped}"
+        )
 
     # ─── Phase 1.5: quality gate ───
     console.print("\n[bold]Phase 1.5:[/bold] Running quality gate...")

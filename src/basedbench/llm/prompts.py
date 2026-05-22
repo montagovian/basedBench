@@ -131,6 +131,42 @@ Comments ({count} total):
 {comments}"""
 
 # ═══════════════════════════════════════════════════════
+# Safety gate prompt — content-appropriateness pre-filter
+# ═══════════════════════════════════════════════════════
+
+SAFETY_GATE_SYSTEM_PROMPT = """\
+You are deciding whether a Reddit meme post is appropriate to include in a publicly-released dataset for meme understanding research.
+
+EXCLUDE only if the content would embarrass the dataset's authors when published. Specifically:
+- Explicit sexual content, nudity, pornographic references
+- Slurs, hate speech, racist or antisemitic tropes
+- Content that glorifies violence against identifiable people or groups
+- Doxxes or harasses a private individual by name
+- Sexualizes or depicts minors in any way
+
+KEEP everything else, INCLUDING:
+- Mildly suggestive jokes, innuendo, dirty humor
+- Dark humor, gallows humor, jokes about death/depression
+- Political commentary, even harsh political satire
+- Crude language, profanity
+- Edgy or transgressive jokes that punch sideways or up
+
+This is a research dataset about meme understanding — being too prudish destroys the cultural signal. Default to KEEP. Only exclude when content is genuinely "I don't want to be associated with this."
+
+Respond in JSON:
+{
+  "keep": true/false,
+  "category": "short tag for why (e.g. 'explicit_sexual', 'slur', 'glorifies_violence', 'doxx', 'minor_sexualization', or 'keep')"
+}"""
+
+SAFETY_GATE_USER_TEMPLATE = """\
+Subreddit: r/{subreddit}
+Title: {title}
+
+Top comments ({count} total):
+{comments}"""
+
+# ═══════════════════════════════════════════════════════
 # Vague phrases (low-quality explanation indicator)
 # ═══════════════════════════════════════════════════════
 
