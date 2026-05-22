@@ -9,11 +9,36 @@ Three tabs:
 from __future__ import annotations
 
 import argparse
+import re
 import sqlite3
 from datetime import datetime, timezone
 from pathlib import Path
 
 import gradio as gr
+
+# Match common image URLs people drop in Reddit comments:
+# - preview.redd.it / i.redd.it / i.imgur.com (host-based, takes query strings)
+# - Any URL ending in a known image extension (with optional query string)
+_IMAGE_URL_RE = re.compile(
+    r"https?://(?:preview\.redd\.it|i\.redd\.it|i\.imgur\.com)/[^\s)\]]+"
+    r"|https?://[^\s)\]]+\.(?:jpe?g|png|gif|webp)(?:\?[^\s)\]]*)?",
+    re.IGNORECASE,
+)
+
+
+def _inline_image_urls(text: str) -> str:
+    """Render bare image URLs inline as markdown images linked to themselves.
+
+    Reviewers often need to see images reaction-commenters posted — they're
+    part of the joke's context. Wraps the image in a link so clicking opens
+    the original URL.
+    """
+
+    def repl(match: re.Match[str]) -> str:
+        url = match.group(0)
+        return f"[![]({url})]({url})"
+
+    return _IMAGE_URL_RE.sub(repl, text)
 
 _DB_PATH: Path = Path("data/basedbench.db")
 
@@ -107,7 +132,8 @@ def load_next_unreviewed():
     conn.close()
 
     comments_text = "\n\n".join(
-        f"**{c['author']}** (score: {c['score']})\n> {c['body']}" for c in comments
+        f"**{c['author']}** (score: {c['score']})\n> {_inline_image_urls(c['body'])}"
+        for c in comments
     )
 
     return (
