@@ -102,7 +102,7 @@ async def test_fetch_posts_skips_removed_post_with_404_comments():
             raise RedditApiError(404, '{"message":"Not Found"}')
         return []
 
-    client._fetch_comments = AsyncMock(side_effect=fake_fetch_comments)  # type: ignore[method-assign]
+    client.fetch_comments = AsyncMock(side_effect=fake_fetch_comments)  # type: ignore[method-assign]
 
     posts = await client.fetch_posts("test", limit=10)
 
@@ -127,7 +127,7 @@ async def test_fetch_posts_non_404_api_error_still_raises():
     client._access_token = "fake-token"
 
     client._get_json = AsyncMock(return_value=_fake_listing(["post1"]))  # type: ignore[method-assign]
-    client._fetch_comments = AsyncMock(  # type: ignore[method-assign]
+    client.fetch_comments = AsyncMock(  # type: ignore[method-assign]
         side_effect=RedditApiError(500, "server died")
     )
 

@@ -56,13 +56,58 @@ def ingest(
         "-t",
         help="Reddit top window: hour, day, week, month, year, all.",
     ),
+    after_date: str | None = typer.Option(
+        None,
+        "--after-date",
+        help="Start of date range (YYYY-MM-DD, inclusive). Uses pullpush.io.",
+    ),
+    before_date: str | None = typer.Option(
+        None,
+        "--before-date",
+        help="End of date range (YYYY-MM-DD, exclusive). Uses pullpush.io.",
+    ),
 ) -> None:
     """Fetch memes from Reddit, download images, run quality gate + consensus."""
     _configure_logging()
+
+    # Validate mode selection: date-range OR time-filter, not both.
+    has_after = after_date is not None
+    has_before = before_date is not None
+    if has_after != has_before:
+        raise typer.BadParameter(
+            "--after-date and --before-date must be given together."
+        )
+    use_date_range = has_after and has_before
+
+    after_unix: int | None = None
+    before_unix: int | None = None
+    if use_date_range:
+        from datetime import datetime, timezone
+
+        try:
+            after_dt = datetime.strptime(after_date, "%Y-%m-%d").replace(
+                tzinfo=timezone.utc
+            )
+            before_dt = datetime.strptime(before_date, "%Y-%m-%d").replace(
+                tzinfo=timezone.utc
+            )
+        except ValueError as e:
+            raise typer.BadParameter(f"Date must be YYYY-MM-DD: {e}") from e
+        if after_dt >= before_dt:
+            raise typer.BadParameter("--after-date must be before --before-date.")
+        after_unix = int(after_dt.timestamp())
+        before_unix = int(before_dt.timestamp())
+
     db, config = _load()
     asyncio.run(
         ingest_pipe.run(
-            db, config, limit=limit, subreddit=subreddit, time_filter=time_filter
+            db,
+            config,
+            limit=limit,
+            subreddit=subreddit,
+            time_filter=time_filter,
+            after_unix=after_unix,
+            before_unix=before_unix,
         )
     )
 

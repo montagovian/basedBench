@@ -152,7 +152,7 @@ class RedditClient:
 
                 await asyncio.sleep(INTER_REQUEST_DELAY)
                 try:
-                    comments = await self._fetch_comments(subreddit, post_id)
+                    comments = await self.fetch_comments(subreddit, post_id)
                 except RedditApiError as e:
                     if e.status == 404:
                         log.warning(
@@ -184,7 +184,7 @@ class RedditClient:
 
         return posts
 
-    async def _fetch_comments(self, subreddit: str, post_id: str) -> list[RedditComment]:
+    async def fetch_comments(self, subreddit: str, post_id: str) -> list[RedditComment]:
         url = (
             f"https://oauth.reddit.com/r/{subreddit}/comments/{post_id}"
             f"?limit=100&depth=1"

@@ -40,8 +40,14 @@ from basedbench.llm.quality_gate import QualityGate
 from basedbench.llm.record import LlmCallRecord
 from basedbench.llm.safety_gate import SafetyGate
 from basedbench.pipeline._progress import make_progress
-from basedbench.reddit.client import RedditClient
+from basedbench.reddit.client import (
+    INTER_REQUEST_DELAY,
+    MIN_POST_COMMENTS,
+    MIN_POST_SCORE,
+    RedditClient,
+)
 from basedbench.reddit.images import ImageDownloader
+from basedbench.reddit.pullpush import PullpushClient, PullpushPost
 from basedbench.schemas import RawPost
 
 log = logging.getLogger(__name__)
@@ -101,19 +107,15 @@ async def _fan_out(
     return tasks, queue
 
 
-async def run(
+async def _fetch_phase_reddit(
     db: Database,
     config: Config,
+    subs: list[str],
     limit: int,
-    subreddit: str | None = None,
-    time_filter: str = "year",
-    console: Console | None = None,
-) -> IngestStats:
-    console = console or Console()
-    stats = IngestStats()
-    subs = [subreddit] if subreddit else list(DEFAULT_SUBREDDITS)
-
-    # ─── Phase 1: fetch + image download (sequential — Reddit rate limits us) ───
+    time_filter: str,
+    stats: IngestStats,
+    console: Console,
+) -> None:
     console.print(
         f"[bold]Phase 1:[/bold] Fetching from Reddit (t={time_filter})..."
     )
@@ -124,23 +126,154 @@ async def run(
             console.print(f"  r/{sub}: fetched {len(posts)} posts")
             if not posts:
                 continue
+            await _persist_posts(db, posts, imgs, stats, f"r/{sub}")
 
+
+async def _fetch_phase_pullpush(
+    db: Database,
+    config: Config,
+    subs: list[str],
+    limit: int,
+    after_unix: int,
+    before_unix: int,
+    stats: IngestStats,
+    console: Console,
+) -> None:
+    """Discover posts via pullpush date-range, then fetch comments via Reddit OAuth."""
+    console.print(
+        f"[bold]Phase 1:[/bold] Fetching via pullpush.io "
+        f"({after_unix} → {before_unix})..."
+    )
+    async with (
+        PullpushClient(config.reddit_user_agent) as pp,
+        RedditClient(config) as reddit,
+        ImageDownloader(config.images_dir) as imgs,
+    ):
+        await reddit.authenticate()
+        for sub in subs:
+            discovered = await pp.list_posts(sub, after_unix, before_unix, limit)
+            console.print(
+                f"  r/{sub}: pullpush returned {len(discovered)} posts in range"
+            )
+            qualifying = [
+                p for p in discovered
+                if p.image_url is not None
+                and p.score >= MIN_POST_SCORE
+                and p.num_comments >= MIN_POST_COMMENTS
+            ]
+            console.print(
+                f"  r/{sub}: {len(qualifying)} pass image+score+comments filters"
+            )
+            if not qualifying:
+                continue
+
+            # For each pullpush post, fetch comments from Reddit OAuth and
+            # convert to RawPost. Sequential because Reddit's rate limit is
+            # tighter than pullpush's; concurrent would risk 429s.
+            posts: list[RawPost] = []
             with make_progress() as prog:
-                task = prog.add_task(f"r/{sub}", total=len(posts))
-                for post in posts:
-                    if queries.insert_meme(db, post):
-                        stats.new_memes += 1
-                    for c in post.comments:
-                        if queries.insert_comment(db, post.post_id, c):
-                            stats.new_comments += 1
-                    if post.image_url:
-                        try:
-                            path = await imgs.download(post.image_url, post.post_id)
-                            queries.update_meme_image_path(db, post.post_id, path)
-                            stats.images_downloaded += 1
-                        except (ImageDownloadError, ImageValidationError) as e:
-                            log.warning("Image download failed for %s: %s", post.post_id, e)
+                task = prog.add_task(
+                    f"r/{sub} comments", total=len(qualifying)
+                )
+                for pp_post in qualifying:
+                    try:
+                        comments = await reddit.fetch_comments(sub, pp_post.post_id)
+                    except Exception as e:  # noqa: BLE001
+                        log.warning(
+                            "Skipping %s — comment fetch failed: %s",
+                            pp_post.post_id, e,
+                        )
+                        prog.update(task, advance=1)
+                        continue
+                    posts.append(_pullpush_to_rawpost(pp_post, comments))
+                    await asyncio.sleep(INTER_REQUEST_DELAY)
                     prog.update(task, advance=1)
+
+            await _persist_posts(db, posts, imgs, stats, f"r/{sub}")
+
+
+def _pullpush_to_rawpost(
+    pp_post: PullpushPost, comments: list
+) -> RawPost:
+    from datetime import datetime, timezone
+
+    return RawPost(
+        post_id=pp_post.post_id,
+        subreddit=pp_post.subreddit,
+        title=pp_post.title,
+        image_url=pp_post.image_url,
+        permalink=pp_post.permalink,
+        score=pp_post.score,
+        created_utc=datetime.fromtimestamp(
+            int(pp_post.created_utc), tz=timezone.utc
+        ).isoformat(),
+        retrieved_at=datetime.now(timezone.utc).isoformat(),
+        comments=comments,
+    )
+
+
+async def _persist_posts(
+    db: Database,
+    posts: list[RawPost],
+    imgs: ImageDownloader,
+    stats: IngestStats,
+    label: str,
+) -> None:
+    """Insert posts/comments and download images. Shared by both fetch paths."""
+    with make_progress() as prog:
+        task = prog.add_task(label, total=len(posts))
+        for post in posts:
+            if queries.insert_meme(db, post):
+                stats.new_memes += 1
+            for c in post.comments:
+                if queries.insert_comment(db, post.post_id, c):
+                    stats.new_comments += 1
+            if post.image_url:
+                try:
+                    path = await imgs.download(post.image_url, post.post_id)
+                    queries.update_meme_image_path(db, post.post_id, path)
+                    stats.images_downloaded += 1
+                except (ImageDownloadError, ImageValidationError) as e:
+                    log.warning("Image download failed for %s: %s", post.post_id, e)
+            prog.update(task, advance=1)
+
+
+async def run(
+    db: Database,
+    config: Config,
+    limit: int,
+    subreddit: str | None = None,
+    time_filter: str = "year",
+    after_unix: int | None = None,
+    before_unix: int | None = None,
+    console: Console | None = None,
+) -> IngestStats:
+    """Run the ingest pipeline.
+
+    Two fetch modes are mutually exclusive:
+      - default: Reddit /top with `time_filter` (preset window: hour/day/.../all)
+      - date-range: when `after_unix` and `before_unix` are both set, discover
+        posts via pullpush.io for that specific window, then fetch comments
+        via Reddit OAuth.
+
+    All downstream phases (safety / quality / consensus) are identical
+    regardless of fetch mode.
+    """
+    console = console or Console()
+    stats = IngestStats()
+    subs = [subreddit] if subreddit else list(DEFAULT_SUBREDDITS)
+    use_date_range = after_unix is not None and before_unix is not None
+
+    # ─── Phase 1: fetch + image download ───
+    if use_date_range:
+        assert after_unix is not None and before_unix is not None
+        await _fetch_phase_pullpush(
+            db, config, subs, limit, after_unix, before_unix, stats, console
+        )
+    else:
+        await _fetch_phase_reddit(
+            db, config, subs, limit, time_filter, stats, console
+        )
 
     console.print(
         f"  Added {stats.new_memes} memes, {stats.new_comments} comments, "
