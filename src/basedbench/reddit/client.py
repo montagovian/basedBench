@@ -151,7 +151,16 @@ class RedditClient:
                     continue
 
                 await asyncio.sleep(INTER_REQUEST_DELAY)
-                comments = await self._fetch_comments(subreddit, post_id)
+                try:
+                    comments = await self._fetch_comments(subreddit, post_id)
+                except RedditApiError as e:
+                    if e.status == 404:
+                        log.warning(
+                            "Skipping post %s — comments 404 (removed/deleted)",
+                            post_id,
+                        )
+                        continue
+                    raise
 
                 posts.append(
                     RawPost(
