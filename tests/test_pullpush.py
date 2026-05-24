@@ -139,6 +139,82 @@ async def test_list_posts_rejects_inverted_date_range():
 
 
 @pytest.mark.asyncio
+async def test_list_posts_filters_low_score_posts():
+    """`limit` should mean N *qualifying* posts, not N raw results."""
+    page = [
+        _raw(f"low{i}", created_utc=1000 - i, score=2) for i in range(50)
+    ] + [
+        _raw(f"hi{i}", created_utc=900 - i, score=200) for i in range(5)
+    ]
+    client = _make_client_with_pages([page, []])
+
+    posts = await client.list_posts(
+        "test", after_unix=0, before_unix=2000, limit=100, min_score=10
+    )
+
+    assert len(posts) == 5
+    assert all(p.score >= 10 for p in posts)
+
+
+@pytest.mark.asyncio
+async def test_list_posts_filters_self_posts_when_require_image():
+    page = [
+        _raw("text", created_utc=1000, is_self=True),
+        _raw("img", created_utc=900),
+    ]
+    client = _make_client_with_pages([page, []])
+
+    posts = await client.list_posts(
+        "test", after_unix=0, before_unix=2000, limit=10, require_image=True
+    )
+
+    assert [p.post_id for p in posts] == ["img"]
+
+
+@pytest.mark.asyncio
+async def test_list_posts_paginates_to_fill_limit_when_yield_is_low():
+    """If the first page yields only 1 qualifying post, paginate to find more."""
+    page1 = [_raw(f"low{i}", created_utc=2000 - i, score=1) for i in range(100)] + []
+    # Replace one in page1 with a high-score post so we get exactly 1 qualifying.
+    page1[0] = _raw("hi1", created_utc=2000, score=500)
+    page2 = [_raw(f"a{i}", created_utc=1000 - i, score=500) for i in range(5)]
+    client = _make_client_with_pages([page1, page2, []])
+
+    posts = await client.list_posts(
+        "test", after_unix=0, before_unix=3000, limit=6, min_score=10
+    )
+
+    # Should keep paginating past the sparse page1 to fill the limit from page2.
+    assert len(posts) == 6
+
+
+@pytest.mark.asyncio
+async def test_list_posts_respects_max_pages_safety_cap():
+    """Sparse date ranges shouldn't trigger infinite pagination.
+
+    Three pages, each at a strictly earlier timestamp range so the walk-back
+    actually advances. All low-score → nothing qualifies. After 3 pages we
+    should stop even though no `limit` was reached.
+    """
+    pages = [
+        [_raw(f"a{i}", created_utc=10000 - i, score=1) for i in range(100)],
+        [_raw(f"b{i}", created_utc=8000 - i, score=1) for i in range(100)],
+        [_raw(f"c{i}", created_utc=6000 - i, score=1) for i in range(100)],
+        # A 4th page exists but max_pages=3 should stop us before this.
+        [_raw(f"d{i}", created_utc=4000 - i, score=500) for i in range(5)],
+    ]
+    client = _make_client_with_pages(pages)
+
+    posts = await client.list_posts(
+        "test", after_unix=0, before_unix=20000, limit=100,
+        min_score=10, max_pages=3,
+    )
+
+    assert posts == []
+    assert client._fetch_page.call_count == 3  # type: ignore[attr-defined]
+
+
+@pytest.mark.asyncio
 async def test_list_posts_walks_back_via_created_utc():
     """Each pagination request should set `before` to the oldest of the prior page."""
     # Two pages worth of MAX_RESULTS_PER_REQUEST posts so pagination actually fires.

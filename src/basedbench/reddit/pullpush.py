@@ -31,6 +31,7 @@ PULLPUSH_BASE = "https://api.pullpush.io/reddit/search/submission/"
 HTTP_TIMEOUT = httpx.Timeout(30.0, connect=10.0)
 MAX_RESULTS_PER_REQUEST = 100  # pullpush caps here; can't be overridden
 INTER_REQUEST_DELAY = 1.0  # polite gap to avoid hitting pullpush rate limits
+MAX_PAGES_DEFAULT = 100  # safety cap: 100 × 100 = 10k raw posts inspected per sub
 
 
 @dataclass
@@ -93,12 +94,22 @@ class PullpushClient:
         after_unix: int,
         before_unix: int,
         limit: int,
+        min_score: int = 10,
+        min_comments: int = 3,
+        require_image: bool = True,
+        max_pages: int = MAX_PAGES_DEFAULT,
     ) -> list[PullpushPost]:
-        """List posts in [after_unix, before_unix) for a subreddit.
+        """List up to `limit` *qualifying* posts in [after_unix, before_unix).
 
         Paginates via `created_utc` walk-back (sort=desc by date) since pullpush
         caps at 100 results per request and doesn't expose a stable cursor.
-        Stops when we hit `limit`, run out of posts, or walk past `after_unix`.
+        Applies the quality filter inline so `limit=N` returns N usable posts
+        (where "usable" means: has an image URL if require_image, score >=
+        min_score, num_comments >= min_comments).
+
+        Stops when we hit `limit`, walk past `after_unix`, encounter an empty
+        page, or exhaust `max_pages` (safety cap to prevent infinite loops in
+        sparse date ranges).
         """
         if after_unix >= before_unix:
             raise ValueError(
@@ -107,26 +118,34 @@ class PullpushClient:
 
         posts: list[PullpushPost] = []
         current_before = before_unix
+        pages_fetched = 0
+        raw_inspected = 0
 
-        while len(posts) < limit:
+        while len(posts) < limit and pages_fetched < max_pages:
             page = await self._fetch_page(
                 subreddit=subreddit,
                 after=after_unix,
                 before=current_before,
             )
+            pages_fetched += 1
             if not page:
                 break
 
+            raw_inspected += len(page)
             for raw in page:
                 pp = _to_pullpush_post(raw)
                 if pp is None:
+                    continue
+                if require_image and pp.image_url is None:
+                    continue
+                if pp.score < min_score:
+                    continue
+                if pp.num_comments < min_comments:
                     continue
                 posts.append(pp)
                 if len(posts) >= limit:
                     break
 
-            # Walk back: next request's `before` is the oldest post we just got,
-            # minus 1 second to avoid re-fetching the boundary post.
             oldest = min(raw.get("created_utc", before_unix) for raw in page)
             new_before = int(oldest) - 1
             if new_before <= after_unix or new_before >= current_before:
@@ -135,6 +154,10 @@ class PullpushClient:
 
             await asyncio.sleep(INTER_REQUEST_DELAY)
 
+        log.info(
+            "pullpush list_posts r/%s: %d qualifying / %d inspected over %d page(s)",
+            subreddit, len(posts), raw_inspected, pages_fetched,
+        )
         return posts
 
     async def _fetch_page(

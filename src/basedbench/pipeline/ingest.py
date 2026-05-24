@@ -151,18 +151,17 @@ async def _fetch_phase_pullpush(
     ):
         await reddit.authenticate()
         for sub in subs:
-            discovered = await pp.list_posts(sub, after_unix, before_unix, limit)
-            console.print(
-                f"  r/{sub}: pullpush returned {len(discovered)} posts in range"
+            qualifying = await pp.list_posts(
+                sub,
+                after_unix,
+                before_unix,
+                limit,
+                min_score=MIN_POST_SCORE,
+                min_comments=MIN_POST_COMMENTS,
+                require_image=True,
             )
-            qualifying = [
-                p for p in discovered
-                if p.image_url is not None
-                and p.score >= MIN_POST_SCORE
-                and p.num_comments >= MIN_POST_COMMENTS
-            ]
             console.print(
-                f"  r/{sub}: {len(qualifying)} pass image+score+comments filters"
+                f"  r/{sub}: pullpush returned {len(qualifying)} qualifying posts"
             )
             if not qualifying:
                 continue
