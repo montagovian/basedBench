@@ -445,6 +445,40 @@ def test_llm_call_filters(db: Database):
 # ═══════════════════════════════════════════════════════
 
 
+def test_consensus_quality_stats_empty(db: Database):
+    stats = q.consensus_quality_stats(db)
+    assert stats.n_grounded == 0
+    assert stats.mean_confidence == 0.0
+    assert stats.confidence_histogram == [0] * 10
+
+
+def test_consensus_quality_stats_aggregates(db: Database):
+    """Insert 3 ground truths with varied confidences; check the rollup."""
+    for pid in ("p1", "p2", "p3"):
+        _setup_validated_meme(db, pid)
+    # confidence 0.95 (bin 9), 0.85 (bin 8), 0.75 (bin 7)
+    q.upsert_ground_truth(db, "p1", "x", 0.95, ["c1", "c2"], 5, 42.0, "m", "v1")
+    q.upsert_ground_truth(db, "p2", "y", 0.85, ["c1"], 3, 20.0, "m", "v1")
+    q.upsert_ground_truth(db, "p3", "z", 0.75, ["c1", "c2", "c3"], 7, 30.0, "m", "v1")
+
+    stats = q.consensus_quality_stats(db)
+    assert stats.n_grounded == 3
+    assert abs(stats.mean_confidence - 0.85) < 1e-9
+    assert stats.median_agreeing_comments == 5  # middle of {3, 5, 7}
+    assert stats.confidence_histogram[7] == 1
+    assert stats.confidence_histogram[8] == 1
+    assert stats.confidence_histogram[9] == 1
+    assert sum(stats.confidence_histogram) == 3
+
+
+def test_consensus_quality_stats_handles_confidence_one(db: Database):
+    """Confidence exactly 1.0 should land in bin 9 (not crash via index 10)."""
+    _setup_validated_meme(db, "p1")
+    q.upsert_ground_truth(db, "p1", "x", 1.0, ["c1"], 3, 10.0, "m", "v1")
+    stats = q.consensus_quality_stats(db)
+    assert stats.confidence_histogram[9] == 1
+
+
 def test_snapshot_export_helpers(db: Database):
     _setup_validated_meme(db, "post1")
     _setup_validated_meme(db, "post2")

@@ -115,6 +115,15 @@ class LeaderboardEntry:
 
 
 @dataclass
+class ConsensusQualityStats:
+    n_grounded: int
+    mean_confidence: float
+    median_agreeing_comments: int
+    confidence_histogram: list[int]
+    """10 bins, each covering confidence range 0.0-0.1, 0.1-0.2, ... 0.9-1.0."""
+
+
+@dataclass
 class LlmCallSummary:
     id: int
     created_at: str
@@ -964,6 +973,42 @@ def get_llm_call(db: Database, call_id: int) -> LlmCallDetail | None:
 # ═══════════════════════════════════════════════════════
 # STATUS / REPORTING
 # ═══════════════════════════════════════════════════════
+
+
+def consensus_quality_stats(db: Database) -> ConsensusQualityStats:
+    """Aggregate quality stats over all ground_truths rows.
+
+    Returns mean confidence, median agreeing-comments count, and a 10-bin
+    histogram of confidence values (bin i covers [i/10, (i+1)/10)).
+    """
+    rows = db.conn.execute(
+        "SELECT consensus_confidence, num_agreeing_comments FROM ground_truths"
+    ).fetchall()
+    n = len(rows)
+    if n == 0:
+        return ConsensusQualityStats(
+            n_grounded=0,
+            mean_confidence=0.0,
+            median_agreeing_comments=0,
+            confidence_histogram=[0] * 10,
+        )
+
+    confidences = [r[0] or 0.0 for r in rows]
+    agreeing = sorted(r[1] or 0 for r in rows)
+    median_agreeing = agreeing[n // 2]
+    mean_conf = sum(confidences) / n
+
+    histogram = [0] * 10
+    for c in confidences:
+        bucket = min(int(c * 10), 9)  # 1.0 falls into bin 9, not 10
+        histogram[bucket] += 1
+
+    return ConsensusQualityStats(
+        n_grounded=n,
+        mean_confidence=mean_conf,
+        median_agreeing_comments=median_agreeing,
+        confidence_histogram=histogram,
+    )
 
 
 def get_status_counts(db: Database) -> StatusCounts:

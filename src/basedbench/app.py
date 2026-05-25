@@ -388,6 +388,134 @@ def compare_predictions(meme_selection: str):
     )
 
 
+# ── Tab 4: Stats & Leaderboard ───────────────────────────────────────
+
+
+def _load_stats() -> tuple[str, str, str, str]:
+    """Render the four markdown blocks shown on the Stats tab.
+
+    Returns (corpus, predictions, leaderboard, consensus_quality).
+    """
+    from basedbench.db import Database
+    from basedbench.db import queries
+
+    db = Database.open(_DB_PATH)
+    try:
+        counts = queries.get_status_counts(db)
+        pred_counts = queries.get_prediction_counts(db)
+        judge_counts = queries.get_judgment_counts(db)
+        agreement = queries.get_judge_agreement(db)
+        consensus = queries.consensus_quality_stats(db)
+    finally:
+        db.close()
+
+    # ─── Corpus snapshot ───
+    corpus_md = (
+        f"### Corpus\n\n"
+        f"| | |\n"
+        f"|---|---|\n"
+        f"| Total memes | **{counts.total_memes:,}** |\n"
+        f"| With consensus | **{counts.with_consensus:,}** |\n"
+        f"| Validated | **{counts.validated:,}** |\n"
+        f"| Excluded | {counts.excluded:,} |\n"
+        f"| Unreviewed (queue) | {counts.unreviewed:,} |\n"
+    )
+
+    # ─── Predictions status ───
+    if pred_counts:
+        pred_lines = [
+            f"| `{p.model_id}` | {p.predicted:,} / {p.total_available:,} |"
+            for p in pred_counts
+        ]
+        predictions_md = (
+            "### Predictions (against validated set)\n\n"
+            "| Target model | Done / Total |\n|---|---|\n"
+            + "\n".join(pred_lines)
+        )
+    else:
+        predictions_md = (
+            "### Predictions\n\n_No predictions yet. "
+            "Run `basedbench predict <model>` to start._"
+        )
+
+    # ─── Leaderboard: pivot per-(target, judge) into a matrix ───
+    if judge_counts:
+        judges = sorted({jc.judge_model for jc in judge_counts})
+        targets = sorted({jc.model_id for jc in judge_counts})
+        by_pair = {(jc.model_id, jc.judge_model): jc for jc in judge_counts}
+        agreement_by_target = {a.model_id: a for a in agreement}
+
+        header = "| Target model | " + " | ".join(f"vs. {j}" for j in judges) + " | Agreement |"
+        sep = "|---|" + "|".join(["---"] * len(judges)) + "|---|"
+        body_rows = []
+        for target in targets:
+            cells = []
+            accuracies = []
+            for j in judges:
+                jc = by_pair.get((target, j))
+                if jc is None or jc.judged == 0:
+                    cells.append("—")
+                else:
+                    cells.append(f"{jc.correct}/{jc.judged} ({jc.accuracy * 100:.1f}%)")
+                    accuracies.append(jc.accuracy)
+            agree = agreement_by_target.get(target)
+            if agree is not None and agree.judged_by_multiple > 0:
+                agree_cell = (
+                    f"{agree.agreements}/{agree.judged_by_multiple} "
+                    f"({agree.rate * 100:.1f}%)"
+                )
+            else:
+                agree_cell = "—"
+            body_rows.append(f"| `{target}` | " + " | ".join(cells) + f" | {agree_cell} |")
+        leaderboard_md = (
+            "### Leaderboard\n\n"
+            + header + "\n" + sep + "\n"
+            + "\n".join(body_rows)
+        )
+    else:
+        leaderboard_md = (
+            "### Leaderboard\n\n_No judgments yet. "
+            "Run `basedbench judge` after predictions to populate._"
+        )
+
+    # ─── Consensus quality ───
+    if consensus.n_grounded > 0:
+        # Log-scaled bar chart: any non-zero bin gets at least ▁ so highly
+        # skewed distributions (typical here, since strict-criteria
+        # consensus piles confidence near 1.0) stay readable.
+        import math
+
+        bars = "▁▂▃▄▅▆▇█"
+        max_count = max(consensus.confidence_histogram) or 1
+        log_max = math.log1p(max_count)
+        hist_chars = "".join(
+            " " if c == 0
+            else bars[min(int(math.log1p(c) / log_max * (len(bars) - 1)), len(bars) - 1)]
+            for c in consensus.confidence_histogram
+        )
+        # Also surface the raw bin counts so the bar chart's shape isn't the
+        # only signal
+        bin_labels = [f"{i/10:.1f}" for i in range(10)]
+        raw_counts = ", ".join(
+            f"{label}: {n}"
+            for label, n in zip(bin_labels, consensus.confidence_histogram)
+            if n > 0
+        )
+        consensus_md = (
+            f"### Consensus quality\n\n"
+            f"| | |\n|---|---|\n"
+            f"| N grounded memes | {consensus.n_grounded:,} |\n"
+            f"| Mean confidence | {consensus.mean_confidence:.3f} |\n"
+            f"| Median agreeing comments | {consensus.median_agreeing_comments} |\n"
+            f"| Confidence distribution (0.0 → 1.0) | `{hist_chars}` (log-scaled) |\n"
+            f"| Non-empty bins | {raw_counts} |\n"
+        )
+    else:
+        consensus_md = "### Consensus quality\n\n_No grounded memes yet._"
+
+    return corpus_md, predictions_md, leaderboard_md, consensus_md
+
+
 # ── Build Gradio App ─────────────────────────────────────────────────
 
 
@@ -532,6 +660,26 @@ def build_app() -> gr.Blocks:
                     inputs=[meme_selector],
                     outputs=[compare_image, compare_gt, compare_preds],
                 )
+
+        with gr.Tab("Stats & Leaderboard") as stats_tab:
+            gr.Markdown(
+                "_Refreshes when you switch to this tab — newly judged "
+                "predictions appear here automatically._"
+            )
+            with gr.Row():
+                stats_corpus = gr.Markdown()
+                stats_predictions = gr.Markdown()
+            stats_leaderboard = gr.Markdown()
+            stats_consensus = gr.Markdown()
+
+            stats_outputs = [
+                stats_corpus,
+                stats_predictions,
+                stats_leaderboard,
+                stats_consensus,
+            ]
+            stats_tab.select(_load_stats, outputs=stats_outputs)
+            app.load(_load_stats, outputs=stats_outputs)
 
     return app
 
