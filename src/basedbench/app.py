@@ -445,19 +445,48 @@ def _load_stats() -> tuple[str, str, str, str]:
         by_pair = {(jc.model_id, jc.judge_model): jc for jc in judge_counts}
         agreement_by_target = {a.model_id: a for a in agreement}
 
-        header = "| Target model | " + " | ".join(f"vs. {j}" for j in judges) + " | Agreement |"
-        sep = "|---|" + "|".join(["---"] * len(judges)) + "|---|"
-        body_rows = []
+        # Compute the per-target Combined (mean) score first so we can sort
+        # the leaderboard by it. Simple mean of per-judge accuracies — close
+        # enough to a strict per-prediction mean even when judge denominators
+        # differ slightly (off by <0.5% in practice).
+        combined_by_target: dict[str, float | None] = {}
         for target in targets:
+            accs = [
+                by_pair[(target, j)].accuracy
+                for j in judges
+                if (target, j) in by_pair and by_pair[(target, j)].judged > 0
+            ]
+            combined_by_target[target] = sum(accs) / len(accs) if accs else None
+
+        # Sort highest combined score first; targets without scores fall to the
+        # bottom but stay alphabetized among themselves.
+        ranked_targets = sorted(
+            targets,
+            key=lambda t: (
+                -(combined_by_target[t] or -1),
+                t,
+            ),
+        )
+
+        header = (
+            "| Target model | "
+            + " | ".join(f"vs. {j}" for j in judges)
+            + " | **Combined** | Agreement |"
+        )
+        sep = "|---|" + "|".join(["---"] * len(judges)) + "|---|---|"
+        body_rows = []
+        for target in ranked_targets:
             cells = []
-            accuracies = []
             for j in judges:
                 jc = by_pair.get((target, j))
                 if jc is None or jc.judged == 0:
                     cells.append("—")
                 else:
                     cells.append(f"{jc.correct}/{jc.judged} ({jc.accuracy * 100:.1f}%)")
-                    accuracies.append(jc.accuracy)
+            combined = combined_by_target[target]
+            combined_cell = (
+                f"**{combined * 100:.1f}%**" if combined is not None else "—"
+            )
             agree = agreement_by_target.get(target)
             if agree is not None and agree.judged_by_multiple > 0:
                 agree_cell = (
@@ -466,11 +495,17 @@ def _load_stats() -> tuple[str, str, str, str]:
                 )
             else:
                 agree_cell = "—"
-            body_rows.append(f"| `{target}` | " + " | ".join(cells) + f" | {agree_cell} |")
+            body_rows.append(
+                f"| `{target}` | "
+                + " | ".join(cells)
+                + f" | {combined_cell} | {agree_cell} |"
+            )
         leaderboard_md = (
             "### Leaderboard\n\n"
             + header + "\n" + sep + "\n"
             + "\n".join(body_rows)
+            + "\n\n_**Combined** = mean across judges. Agreement = fraction "
+            "of predictions where both judges returned the same verdict._"
         )
     else:
         leaderboard_md = (
