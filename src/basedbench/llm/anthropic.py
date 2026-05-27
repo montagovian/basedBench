@@ -59,8 +59,17 @@ class AnthropicPredictor:
                 with attempt:
                     response = await self._client.messages.create(
                         model=self._model,
-                        max_tokens=4000,
+                        # Bumped from 4000 → 16000: thinking tokens count
+                        # against max_tokens, so reserve room for adaptive
+                        # thinking to operate before the visible response.
+                        max_tokens=16000,
                         system=EXPLAIN_MEME_PROMPT,
+                        # Adaptive thinking at medium effort matches gpt-5.5's
+                        # default medium reasoning_effort for a fair eval.
+                        # On claude-opus-4-7 this is the only supported
+                        # thinking mode (manual budget_tokens returns 400).
+                        thinking={"type": "adaptive"},
+                        output_config={"effort": "medium"},
                         messages=[
                             {
                                 "role": "user",

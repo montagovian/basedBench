@@ -74,6 +74,11 @@ class OpenAIPredictor:
                             },
                         ],
                         max_completion_tokens=4000,
+                        # Explicit medium reasoning effort: matches gpt-5.5's
+                        # default but documents intent + protects against future
+                        # default changes. Symmetric with the Anthropic
+                        # predictor's adaptive thinking at effort=medium.
+                        reasoning_effort="medium",
                     )
         except openai.OpenAIError as e:
             record.latency_ms = int((time.monotonic() - start) * 1000)
