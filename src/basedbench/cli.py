@@ -384,6 +384,34 @@ def traces(
     console.print(f"\n{len(rows)} calls shown (use --id N for full detail)")
 
 
+# ───────────────────────── cleanup ─────────────────────────
+
+
+@app.command()
+def cleanup(
+    missing_images: bool = typer.Option(
+        False,
+        "--missing-images",
+        help="Auto-exclude consensus-passed memes that have no local image file.",
+    ),
+) -> None:
+    """Maintenance tasks for stale or unusable rows. At least one flag required."""
+    _configure_logging()
+    if not missing_images:
+        raise typer.BadParameter(
+            "No cleanup target selected. Pass --missing-images (or another flag)."
+        )
+
+    db, _ = _load()
+    console = Console()
+    if missing_images:
+        n = queries.auto_exclude_missing_images(db)
+        console.print(
+            f"Auto-excluded {n} memes with missing images "
+            "(reason='image_missing')."
+        )
+
+
 # ───────────────────────── review / view (Phase 6 — Gradio) ─────────────────────────
 
 

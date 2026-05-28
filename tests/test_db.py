@@ -445,6 +445,41 @@ def test_llm_call_filters(db: Database):
 # ═══════════════════════════════════════════════════════
 
 
+def test_auto_exclude_missing_images(db: Database):
+    """Memes with consensus but no local_image_path get auto-excluded."""
+    # Two consensus-passed memes: one with image, one without.
+    _setup_validated_meme(db, "with_image")  # don't actually validate; revert below
+    _setup_validated_meme(db, "no_image")
+    # Remove the review rows from setup so they're in "needs review" state.
+    db.conn.execute("DELETE FROM reviews")
+    # Set image path explicitly.
+    q.update_meme_image_path(db, "with_image", "data/images/with_image.jpg")
+    # Leave 'no_image' with NULL local_image_path.
+
+    n = q.auto_exclude_missing_images(db)
+    assert n == 1
+
+    review = db.conn.execute(
+        "SELECT status, reason FROM reviews WHERE post_id='no_image'"
+    ).fetchone()
+    assert review == ("excluded", "image_missing")
+    no_review = db.conn.execute(
+        "SELECT 1 FROM reviews WHERE post_id='with_image'"
+    ).fetchone()
+    assert no_review is None
+
+
+def test_auto_exclude_missing_images_idempotent(db: Database):
+    """Re-running doesn't double-exclude; uses INSERT OR IGNORE."""
+    _setup_validated_meme(db, "broken")
+    db.conn.execute("DELETE FROM reviews")  # back to needs-review state
+
+    first = q.auto_exclude_missing_images(db)
+    second = q.auto_exclude_missing_images(db)
+    assert first == 1
+    assert second == 0  # already excluded
+
+
 def test_consensus_quality_stats_empty(db: Database):
     stats = q.consensus_quality_stats(db)
     assert stats.n_grounded == 0
