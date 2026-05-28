@@ -145,6 +145,22 @@ CREATE TABLE IF NOT EXISTS dataset_pushes (
 );
 """
 
+# Migration 5: Consensus regression set — flagged ground-truth failures,
+# used to A/B prompt or model changes against a known set of misses.
+MIGRATION_005 = """\
+CREATE TABLE IF NOT EXISTS consensus_regression (
+    post_id TEXT PRIMARY KEY REFERENCES memes(post_id),
+    status TEXT NOT NULL CHECK(status IN ('wrong', 'partial', 'correct')),
+    canonical_explanation TEXT,
+    failure_modes TEXT,
+    reviewer_notes TEXT,
+    consensus_at_annotation TEXT NOT NULL,
+    annotated_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_consensus_regression_status
+    ON consensus_regression(status);
+"""
+
 
 def _column_exists(conn: sqlite3.Connection, table: str, column: str) -> bool:
     cursor = conn.execute(
@@ -174,3 +190,7 @@ def run_migrations(conn: sqlite3.Connection) -> None:
     if version < 4:
         conn.executescript(MIGRATION_004)
         conn.execute("PRAGMA user_version = 4")
+
+    if version < 5:
+        conn.executescript(MIGRATION_005)
+        conn.execute("PRAGMA user_version = 5")

@@ -412,6 +412,89 @@ def cleanup(
         )
 
 
+# ───────────────────────── regression-eval ─────────────────────────
+
+
+@app.command(name="regression-eval")
+def regression_eval(
+    status_filter: str | None = typer.Option(
+        None, "--status",
+        help="Only test entries with this status (wrong/partial/correct).",
+    ),
+    limit: int | None = typer.Option(
+        None, "--limit", help="Test only the first N entries (for fast iteration)."
+    ),
+) -> None:
+    """Re-run consensus on the flagged regression set, show old vs new vs canonical.
+
+    Useful for A/B-testing consensus prompt or model changes against a curated
+    set of known failures. Doesn't write to the DB — read-only inspection.
+    """
+    _configure_logging()
+    db, config = _load()
+    console = Console()
+
+    entries = queries.list_consensus_regressions(db, status=status_filter)
+    if limit is not None:
+        entries = entries[:limit]
+    if not entries:
+        console.print("[yellow]No regression entries to test.[/yellow]")
+        return
+
+    console.print(
+        f"Re-running consensus on {len(entries)} flagged meme(s) "
+        f"with model={config.consensus_model}...\n"
+    )
+
+    from basedbench.llm.consensus import ConsensusDetector
+
+    detector = ConsensusDetector(config)
+    changed = 0
+    unchanged = 0
+
+    async def run_one(entry):
+        post = queries.reconstruct_raw_post(db, entry.post_id)
+        if post is None:
+            return None, "could not reconstruct post"
+        result, _ = await detector.detect_consensus(post)
+        return result, None
+
+    for i, entry in enumerate(entries, 1):
+        console.print(f"[bold cyan][{i}/{len(entries)}] {entry.post_id}[/bold cyan]")
+        console.print(f"  flagged as: [bold]{entry.status}[/bold]")
+        if entry.failure_modes:
+            console.print(f"  failure modes: {entry.failure_modes}")
+        console.print(f"\n  [dim]OLD consensus (at flag time):[/dim]")
+        console.print(f"    {entry.consensus_at_annotation}")
+        if entry.canonical_explanation:
+            console.print(f"\n  [green]CANONICAL (user-provided):[/green]")
+            console.print(f"    {entry.canonical_explanation}")
+
+        result, err = asyncio.run(run_one(entry))
+        if err is not None:
+            console.print(f"  [red]Re-run failed: {err}[/red]\n")
+            continue
+
+        if result.has_consensus:
+            new_text = result.selected_explanation or ""
+            console.print(f"\n  [magenta]NEW consensus (current config):[/magenta]")
+            console.print(f"    {new_text}")
+            if new_text.strip() == entry.consensus_at_annotation.strip():
+                console.print("  [yellow]→ unchanged[/yellow]\n")
+                unchanged += 1
+            else:
+                console.print("  [bold green]→ CHANGED[/bold green]\n")
+                changed += 1
+        else:
+            console.print("\n  [magenta]NEW: no consensus reached[/magenta]\n")
+            changed += 1
+
+    console.print(
+        f"\n[bold]Summary:[/bold] {changed} changed, {unchanged} unchanged "
+        f"(of {len(entries)} tested)"
+    )
+
+
 # ───────────────────────── review / view (Phase 6 — Gradio) ─────────────────────────
 
 

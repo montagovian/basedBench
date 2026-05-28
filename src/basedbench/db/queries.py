@@ -136,6 +136,17 @@ class LlmCallSummary:
 
 
 @dataclass
+class ConsensusRegression:
+    post_id: str
+    status: str  # 'wrong' | 'partial' | 'correct'
+    canonical_explanation: str | None
+    failure_modes: str | None  # comma-separated tags, freeform
+    reviewer_notes: str | None
+    consensus_at_annotation: str  # snapshot of the gt explanation at flag time
+    annotated_at: str
+
+
+@dataclass
 class LlmCallDetail:
     id: int
     created_at: str
@@ -1206,3 +1217,77 @@ def list_dataset_pushes(db: Database, snapshot_id: str | None = None) -> list[tu
                FROM dataset_pushes ORDER BY id DESC"""
         ).fetchall()
     return [(r[0], r[1], r[2], r[3], r[4]) for r in rows]
+
+
+# ═══════════════════════════════════════════════════════
+# Consensus regression set
+# ═══════════════════════════════════════════════════════
+
+
+def flag_consensus_regression(
+    db: Database,
+    post_id: str,
+    status: str,
+    consensus_at_annotation: str,
+    canonical_explanation: str | None = None,
+    failure_modes: str | None = None,
+    reviewer_notes: str | None = None,
+) -> None:
+    """Flag a meme's consensus output as wrong/partial/correct.
+
+    Captures the consensus explanation at flag-time so future re-runs can
+    be compared against the version we caught failing.
+    """
+    if status not in ("wrong", "partial", "correct"):
+        raise ValueError(f"invalid status: {status!r}")
+    db.conn.execute(
+        """INSERT OR REPLACE INTO consensus_regression
+           (post_id, status, canonical_explanation, failure_modes,
+            reviewer_notes, consensus_at_annotation, annotated_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?)""",
+        (
+            post_id, status, canonical_explanation, failure_modes,
+            reviewer_notes, consensus_at_annotation, _now(),
+        ),
+    )
+
+
+def get_consensus_regression(db: Database, post_id: str) -> ConsensusRegression | None:
+    row = db.conn.execute(
+        """SELECT post_id, status, canonical_explanation, failure_modes,
+                  reviewer_notes, consensus_at_annotation, annotated_at
+           FROM consensus_regression WHERE post_id = ?""",
+        (post_id,),
+    ).fetchone()
+    if row is None:
+        return None
+    return ConsensusRegression(*row)
+
+
+def list_consensus_regressions(
+    db: Database, status: str | None = None
+) -> list[ConsensusRegression]:
+    if status is not None:
+        rows = db.conn.execute(
+            """SELECT post_id, status, canonical_explanation, failure_modes,
+                      reviewer_notes, consensus_at_annotation, annotated_at
+               FROM consensus_regression WHERE status = ?
+               ORDER BY annotated_at DESC""",
+            (status,),
+        ).fetchall()
+    else:
+        rows = db.conn.execute(
+            """SELECT post_id, status, canonical_explanation, failure_modes,
+                      reviewer_notes, consensus_at_annotation, annotated_at
+               FROM consensus_regression
+               ORDER BY annotated_at DESC"""
+        ).fetchall()
+    return [ConsensusRegression(*r) for r in rows]
+
+
+def unflag_consensus_regression(db: Database, post_id: str) -> bool:
+    """Remove a regression entry. Returns True if a row was deleted."""
+    cursor = db.conn.execute(
+        "DELETE FROM consensus_regression WHERE post_id = ?", (post_id,)
+    )
+    return cursor.rowcount > 0

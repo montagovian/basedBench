@@ -183,6 +183,55 @@ def skip_meme():
     return load_next_unreviewed()
 
 
+def flag_consensus_failure(
+    post_id: str,
+    status: str,
+    failure_modes: str,
+    reviewer_notes: str,
+    canonical_explanation: str,
+) -> str:
+    """Persist a consensus-regression entry for the current meme.
+
+    Captures the current ground-truth explanation at flag-time so the regression
+    eval can compare future re-runs against the version we caught failing.
+    Returns a markdown status string for the UI.
+    """
+    if not post_id:
+        return "_No meme loaded — switch tabs or pick a meme first._"
+
+    conn = _get_conn()
+    row = conn.execute(
+        "SELECT explanation FROM ground_truths WHERE post_id = ?", (post_id,)
+    ).fetchone()
+    if row is None:
+        conn.close()
+        return f"_No ground truth exists for `{post_id}` to flag._"
+    consensus_now = row["explanation"]
+    now = datetime.now(timezone.utc).isoformat()
+
+    conn.execute(
+        """INSERT OR REPLACE INTO consensus_regression
+           (post_id, status, canonical_explanation, failure_modes,
+            reviewer_notes, consensus_at_annotation, annotated_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?)""",
+        (
+            post_id,
+            status,
+            (canonical_explanation or None) and canonical_explanation.strip() or None,
+            (failure_modes or None) and failure_modes.strip() or None,
+            (reviewer_notes or None) and reviewer_notes.strip() or None,
+            consensus_now,
+            now,
+        ),
+    )
+    conn.commit()
+    conn.close()
+    return (
+        f"✅ Flagged `{post_id}` as **{status}** in the regression set "
+        f"({now[:19]}Z)."
+    )
+
+
 # ── Tab 2: Browse ────────────────────────────────────────────────────
 
 
@@ -548,6 +597,65 @@ def _load_stats() -> tuple[str, str, str, str]:
     else:
         consensus_md = "### Consensus quality\n\n_No grounded memes yet._"
 
+
+# ── Tab 5: AI Gloss Failures (regression set) ────────────────────────
+
+
+def _load_regressions() -> str:
+    """Render the table of flagged consensus failures."""
+    from basedbench.db import Database
+    from basedbench.db import queries
+
+    db = Database.open(_DB_PATH)
+    try:
+        entries = queries.list_consensus_regressions(db)
+    finally:
+        db.close()
+
+    if not entries:
+        return (
+            "### AI Gloss Failures\n\n"
+            "_None flagged yet. Use the **🚩 Flag this meme's ground-truth** "
+            "accordion under Review Queue to add cases where the consensus "
+            "model produced a wrong gloss._"
+        )
+
+    by_status: dict[str, int] = {}
+    for e in entries:
+        by_status[e.status] = by_status.get(e.status, 0) + 1
+    counts = " · ".join(
+        f"**{by_status.get(s, 0)}** {s}" for s in ("wrong", "partial", "correct")
+    )
+
+    rows = []
+    for e in entries:
+        # Truncate long fields for readability; full text still in DB.
+        snippet = (e.consensus_at_annotation or "").replace("\n", " ").strip()
+        if len(snippet) > 220:
+            snippet = snippet[:220] + "…"
+        notes = (e.reviewer_notes or "—").replace("\n", " ").strip()
+        if len(notes) > 120:
+            notes = notes[:120] + "…"
+        canonical = (e.canonical_explanation or "—").replace("\n", " ").strip()
+        if len(canonical) > 120:
+            canonical = canonical[:120] + "…"
+        modes = e.failure_modes or "—"
+        rows.append(
+            f"| `{e.post_id}` | **{e.status}** | {snippet} | "
+            f"{canonical} | {modes} | {notes} | {e.annotated_at[:10]} |"
+        )
+
+    return (
+        "### AI Gloss Failures\n\n"
+        f"{len(entries)} flagged · {counts}\n\n"
+        "| post_id | status | consensus at flag time | canonical | "
+        "failure modes | notes | date |\n"
+        "|---|---|---|---|---|---|---|\n"
+        + "\n".join(rows)
+        + "\n\n_Run `basedbench regression-eval` (coming) to re-test these "
+        "against current consensus config._"
+    )
+
     return corpus_md, predictions_md, leaderboard_md, consensus_md
 
 
@@ -609,6 +717,50 @@ def build_app() -> gr.Blocks:
             )
             btn_skip.click(skip_meme, inputs=[], outputs=review_outputs)
             app.load(load_next_unreviewed, outputs=review_outputs)
+
+            with gr.Accordion(
+                "🚩 Flag this meme's ground-truth explanation (consensus failure)",
+                open=False,
+            ):
+                gr.Markdown(
+                    "_Use this when the consensus model's gloss is wrong, "
+                    "missing the joke, or merging incompatible interpretations. "
+                    "Flagged memes go into the regression set for testing future "
+                    "consensus prompt/model changes._"
+                )
+                flag_status = gr.Radio(
+                    choices=["wrong", "partial", "correct"],
+                    value="wrong",
+                    label="Status",
+                    info="`wrong` = gloss misses the joke; `partial` = "
+                    "gloss captures part but not the full picture; "
+                    "`correct` = surprisingly good (use sparingly, as positive controls).",
+                )
+                flag_failure_modes = gr.Textbox(
+                    label="Failure modes (comma-separated tags)",
+                    placeholder="e.g. vote_bias, merged_views, ignored_kym_link",
+                )
+                flag_canonical = gr.Textbox(
+                    label="Canonical explanation (optional)",
+                    placeholder="What the gloss SHOULD have said — e.g. linked KYM "
+                    "explanation, your own correction…",
+                    lines=3,
+                )
+                flag_notes = gr.Textbox(
+                    label="Reviewer notes",
+                    placeholder="Why this is wrong, what the model missed, etc.",
+                    lines=2,
+                )
+                btn_flag = gr.Button("Flag for regression set", variant="secondary")
+                flag_feedback = gr.Markdown()
+                btn_flag.click(
+                    flag_consensus_failure,
+                    inputs=[
+                        review_post_id, flag_status, flag_failure_modes,
+                        flag_notes, flag_canonical,
+                    ],
+                    outputs=[flag_feedback],
+                )
 
         with gr.Tab("Browse") as browse_tab:
             with gr.Row():
@@ -715,6 +867,15 @@ def build_app() -> gr.Blocks:
             ]
             stats_tab.select(_load_stats, outputs=stats_outputs)
             app.load(_load_stats, outputs=stats_outputs)
+
+        with gr.Tab("AI Gloss Failures") as regressions_tab:
+            gr.Markdown(
+                "_Curated regression set of memes whose consensus gloss missed "
+                "the joke. Used to A/B future consensus prompt/model changes._"
+            )
+            regressions_md = gr.Markdown()
+            regressions_tab.select(_load_regressions, outputs=[regressions_md])
+            app.load(_load_regressions, outputs=[regressions_md])
 
     return app
 

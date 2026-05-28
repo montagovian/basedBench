@@ -1,5 +1,7 @@
 """Tests for db/ module — mirrors v4 query tests."""
 
+import pytest
+
 from basedbench.db import Database
 from basedbench.db import queries as q
 from basedbench.llm.record import LlmCallRecord
@@ -443,6 +445,75 @@ def test_llm_call_filters(db: Database):
 # ═══════════════════════════════════════════════════════
 # Export / Leaderboard
 # ═══════════════════════════════════════════════════════
+
+
+def test_flag_and_list_consensus_regression(db: Database):
+    _setup_validated_meme(db, "p1")
+    _setup_validated_meme(db, "p2")
+
+    q.flag_consensus_regression(
+        db,
+        post_id="p1",
+        status="wrong",
+        consensus_at_annotation="A bad gloss.",
+        canonical_explanation="The real joke is X.",
+        failure_modes="vote_bias,merged_views",
+        reviewer_notes="Top votes were misleading.",
+    )
+    q.flag_consensus_regression(
+        db,
+        post_id="p2",
+        status="partial",
+        consensus_at_annotation="Half-right.",
+    )
+
+    all_entries = q.list_consensus_regressions(db)
+    assert len(all_entries) == 2
+    by_id = {e.post_id: e for e in all_entries}
+    assert by_id["p1"].status == "wrong"
+    assert by_id["p1"].failure_modes == "vote_bias,merged_views"
+    assert by_id["p1"].canonical_explanation == "The real joke is X."
+    assert by_id["p2"].status == "partial"
+    assert by_id["p2"].canonical_explanation is None
+
+
+def test_flag_consensus_regression_invalid_status_raises(db: Database):
+    _setup_validated_meme(db, "p1")
+    with pytest.raises(ValueError, match="invalid status"):
+        q.flag_consensus_regression(
+            db, post_id="p1", status="nonsense", consensus_at_annotation="x"
+        )
+
+
+def test_flag_consensus_regression_is_idempotent(db: Database):
+    """Re-flagging the same post overwrites the prior entry, doesn't duplicate."""
+    _setup_validated_meme(db, "p1")
+    q.flag_consensus_regression(db, "p1", "wrong", consensus_at_annotation="v1")
+    q.flag_consensus_regression(db, "p1", "partial", consensus_at_annotation="v2")
+    entries = q.list_consensus_regressions(db)
+    assert len(entries) == 1
+    assert entries[0].status == "partial"
+    assert entries[0].consensus_at_annotation == "v2"
+
+
+def test_list_consensus_regressions_filters_by_status(db: Database):
+    _setup_validated_meme(db, "a")
+    _setup_validated_meme(db, "b")
+    _setup_validated_meme(db, "c")
+    q.flag_consensus_regression(db, "a", "wrong", consensus_at_annotation="x")
+    q.flag_consensus_regression(db, "b", "wrong", consensus_at_annotation="y")
+    q.flag_consensus_regression(db, "c", "partial", consensus_at_annotation="z")
+
+    wrong_only = q.list_consensus_regressions(db, status="wrong")
+    assert {e.post_id for e in wrong_only} == {"a", "b"}
+
+
+def test_unflag_consensus_regression(db: Database):
+    _setup_validated_meme(db, "p1")
+    q.flag_consensus_regression(db, "p1", "wrong", consensus_at_annotation="x")
+    assert q.unflag_consensus_regression(db, "p1") is True
+    assert q.unflag_consensus_regression(db, "p1") is False  # already gone
+    assert q.list_consensus_regressions(db) == []
 
 
 def test_auto_exclude_missing_images(db: Database):
