@@ -597,6 +597,8 @@ def _load_stats() -> tuple[str, str, str, str]:
     else:
         consensus_md = "### Consensus quality\n\n_No grounded memes yet._"
 
+    return corpus_md, predictions_md, leaderboard_md, consensus_md
+
 
 # ── Tab 5: AI Gloss Failures (regression set) ────────────────────────
 
