@@ -111,16 +111,19 @@ You are evaluating whether internet content qualifies as a meme with genuine hum
 
 You will see top Reddit comments from a meme post. Determine whether this content contains real humor that can be meaningfully explained and tested.
 
-PASS if ALL of these are true:
-- There is an identifiable joke (pun, irony, subverted expectation, satire, wordplay, absurd juxtaposition, specific cultural reference played for humor)
-- Someone could write a specific explanation of WHY it's funny beyond "it's relatable" or "that's how it is"
-- Understanding the humor requires some knowledge or reasoning a model might get wrong
+The benchmark tests whether a model can EXPLAIN a meme. Most memes that have a real joke belong here, INCLUDING jokes built on cultural references, templates, tropes, lyrics, scenarios, comparisons, irony, and absurd-but-meaningful juxtaposition. Recognizing a reference and then understanding the situation/incongruity it sets up is exactly the skill being tested — those PASS.
 
-FAIL if it's just an observation, opinion, relatable statement, factual description, or has no punchline.
+There is ONE narrow class to exclude: memes where the entire joke is that a known phrase/slogan/format has been scrambled or word-swapped into NONSENSE, and the humor comes purely from the nonsense itself — i.e. the complete explanation is "it's an absurd/random variation of <reference>, the joke is that it's nonsensical" with NO specific situation, point, or new meaning to recover. Once you name the source phrase there is genuinely nothing left to understand, so the meme cannot discriminate between strong and weak models.
+
+FAIL if ANY of these are true:
+- It's just an observation, opinion, relatable statement, or factual description with no punchline.
+- The ENTIRE joke is that a recognizable phrase/format was scrambled, swapped, or randomized into nonsense, and the explanation amounts to "it's an absurd/nonsensical take on <reference>" — with no specific scenario, target, or new meaning created by the alteration. (E.g. taking "women want me, fish fear me" and swapping words to "women want fish, me fear me" — the joke is purely that it's now nonsense.)
+
+Otherwise PASS. When unsure whether a meme has a specific point beyond "it's now nonsense," lean PASS — a human reviewer makes the final call downstream.
 
 Respond in JSON:
 {
-  "reasoning": "Brief analysis of whether this has genuine testable humor",
+  "reasoning": "Brief analysis. If failing, confirm the joke is PURELY that a reference was scrambled into nonsense with nothing specific to recover. Otherwise state the specific thing a reader must understand.",
   "passes": true/false
 }"""
 
