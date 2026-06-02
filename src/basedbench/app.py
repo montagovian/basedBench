@@ -719,12 +719,14 @@ def inspect_step(ids: list[str], idx: int, delta: int):
     )
 
 
-def flag_gate_misfire(
-    post_id: str, gate: str, correct_decision: str, notes: str
-) -> str:
-    """Record that a gate/consensus decision was wrong, capturing what it decided."""
+def flag_gate_misfire(post_id: str, gate: str, correct_decision: str, notes: str):
+    """Record that a gate/consensus decision was wrong, capturing what it decided.
+
+    Returns (feedback_md, cleared_correct, cleared_notes) so the form resets after
+    a submit and the confirmation is timestamped (so repeat flags visibly update).
+    """
     if not post_id:
-        return "_No meme loaded._"
+        return ("_No meme loaded._", gr.update(), gr.update())
 
     detail = _inspect_detail(post_id)
     gate_decision = None
@@ -736,6 +738,7 @@ def flag_gate_misfire(
         elif gate == "consensus":
             gate_decision = "no_consensus" if detail["state"] == "no_consensus" else None
 
+    now = datetime.now(timezone.utc).isoformat()
     conn = _get_conn()
     conn.execute(
         """INSERT OR REPLACE INTO gate_feedback
@@ -747,12 +750,16 @@ def flag_gate_misfire(
             gate_decision,
             (correct_decision or "").strip() or None,
             (notes or "").strip() or None,
-            datetime.now(timezone.utc).isoformat(),
+            now,
         ),
     )
     conn.commit()
     conn.close()
-    return f"✅ Flagged `{post_id}` — **{gate}** gate marked wrong."
+    return (
+        f"✅ Flagged `{post_id}` — **{gate}** gate marked wrong. ({now[11:19]}Z)",
+        gr.update(value=""),
+        gr.update(value=""),
+    )
 
 
 # ── Tab 5: Stats & Leaderboard ───────────────────────────────────────
@@ -1322,7 +1329,7 @@ def build_app() -> gr.Blocks:
             btn_misfire.click(
                 flag_gate_misfire,
                 inputs=[inspect_post_id, misfire_gate, misfire_correct, misfire_notes],
-                outputs=[misfire_feedback],
+                outputs=[misfire_feedback, misfire_correct, misfire_notes],
             )
             # Refresh subreddit options + load the first page on tab activation.
             inspect_tab.select(
