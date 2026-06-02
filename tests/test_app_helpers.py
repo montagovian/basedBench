@@ -2,7 +2,87 @@
 
 from __future__ import annotations
 
-from basedbench.app import _inline_image_urls
+from basedbench.app import (
+    _classify_state,
+    _inline_image_urls,
+    _inspect_where,
+    _position_text,
+)
+
+
+def _row(**kw):
+    """Minimal stand-in for an sqlite3.Row (supports __getitem__ by name)."""
+    base = {
+        "review_status": None,
+        "review_reason": None,
+        "explanation": None,
+        "consensus_ran": 0,
+    }
+    base.update(kw)
+    return base
+
+
+def test_classify_state_validated():
+    assert _classify_state(_row(review_status="validated")) == "validated"
+
+
+def test_classify_state_gate_exclusions_by_reason_prefix():
+    assert _classify_state(
+        _row(review_status="excluded", review_reason="safety: slur")
+    ) == "safety_excluded"
+    assert _classify_state(
+        _row(review_status="excluded", review_reason="auto: no clear joke")
+    ) == "quality_excluded"
+    assert _classify_state(
+        _row(review_status="excluded", review_reason="image_missing")
+    ) == "image_missing"
+    assert _classify_state(
+        _row(review_status="excluded", review_reason="bad image")
+    ) == "human_excluded"
+
+
+def test_classify_state_unreviewed_vs_no_consensus_vs_pending():
+    # Has a ground-truth explanation, no review -> in the queue
+    assert _classify_state(_row(explanation="it's about cats")) == "unreviewed"
+    # No GT but consensus ran -> genuine no-consensus
+    assert _classify_state(_row(consensus_ran=1)) == "no_consensus"
+    # No GT, consensus never ran -> not yet processed
+    assert _classify_state(_row()) == "pending"
+
+
+def test_inspect_where_all_has_no_state_condition():
+    where, params = _inspect_where("all", "all", "")
+    assert where == "1=1"
+    assert params == []
+
+
+def test_inspect_where_quality_excluded_uses_auto_prefix():
+    where, params = _inspect_where("quality_excluded", "all", "")
+    assert "r.reason LIKE 'auto:%'" in where
+    assert params == []
+
+
+def test_inspect_where_combines_status_subreddit_search():
+    where, params = _inspect_where("validated", "memes", "cat")
+    assert "r.status = 'validated'" in where
+    assert "m.subreddit = ?" in where
+    assert "m.title LIKE ?" in where
+    assert params == ["memes", "%cat%"]
+
+
+def test_inspect_where_human_excluded_excludes_gate_reasons():
+    where, _ = _inspect_where("human_excluded", "all", "")
+    assert "NOT LIKE 'safety:%'" in where
+    assert "NOT LIKE 'auto:%'" in where
+    assert "image_missing" in where
+
+
+def test_position_text():
+    assert _position_text(0, [], 0) == "0 / 0"
+    assert _position_text(0, ["a", "b", "c"], 3) == "1 / 3"
+    assert _position_text(2, ["a", "b", "c"], 3) == "3 / 3"
+    # capped result notes the true total
+    assert _position_text(0, ["a"], 50) == "1 / 1 (capped from 50)"
 
 
 def test_preview_redd_it_url_becomes_clickable_image():

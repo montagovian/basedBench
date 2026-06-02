@@ -147,6 +147,16 @@ class ConsensusRegression:
 
 
 @dataclass
+class GateFeedback:
+    post_id: str
+    gate: str  # 'safety' | 'quality' | 'consensus'
+    gate_decision: str | None  # what the gate actually decided, captured at flag time
+    correct_decision: str | None  # what it should have been (freeform)
+    notes: str | None
+    created_at: str
+
+
+@dataclass
 class LlmCallDetail:
     id: int
     created_at: str
@@ -1289,5 +1299,50 @@ def unflag_consensus_regression(db: Database, post_id: str) -> bool:
     """Remove a regression entry. Returns True if a row was deleted."""
     cursor = db.conn.execute(
         "DELETE FROM consensus_regression WHERE post_id = ?", (post_id,)
+    )
+    return cursor.rowcount > 0
+
+
+def flag_gate_feedback(
+    db: Database,
+    post_id: str,
+    gate: str,
+    gate_decision: str | None = None,
+    correct_decision: str | None = None,
+    notes: str | None = None,
+) -> None:
+    """Record that a safety/quality/consensus filter decision was wrong.
+
+    Keyed on (post_id, gate) so re-flagging the same gate updates in place.
+    """
+    db.conn.execute(
+        """INSERT OR REPLACE INTO gate_feedback
+           (post_id, gate, gate_decision, correct_decision, notes, created_at)
+           VALUES (?, ?, ?, ?, ?, ?)""",
+        (post_id, gate, gate_decision, correct_decision, notes, _now()),
+    )
+
+
+def list_gate_feedback(db: Database, gate: str | None = None) -> list[GateFeedback]:
+    if gate is not None:
+        rows = db.conn.execute(
+            """SELECT post_id, gate, gate_decision, correct_decision, notes, created_at
+               FROM gate_feedback WHERE gate = ?
+               ORDER BY created_at DESC""",
+            (gate,),
+        ).fetchall()
+    else:
+        rows = db.conn.execute(
+            """SELECT post_id, gate, gate_decision, correct_decision, notes, created_at
+               FROM gate_feedback
+               ORDER BY created_at DESC"""
+        ).fetchall()
+    return [GateFeedback(*r) for r in rows]
+
+
+def unflag_gate_feedback(db: Database, post_id: str, gate: str) -> bool:
+    """Remove a gate-feedback entry. Returns True if a row was deleted."""
+    cursor = db.conn.execute(
+        "DELETE FROM gate_feedback WHERE post_id = ? AND gate = ?", (post_id, gate)
     )
     return cursor.rowcount > 0

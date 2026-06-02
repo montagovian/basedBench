@@ -162,6 +162,25 @@ CREATE INDEX IF NOT EXISTS idx_consensus_regression_status
 """
 
 
+# Migration 6: Filter-misfire feedback — human flags that a safety/quality/
+# consensus decision was wrong (false exclude, false keep, missed consensus).
+# Parallel to consensus_regression, but about the binary FILTER decision rather
+# than the quality of a consensus gloss.
+MIGRATION_006 = """\
+CREATE TABLE IF NOT EXISTS gate_feedback (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    post_id TEXT NOT NULL REFERENCES memes(post_id),
+    gate TEXT NOT NULL CHECK(gate IN ('safety', 'quality', 'consensus')),
+    gate_decision TEXT,
+    correct_decision TEXT,
+    notes TEXT,
+    created_at TEXT NOT NULL,
+    UNIQUE(post_id, gate)
+);
+CREATE INDEX IF NOT EXISTS idx_gate_feedback_gate ON gate_feedback(gate);
+"""
+
+
 def _column_exists(conn: sqlite3.Connection, table: str, column: str) -> bool:
     cursor = conn.execute(
         f"SELECT COUNT(*) FROM pragma_table_info('{table}') WHERE name = ?",
@@ -194,3 +213,7 @@ def run_migrations(conn: sqlite3.Connection) -> None:
     if version < 5:
         conn.executescript(MIGRATION_005)
         conn.execute("PRAGMA user_version = 5")
+
+    if version < 6:
+        conn.executescript(MIGRATION_006)
+        conn.execute("PRAGMA user_version = 6")

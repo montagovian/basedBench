@@ -1,9 +1,13 @@
 """Gradio review UI — validator for meme ground truths.
 
-Three tabs:
+Tabs:
 - Review Queue: validate / exclude / skip unreviewed consensus results
 - Browse: filter and search the meme database
 - Prediction Comparison: compare model predictions side-by-side per meme
+- Inspect: read-only viewer over ALL content (incl. excluded), flag filter misfires
+- Stats & Leaderboard: corpus/prediction/judge stats
+- AI Gloss Failures: consensus-gloss regression set
+- Filter Misfires: flagged safety/quality/consensus misfires
 """
 
 from __future__ import annotations
@@ -437,7 +441,321 @@ def compare_predictions(meme_selection: str):
     )
 
 
-# ── Tab 4: Stats & Leaderboard ───────────────────────────────────────
+# ── Tab 4: Inspect (read-only viewer over ALL content) ───────────────
+
+# Every meme falls into exactly one state, derived from its review/ground-truth
+# rows plus whether the consensus model ever ran on it. The labels mirror how
+# the ingest pipeline records each decision (see pipeline/ingest.py).
+_INSPECT_STATES: list[tuple[str, str]] = [
+    ("all", "All content"),
+    ("unreviewed", "❓ In review queue"),
+    ("validated", "✅ Validated"),
+    ("no_consensus", "⭕ No consensus"),
+    ("quality_excluded", "❌ Quality gate excluded"),
+    ("safety_excluded", "❌ Safety gate excluded"),
+    ("human_excluded", "❌ Reviewer excluded"),
+    ("image_missing", "❌ Image missing"),
+    ("pending", "⏳ Not yet processed"),
+]
+_INSPECT_STATE_LABELS = dict(_INSPECT_STATES)
+
+# Common FROM clause: left-joins so memes with no ground truth / no review still
+# appear, plus a derived "did consensus ever run" flag to separate genuine
+# no-consensus memes from ones that were never processed.
+_INSPECT_FROM = """
+    FROM memes m
+    LEFT JOIN ground_truths gt ON m.post_id = gt.post_id
+    LEFT JOIN reviews r ON m.post_id = r.post_id
+    LEFT JOIN (
+        SELECT DISTINCT post_id FROM llm_calls WHERE role = 'consensus'
+    ) cc ON cc.post_id = m.post_id
+"""
+
+
+def _inspect_where(
+    status: str, subreddit: str, search: str
+) -> tuple[str, list[object]]:
+    conds: list[str] = []
+    params: list[object] = []
+
+    state_conds = {
+        "validated": "r.status = 'validated'",
+        "safety_excluded": "r.status = 'excluded' AND r.reason LIKE 'safety:%'",
+        "quality_excluded": "r.status = 'excluded' AND r.reason LIKE 'auto:%'",
+        "image_missing": "r.status = 'excluded' AND r.reason = 'image_missing'",
+        "human_excluded": (
+            "r.status = 'excluded' AND r.reason NOT LIKE 'safety:%' "
+            "AND r.reason NOT LIKE 'auto:%' AND r.reason <> 'image_missing'"
+        ),
+        "unreviewed": "r.post_id IS NULL AND gt.post_id IS NOT NULL",
+        "no_consensus": (
+            "r.post_id IS NULL AND gt.post_id IS NULL AND cc.post_id IS NOT NULL"
+        ),
+        "pending": (
+            "r.post_id IS NULL AND gt.post_id IS NULL AND cc.post_id IS NULL"
+        ),
+    }
+    if status in state_conds:
+        conds.append(state_conds[status])
+
+    if subreddit and subreddit != "all":
+        conds.append("m.subreddit = ?")
+        params.append(subreddit)
+    if search:
+        conds.append("m.title LIKE ?")
+        params.append(f"%{search}%")
+
+    where = " AND ".join(conds) if conds else "1=1"
+    return where, params
+
+
+# Hard cap on how many post_ids we stash in browser State for stepping. Plenty
+# for review work; if a filter matches more, we note the truncation.
+_INSPECT_CAP = 3000
+
+
+def _inspect_ids(status: str, subreddit: str, search: str) -> tuple[list[str], int]:
+    """Return (post_ids matching the filter, total matches before the cap)."""
+    where, params = _inspect_where(status, subreddit, search)
+    conn = _get_conn()
+    total = conn.execute(
+        f"SELECT COUNT(*) AS cnt {_INSPECT_FROM} WHERE {where}", params
+    ).fetchone()["cnt"]
+    rows = conn.execute(
+        f"SELECT m.post_id {_INSPECT_FROM} WHERE {where} "
+        f"ORDER BY m.post_id DESC LIMIT ?",
+        [*params, _INSPECT_CAP],
+    ).fetchall()
+    conn.close()
+    return [r["post_id"] for r in rows], total
+
+
+def _classify_state(row: sqlite3.Row) -> str:
+    """Derive the display state for one inspect-detail row."""
+    status = row["review_status"]
+    reason = row["review_reason"]
+    if status == "validated":
+        return "validated"
+    if status == "excluded":
+        if reason and reason.startswith("safety:"):
+            return "safety_excluded"
+        if reason and reason.startswith("auto:"):
+            return "quality_excluded"
+        if reason == "image_missing":
+            return "image_missing"
+        return "human_excluded"
+    if row["explanation"] is not None:
+        return "unreviewed"
+    if row["consensus_ran"]:
+        return "no_consensus"
+    return "pending"
+
+
+# Which gate each state implicates by default when flagging a misfire.
+_STATE_TO_GATE = {
+    "safety_excluded": "safety",
+    "quality_excluded": "quality",
+    "no_consensus": "consensus",
+}
+
+
+def _inspect_detail(post_id: str) -> dict | None:
+    conn = _get_conn()
+    row = conn.execute(
+        f"""SELECT m.post_id, m.title, m.subreddit, m.local_image_path,
+                   gt.explanation, gt.consensus_confidence, gt.num_agreeing_comments,
+                   r.status AS review_status, r.reason AS review_reason,
+                   (cc.post_id IS NOT NULL) AS consensus_ran
+            {_INSPECT_FROM}
+            WHERE m.post_id = ?""",
+        (post_id,),
+    ).fetchone()
+    if row is None:
+        conn.close()
+        return None
+
+    # Latest gate/consensus reasoning, most recent call per role.
+    call_rows = conn.execute(
+        """SELECT role, verdict, reasoning, error FROM llm_calls
+           WHERE post_id = ? AND role IN ('safety_gate', 'quality_gate', 'consensus')
+           ORDER BY id DESC""",
+        (post_id,),
+    ).fetchall()
+    comments = conn.execute(
+        "SELECT body, score, author FROM comments WHERE post_id = ? "
+        "ORDER BY score DESC LIMIT 5",
+        (post_id,),
+    ).fetchall()
+    conn.close()
+
+    latest_by_role: dict[str, sqlite3.Row] = {}
+    for cr in call_rows:
+        latest_by_role.setdefault(cr["role"], cr)
+
+    return {
+        "row": row,
+        "state": _classify_state(row),
+        "calls": latest_by_role,
+        "comments": comments,
+    }
+
+
+def _render_inspect(post_id: str | None):
+    """Render one meme into the inspect widgets (read-only)."""
+    blank = gr.update(value=None, visible=False)
+    if not post_id:
+        return (
+            blank,
+            gr.update(value="_No meme to show for this filter._", visible=True),
+            gr.update(value="", visible=False),
+            gr.update(value="", visible=False),
+            gr.update(value="", visible=False),
+            "",
+            gr.update(value="quality"),
+        )
+
+    detail = _inspect_detail(post_id)
+    if detail is None:
+        return (
+            blank,
+            gr.update(value=f"_Meme `{post_id}` not found._", visible=True),
+            gr.update(value="", visible=False),
+            gr.update(value="", visible=False),
+            gr.update(value="", visible=False),
+            "",
+            gr.update(value="quality"),
+        )
+
+    row = detail["row"]
+    state = detail["state"]
+    calls = detail["calls"]
+
+    banner = _INSPECT_STATE_LABELS.get(state, state)
+    info_lines = [
+        f"**{row['title']}**",
+        f"r/{row['subreddit']}",
+        f"**Status:** {banner}",
+    ]
+    if row["review_reason"]:
+        info_lines.append(f"_reason:_ `{row['review_reason']}`")
+    # Surface the gate/consensus model's own reasoning so you can judge whether
+    # the decision was right.
+    role_label = {
+        "safety_gate": "Safety gate",
+        "quality_gate": "Quality gate",
+        "consensus": "Consensus",
+    }
+    for role in ("safety_gate", "quality_gate", "consensus"):
+        cr = calls.get(role)
+        if cr is None:
+            continue
+        verdict = cr["verdict"] or ("error" if cr["error"] else "—")
+        reasoning = (cr["reasoning"] or cr["error"] or "").strip()
+        if reasoning:
+            info_lines.append(
+                f"**{role_label[role]}:** _{verdict}_ — {reasoning[:400]}"
+            )
+        else:
+            info_lines.append(f"**{role_label[role]}:** _{verdict}_")
+    info_md = "\n\n".join(info_lines)
+
+    if row["explanation"] is not None:
+        gt_update = gr.update(value=row["explanation"], visible=True)
+        conf = row["consensus_confidence"]
+        meta_update = gr.update(
+            value=(
+                f"Confidence: {conf:.2f} | Agreeing comments: "
+                f"{row['num_agreeing_comments']}"
+                if conf is not None
+                else ""
+            ),
+            visible=conf is not None,
+        )
+    else:
+        gt_update = gr.update(
+            value="— no ground truth (meme has no consensus explanation) —",
+            visible=True,
+        )
+        meta_update = gr.update(value="", visible=False)
+
+    comments_text = "\n\n".join(
+        f"**{c['author']}** (score: {c['score']})\n> {_inline_image_urls(c['body'])}"
+        for c in detail["comments"]
+    )
+
+    return (
+        gr.update(value=_resolve_image(row["local_image_path"]), visible=True),
+        gr.update(value=info_md, visible=True),
+        gt_update,
+        meta_update,
+        gr.update(value=comments_text or "_no comments_", visible=True),
+        post_id,
+        gr.update(value=_STATE_TO_GATE.get(state, "quality")),
+    )
+
+
+def _position_text(idx: int, ids: list[str], total: int) -> str:
+    if not ids:
+        return "0 / 0"
+    shown = len(ids)
+    suffix = f" (capped from {total})" if total > shown else ""
+    return f"{idx + 1} / {shown}{suffix}"
+
+
+def inspect_apply(status: str, subreddit: str, search: str):
+    ids, total = _inspect_ids(status, subreddit, search)
+    first = ids[0] if ids else None
+    return (ids, 0, *_render_inspect(first), _position_text(0, ids, total))
+
+
+def inspect_step(ids: list[str], idx: int, delta: int):
+    if not ids:
+        return (idx, *_render_inspect(None), _position_text(idx, ids, len(ids)))
+    new_idx = max(0, min(int(idx) + delta, len(ids) - 1))
+    return (
+        new_idx,
+        *_render_inspect(ids[new_idx]),
+        _position_text(new_idx, ids, len(ids)),
+    )
+
+
+def flag_gate_misfire(
+    post_id: str, gate: str, correct_decision: str, notes: str
+) -> str:
+    """Record that a gate/consensus decision was wrong, capturing what it decided."""
+    if not post_id:
+        return "_No meme loaded._"
+
+    detail = _inspect_detail(post_id)
+    gate_decision = None
+    if detail is not None:
+        role = {"safety": "safety_gate", "quality": "quality_gate", "consensus": "consensus"}[gate]
+        cr = detail["calls"].get(role)
+        if cr is not None:
+            gate_decision = cr["verdict"] or (cr["error"] and "error") or None
+        elif gate == "consensus":
+            gate_decision = "no_consensus" if detail["state"] == "no_consensus" else None
+
+    conn = _get_conn()
+    conn.execute(
+        """INSERT OR REPLACE INTO gate_feedback
+           (post_id, gate, gate_decision, correct_decision, notes, created_at)
+           VALUES (?, ?, ?, ?, ?, ?)""",
+        (
+            post_id,
+            gate,
+            gate_decision,
+            (correct_decision or "").strip() or None,
+            (notes or "").strip() or None,
+            datetime.now(timezone.utc).isoformat(),
+        ),
+    )
+    conn.commit()
+    conn.close()
+    return f"✅ Flagged `{post_id}` — **{gate}** gate marked wrong."
+
+
+# ── Tab 5: Stats & Leaderboard ───────────────────────────────────────
 
 
 def _load_stats() -> tuple[str, str, str, str]:
@@ -658,7 +976,54 @@ def _load_regressions() -> str:
         "against current consensus config._"
     )
 
-    return corpus_md, predictions_md, leaderboard_md, consensus_md
+
+# ── Tab 6: Filter Misfires (gate-feedback set) ───────────────────────
+
+
+def _load_gate_feedback() -> str:
+    """Render the table of flagged safety/quality/consensus misfires."""
+    from basedbench.db import Database
+    from basedbench.db import queries
+
+    db = Database.open(_DB_PATH)
+    try:
+        entries = queries.list_gate_feedback(db)
+    finally:
+        db.close()
+
+    if not entries:
+        return (
+            "### Filter Misfires\n\n"
+            "_None flagged yet. In the **Inspect** tab, open the "
+            "**🚩 A filter got this wrong** accordion to flag a meme the "
+            "safety/quality/consensus filter handled incorrectly._"
+        )
+
+    by_gate: dict[str, int] = {}
+    for e in entries:
+        by_gate[e.gate] = by_gate.get(e.gate, 0) + 1
+    counts = " · ".join(
+        f"**{by_gate.get(g, 0)}** {g}" for g in ("safety", "quality", "consensus")
+    )
+
+    rows = []
+    for e in entries:
+        notes = (e.notes or "—").replace("\n", " ").strip()
+        if len(notes) > 160:
+            notes = notes[:160] + "…"
+        correct = (e.correct_decision or "—").replace("\n", " ").strip()
+        rows.append(
+            f"| `{e.post_id}` | **{e.gate}** | {e.gate_decision or '—'} | "
+            f"{correct} | {notes} | {e.created_at[:10]} |"
+        )
+
+    return (
+        "### Filter Misfires\n\n"
+        f"{len(entries)} flagged · {counts}\n\n"
+        "| post_id | gate | gate decided | should have been | notes | date |\n"
+        "|---|---|---|---|---|---|\n"
+        + "\n".join(rows)
+    )
 
 
 # ── Build Gradio App ─────────────────────────────────────────────────
@@ -850,6 +1215,121 @@ def build_app() -> gr.Blocks:
                     outputs=[compare_image, compare_gt, compare_preds],
                 )
 
+        with gr.Tab("Inspect") as inspect_tab:
+            gr.Markdown(
+                "_Read-only viewer over **all** content — including memes the "
+                "safety/quality/consensus filters excluded. Filter, then step "
+                "through with Prev/Next. No reviewer actions here; use the flag "
+                "below if a filter got a meme wrong._"
+            )
+            inspect_ids_state = gr.State([])
+            inspect_idx_state = gr.State(0)
+
+            with gr.Row():
+                inspect_status = gr.Dropdown(
+                    choices=[(label, key) for key, label in _INSPECT_STATES],
+                    value="all",
+                    label="Status",
+                )
+                inspect_subreddit = gr.Dropdown(
+                    choices=_subreddits() if _DB_PATH.exists() else ["all"],
+                    value="all",
+                    label="Subreddit",
+                )
+                inspect_search = gr.Textbox(
+                    label="Search title", placeholder="Type to search..."
+                )
+                btn_inspect_apply = gr.Button("Apply filters", variant="primary")
+
+            with gr.Row():
+                btn_inspect_prev = gr.Button("← Prev")
+                inspect_position = gr.Markdown("0 / 0")
+                btn_inspect_next = gr.Button("Next →")
+
+            with gr.Row():
+                with gr.Column(scale=1):
+                    inspect_image = gr.Image(
+                        label="Meme",
+                        type="filepath",
+                        elem_classes="constrained-meme",
+                        visible=False,
+                    )
+                with gr.Column(scale=1):
+                    inspect_info = gr.Markdown()
+                    inspect_gt = gr.Textbox(
+                        label="Ground Truth", lines=4, interactive=False, visible=False
+                    )
+                    inspect_meta = gr.Markdown(visible=False)
+                    inspect_comments = gr.Markdown(visible=False)
+
+            inspect_post_id = gr.Textbox(visible=False)
+
+            with gr.Accordion("🚩 A filter got this wrong", open=False):
+                gr.Markdown(
+                    "_Flag a meme the safety/quality/consensus filter handled "
+                    "incorrectly — e.g. excluded a good meme, kept a bad one, or "
+                    "missed a real consensus. Goes into the **Filter Misfires** "
+                    "set for tuning the gates/consensus._"
+                )
+                misfire_gate = gr.Radio(
+                    choices=["safety", "quality", "consensus"],
+                    value="quality",
+                    label="Which filter got it wrong?",
+                    info="Defaults to whichever filter acted on this meme.",
+                )
+                misfire_correct = gr.Textbox(
+                    label="What should have happened? (optional)",
+                    placeholder="e.g. 'keep — this has a real joke', "
+                    "'exclude — pure nonsense', 'there IS a clear consensus'",
+                )
+                misfire_notes = gr.Textbox(
+                    label="Notes", lines=2, placeholder="Why the filter was wrong…"
+                )
+                btn_misfire = gr.Button("Flag misfire", variant="secondary")
+                misfire_feedback = gr.Markdown()
+
+            # The render tuple shape shared by apply/prev/next (minus the state
+            # and position values those handlers prepend/append).
+            inspect_render_outputs = [
+                inspect_image,
+                inspect_info,
+                inspect_gt,
+                inspect_meta,
+                inspect_comments,
+                inspect_post_id,
+                misfire_gate,
+            ]
+            btn_inspect_apply.click(
+                inspect_apply,
+                inputs=[inspect_status, inspect_subreddit, inspect_search],
+                outputs=[
+                    inspect_ids_state,
+                    inspect_idx_state,
+                    *inspect_render_outputs,
+                    inspect_position,
+                ],
+            )
+            btn_inspect_prev.click(
+                lambda ids, idx: inspect_step(ids, idx, -1),
+                inputs=[inspect_ids_state, inspect_idx_state],
+                outputs=[inspect_idx_state, *inspect_render_outputs, inspect_position],
+            )
+            btn_inspect_next.click(
+                lambda ids, idx: inspect_step(ids, idx, 1),
+                inputs=[inspect_ids_state, inspect_idx_state],
+                outputs=[inspect_idx_state, *inspect_render_outputs, inspect_position],
+            )
+            btn_misfire.click(
+                flag_gate_misfire,
+                inputs=[inspect_post_id, misfire_gate, misfire_correct, misfire_notes],
+                outputs=[misfire_feedback],
+            )
+            # Refresh subreddit options + load the first page on tab activation.
+            inspect_tab.select(
+                lambda: gr.update(choices=_subreddits()),
+                outputs=[inspect_subreddit],
+            )
+
         with gr.Tab("Stats & Leaderboard") as stats_tab:
             gr.Markdown(
                 "_Refreshes when you switch to this tab — newly judged "
@@ -878,6 +1358,16 @@ def build_app() -> gr.Blocks:
             regressions_md = gr.Markdown()
             regressions_tab.select(_load_regressions, outputs=[regressions_md])
             app.load(_load_regressions, outputs=[regressions_md])
+
+        with gr.Tab("Filter Misfires") as misfires_tab:
+            gr.Markdown(
+                "_Memes the safety/quality/consensus filters got wrong, flagged "
+                "from the Inspect tab. Use these to tune the gate prompts and "
+                "consensus criteria._"
+            )
+            misfires_md = gr.Markdown()
+            misfires_tab.select(_load_gate_feedback, outputs=[misfires_md])
+            app.load(_load_gate_feedback, outputs=[misfires_md])
 
     return app
 

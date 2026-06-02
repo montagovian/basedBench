@@ -516,6 +516,71 @@ def test_unflag_consensus_regression(db: Database):
     assert q.list_consensus_regressions(db) == []
 
 
+# ═══════════════════════════════════════════════════════
+# Gate feedback (filter misfires)
+# ═══════════════════════════════════════════════════════
+
+
+def test_migrate_creates_gate_feedback_table(db: Database):
+    count = db.conn.execute(
+        "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='gate_feedback'"
+    ).fetchone()[0]
+    assert count == 1
+
+
+def test_flag_and_list_gate_feedback(db: Database):
+    _setup_validated_meme(db, "p1")
+    _setup_validated_meme(db, "p2")
+    q.flag_gate_feedback(
+        db, "p1", "quality", gate_decision="pass",
+        correct_decision="exclude", notes="scrambled nonsense",
+    )
+    q.flag_gate_feedback(db, "p2", "consensus", gate_decision="no_consensus")
+
+    entries = q.list_gate_feedback(db)
+    assert {e.post_id for e in entries} == {"p1", "p2"}
+    p1 = next(e for e in entries if e.post_id == "p1")
+    assert p1.gate == "quality"
+    assert p1.gate_decision == "pass"
+    assert p1.correct_decision == "exclude"
+    assert p1.notes == "scrambled nonsense"
+
+
+def test_list_gate_feedback_filters_by_gate(db: Database):
+    _setup_validated_meme(db, "a")
+    _setup_validated_meme(db, "b")
+    q.flag_gate_feedback(db, "a", "safety")
+    q.flag_gate_feedback(db, "b", "quality")
+    assert {e.post_id for e in q.list_gate_feedback(db, gate="safety")} == {"a"}
+
+
+def test_flag_gate_feedback_idempotent_per_gate(db: Database):
+    """Re-flagging the same (post, gate) overwrites; a different gate adds a row."""
+    _setup_validated_meme(db, "p1")
+    q.flag_gate_feedback(db, "p1", "quality", notes="first")
+    q.flag_gate_feedback(db, "p1", "quality", notes="second")
+    q.flag_gate_feedback(db, "p1", "safety", notes="other gate")
+    entries = q.list_gate_feedback(db, gate="quality")
+    assert len(entries) == 1
+    assert entries[0].notes == "second"
+    assert len(q.list_gate_feedback(db)) == 2  # quality + safety
+
+
+def test_flag_gate_feedback_invalid_gate_raises(db: Database):
+    import sqlite3
+    _setup_validated_meme(db, "p1")
+    with pytest.raises(sqlite3.IntegrityError):
+        q.flag_gate_feedback(db, "p1", "bogus")
+
+
+def test_unflag_gate_feedback(db: Database):
+    _setup_validated_meme(db, "p1")
+    q.flag_gate_feedback(db, "p1", "quality")
+    assert q.unflag_gate_feedback(db, "p1", "quality") is True
+    assert q.unflag_gate_feedback(db, "p1", "quality") is False
+    assert q.list_gate_feedback(db) == []
+
+
 def test_auto_exclude_missing_images(db: Database):
     """Memes with consensus but no local_image_path get auto-excluded."""
     # Two consensus-passed memes: one with image, one without.
