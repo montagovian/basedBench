@@ -1,5 +1,12 @@
 # basedBench5: Python Rewrite with HuggingFace Integration
 
+> **Historical document.** This is the original pre-implementation plan and is
+> kept for design rationale only. It does **not** track current state — code
+> samples here (e.g. `consensus_model = "gpt-4o-mini"`, a single `judge_model`,
+> a 3-tab Gradio app) are superseded. For current truth see **README.md**
+> (pipeline + feedback loops) and **HANDOFF.md** (live state, architecture,
+> gotchas).
+
 ## Context
 
 basedBench4 is a Rust CLI for benchmarking VLMs on meme understanding. It works well but creates friction for two goals: publishing a HuggingFace Dataset and deploying a HuggingFace Space. The entire HF ecosystem is Python (`datasets`, `huggingface_hub`, `gradio`). The Rust code solves no performance problem — the pipeline is I/O bound waiting on Reddit and LLM APIs. A Python rewrite eliminates the language boundary, makes HF integration native, and reduces maintenance to one codebase. The existing Gradio review UI (`space/app.py`, 398 lines) is already Python.

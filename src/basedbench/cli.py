@@ -117,7 +117,7 @@ def ingest(
 
 @app.command()
 def predict(
-    model: str = typer.Argument(..., help="Model id (e.g. gpt-4o, claude-3-5-sonnet)."),
+    model: str = typer.Argument(..., help="Model id (e.g. gpt-5.5, claude-opus-4-7)."),
     snapshot: str | None = typer.Option(None, help="Restrict to a snapshot."),
     include_unreviewed: bool = typer.Option(
         False, help="Include memes with unreviewed ground truth."

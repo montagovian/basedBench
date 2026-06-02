@@ -131,7 +131,10 @@ uv run basedbench push v0.1 --repo your-username/basedbench
 
 ## Status
 
-Active port from basedBench4. Test suite: `uv run pytest`.
+Core pipeline complete and in active use (ingest → review → predict → judge →
+leaderboard); snapshot/HF-push wired but not yet run end-to-end. Test suite:
+`uv run pytest`. Implementation state, architecture, and gotchas live in
+`HANDOFF.md`.
 
 ## License
 

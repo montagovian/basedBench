@@ -37,7 +37,7 @@ class _ConsensusResponse(BaseModel):
 
 
 class ConsensusDetector:
-    """Detects consensus among a post's comments using gpt-4o-mini (or configured model)."""
+    """Detects consensus among a post's comments using the configured consensus model (default gpt-5.4-mini)."""
 
     def __init__(self, config: Config) -> None:
         self._client = AsyncOpenAI(api_key=config.openai_api_key)
