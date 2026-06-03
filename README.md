@@ -61,6 +61,9 @@ uv run basedbench review              # validate in Gradio
 uv run basedbench predict gpt-5.5
 uv run basedbench judge
 uv run basedbench status
+
+# quick end-to-end smoke test on a bounded, unreviewed batch
+uv run basedbench tracer --fetch 12 --target-consensus 5 --predict gpt-5.5
 ```
 
 ## Feedback loops
@@ -119,6 +122,7 @@ uv run basedbench push v0.1 --repo your-username/basedbench
 | `predict <model>` | Run a VLM over memes that need a prediction |
 | `judge` | Score predictions — each is judged by every configured judge model |
 | `status` | Pipeline state + next-step hints |
+| `tracer` | Bounded fetch → gates → consensus → prediction smoke test; optional `--judge` |
 | `traces` | Inspect every recorded LLM call (filter by role/post/session/error) |
 | `run <model>` | ingest → predict → judge → status (one shot) |
 | `cleanup` | Maintenance (e.g. `--missing-images` excludes memes whose image never downloaded) |

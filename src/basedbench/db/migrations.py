@@ -181,6 +181,50 @@ CREATE INDEX IF NOT EXISTS idx_gate_feedback_gate ON gate_feedback(gate);
 """
 
 
+MIGRATION_007 = """\
+PRAGMA foreign_keys=OFF;
+
+CREATE TABLE IF NOT EXISTS prompt_versions_new (
+    prompt_id TEXT PRIMARY KEY,
+    role TEXT NOT NULL CHECK(role IN (
+        'consensus', 'prediction', 'judge', 'safety_gate', 'quality_gate'
+    )),
+    system_prompt TEXT NOT NULL,
+    user_prompt_template TEXT NOT NULL,
+    version TEXT NOT NULL,
+    created_at TEXT NOT NULL
+);
+
+INSERT OR IGNORE INTO prompt_versions_new
+    (prompt_id, role, system_prompt, user_prompt_template, version, created_at)
+SELECT prompt_id, role, system_prompt, user_prompt_template, version, created_at
+FROM prompt_versions;
+
+DROP TABLE prompt_versions;
+ALTER TABLE prompt_versions_new RENAME TO prompt_versions;
+
+CREATE TABLE IF NOT EXISTS batches (
+    batch_id TEXT PRIMARY KEY,
+    kind TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    params_json TEXT,
+    notes TEXT
+);
+
+CREATE TABLE IF NOT EXISTS batch_memes (
+    batch_id TEXT NOT NULL REFERENCES batches(batch_id) ON DELETE CASCADE,
+    post_id TEXT NOT NULL REFERENCES memes(post_id),
+    position INTEGER NOT NULL,
+    added_at TEXT NOT NULL,
+    stage_status TEXT NOT NULL,
+    PRIMARY KEY (batch_id, post_id)
+);
+CREATE INDEX IF NOT EXISTS idx_batch_memes_post_id ON batch_memes(post_id);
+
+PRAGMA foreign_keys=ON;
+"""
+
+
 def _column_exists(conn: sqlite3.Connection, table: str, column: str) -> bool:
     cursor = conn.execute(
         f"SELECT COUNT(*) FROM pragma_table_info('{table}') WHERE name = ?",
@@ -217,3 +261,7 @@ def run_migrations(conn: sqlite3.Connection) -> None:
     if version < 6:
         conn.executescript(MIGRATION_006)
         conn.execute("PRAGMA user_version = 6")
+
+    if version < 7:
+        conn.executescript(MIGRATION_007)
+        conn.execute("PRAGMA user_version = 7")

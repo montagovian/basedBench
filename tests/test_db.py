@@ -48,6 +48,17 @@ def test_migrate_creates_dataset_pushes_table(db: Database):
     assert count == 1
 
 
+def test_migrate_creates_batches_tables(db: Database):
+    batches = db.conn.execute(
+        "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='batches'"
+    ).fetchone()[0]
+    batch_memes = db.conn.execute(
+        "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='batch_memes'"
+    ).fetchone()[0]
+    assert batches == 1
+    assert batch_memes == 1
+
+
 # ═══════════════════════════════════════════════════════
 # Memes
 # ═══════════════════════════════════════════════════════
@@ -286,6 +297,110 @@ def test_predictions_needing_judgment_model_filter(db: Database):
 
     needing = q.predictions_needing_judgment(db, model_id="claude-3")
     assert len(needing) == 0
+
+
+def test_scoped_prediction_query_includes_only_requested_unreviewed(db: Database):
+    _setup_validated_meme(db, "validated")
+    _setup_validated_meme(db, "unreviewed")
+    _setup_validated_meme(db, "excluded")
+    _setup_validated_meme(db, "global_backlog")
+    db.conn.execute("DELETE FROM reviews WHERE post_id = 'unreviewed'")
+    q.upsert_review(db, "excluded", "excluded", "bad")
+
+    scoped = q.memes_for_prediction_by_ids(
+        db,
+        "gpt-4o",
+        ["unreviewed", "excluded"],
+        validated_only=False,
+    )
+    assert [m.post_id for m in scoped] == ["unreviewed"]
+
+    validated_only = q.memes_for_prediction_by_ids(
+        db,
+        "gpt-4o",
+        ["validated", "unreviewed", "global_backlog"],
+        validated_only=True,
+    )
+    assert [m.post_id for m in validated_only] == ["validated", "global_backlog"]
+
+    pred = ModelPrediction.success("validated", "v1", "gpt-4o", "done", 100, 50)
+    q.insert_prediction(db, pred)
+    after_pred = q.memes_for_prediction_by_ids(
+        db,
+        "gpt-4o",
+        ["validated", "global_backlog"],
+        validated_only=True,
+    )
+    assert [m.post_id for m in after_pred] == ["global_backlog"]
+
+
+def test_scoped_judgment_query_does_not_require_review(db: Database):
+    _setup_validated_meme(db, "unreviewed")
+    _setup_validated_meme(db, "global_pred")
+    db.conn.execute("DELETE FROM reviews WHERE post_id = 'unreviewed'")
+    q.insert_prediction(
+        db, ModelPrediction.success("unreviewed", "v1", "gpt-4o", "x", 100, 50)
+    )
+    q.insert_prediction(
+        db, ModelPrediction.success("global_pred", "v1", "gpt-4o", "y", 100, 50)
+    )
+
+    scoped = q.predictions_needing_judgment_for_post_ids(
+        db,
+        ["unreviewed"],
+        "gpt-4o",
+        "judge-a",
+    )
+    assert [p.post_id for p in scoped] == ["unreviewed"]
+
+    q.register_prompt(db, "judge_prompt", "judge", "s", "u", "1.0")
+    q.insert_judgment(
+        db,
+        scoped[0].prediction_id,
+        "correct",
+        "ok",
+        "judge-a",
+        "judge_prompt",
+    )
+    assert q.predictions_needing_judgment_for_post_ids(
+        db, ["unreviewed"], "gpt-4o", "judge-a"
+    ) == []
+
+
+# ═══════════════════════════════════════════════════════
+# Prompt versions / batches
+# ═══════════════════════════════════════════════════════
+
+
+def test_register_gate_prompt_roles(db: Database):
+    q.register_prompt(db, "safety_v1", "safety_gate", "s", "u", "1.0")
+    q.register_prompt(db, "quality_v1", "quality_gate", "s", "u", "1.0")
+    roles = db.conn.execute(
+        "SELECT role FROM prompt_versions ORDER BY role"
+    ).fetchall()
+    assert [r[0] for r in roles] == ["quality_gate", "safety_gate"]
+
+
+def test_batch_helpers_track_order_and_status(db: Database):
+    q.create_batch(db, "batch1", "tracer", params_json='{"fetch": 2}')
+    q.insert_meme(db, sample_post("post1"))
+    q.insert_meme(db, sample_post("post2"))
+
+    assert q.add_batch_meme(db, "batch1", "post2", 2) is True
+    assert q.add_batch_meme(db, "batch1", "post1", 1) is True
+    assert q.add_batch_meme(db, "batch1", "post1", 1) is False
+    assert q.batch_meme_ids(db, "batch1") == ["post1", "post2"]
+
+    q.update_batch_meme_status(db, "batch1", "post1", "consensus")
+    q.update_batch_meme_status(db, "batch1", "post2", "no_consensus")
+    assert q.batch_stage_counts(db, "batch1") == {
+        "consensus": 1,
+        "no_consensus": 1,
+    }
+
+    found = q.find_batch(db, "batch1")
+    assert found is not None
+    assert found.kind == "tracer"
 
 
 # ═══════════════════════════════════════════════════════

@@ -18,6 +18,7 @@ from basedbench.pipeline import ingest as ingest_pipe
 from basedbench.pipeline import judge as judge_pipe
 from basedbench.pipeline import predict as predict_pipe
 from basedbench.pipeline import snapshot as snapshot_pipe
+from basedbench.pipeline import tracer as tracer_pipe
 
 app = typer.Typer(
     name="basedbench",
@@ -256,6 +257,60 @@ def run(
 
     asyncio.run(_full())
     status()
+
+
+# ───────────────────────── tracer ─────────────────────────
+
+
+@app.command()
+def tracer(
+    fetch: int = typer.Option(12, help="Max new posts to insert into the batch."),
+    target_consensus: int = typer.Option(
+        5, help="Stop curation after this many consensus-passed rows."
+    ),
+    predict: str = typer.Option(
+        "gpt-5.5",
+        "--predict",
+        help="Model to run on consensus-passed tracer rows.",
+    ),
+    subreddit: list[str] = typer.Option(  # noqa: B008
+        None,
+        "--subreddit",
+        "-r",
+        help="Subreddit to fetch, repeatable. Defaults to pipeline defaults.",
+    ),
+    time_filter: list[str] = typer.Option(  # noqa: B008
+        None,
+        "--time-filter",
+        "-t",
+        help="Reddit top window to try, repeatable and ordered.",
+    ),
+    judge: bool = typer.Option(False, help="Also judge tracer predictions."),
+    judge_model: list[str] = typer.Option(  # noqa: B008
+        None,
+        "--judge-model",
+        "-j",
+        help="Judge model, repeatable. Defaults to config.judge_models.",
+    ),
+    batch_id: str | None = typer.Option(None, help="Optional explicit batch id."),
+) -> None:
+    """Run a bounded fetch → consensus → prediction tracer bullet."""
+    _configure_logging()
+    db, config = _load()
+    asyncio.run(
+        tracer_pipe.run(
+            db,
+            config,
+            fetch=fetch,
+            target_consensus=target_consensus,
+            predict_model=predict,
+            subreddits=subreddit or None,
+            time_filters=time_filter or None,
+            judge=judge,
+            judge_models=judge_model or None,
+            batch_id=batch_id,
+        )
+    )
 
 
 # ───────────────────────── snapshot ─────────────────────────

@@ -23,7 +23,7 @@ current operational state:
 uv run basedbench status
 ```
 
-Expected DB shape: `data/basedbench.db`, `PRAGMA user_version` = 6. Snapshots
+Expected DB shape: `data/basedbench.db`, `PRAGMA user_version` = 7. Snapshots
 may still be absent unless `basedbench snapshot create` has been run.
 
 ## Working model defaults (verify against `config.py` before trusting)
@@ -62,8 +62,8 @@ the scrambled-into-nonsense quality-gate fix (`6f5dcbc`) was validated.
 | `src/basedbench/errors.py` | Exception hierarchy + `is_fatal_llm_error` (auth/quota fast-fail) |
 | `src/basedbench/schemas.py` | Pydantic models for posts, predictions, consensus, judgments |
 | `src/basedbench/db/connection.py` | SQLite; **autocommit mode** (isolation_level=None) — see Gotcha 1 |
-| `src/basedbench/db/migrations.py` | PRAGMA user_version migrations (currently 6): + `consensus_regression` (005), `gate_feedback` (006) |
-| `src/basedbench/db/queries.py` | All query helpers (pure fns taking `Database` first); regression + gate-feedback helpers |
+| `src/basedbench/db/migrations.py` | PRAGMA user_version migrations (currently 7): + `consensus_regression` (005), `gate_feedback` (006), tracer batches + gate prompt roles (007) |
+| `src/basedbench/db/queries.py` | All query helpers (pure fns taking `Database` first); regression, gate-feedback, and batch-scoped helpers |
 | `src/basedbench/llm/_retry.py` | Shared tenacity retry that excludes fatal errors |
 | `src/basedbench/llm/provider.py` | `Predictor` Protocol |
 | `src/basedbench/llm/openai.py` | OpenAI vision predictor; predict uses `reasoning_effort="medium"` (image only) |
@@ -79,6 +79,7 @@ the scrambled-into-nonsense quality-gate fix (`6f5dcbc`) was validated.
 | `src/basedbench/pipeline/ingest.py` | fetch → safety gate → quality gate → consensus, concurrent (Semaphore 10) |
 | `src/basedbench/pipeline/predict.py` | Route by model_id, run VLM, store prediction |
 | `src/basedbench/pipeline/judge.py` | Multi-judge concurrent judging; per-judge stats + agreement summary |
+| `src/basedbench/pipeline/tracer.py` | Bounded fetch → gates → consensus → prediction smoke test scoped to one DB-backed batch |
 | `src/basedbench/pipeline/snapshot.py` | Freeze validated set as content-addressed dataset version |
 | `src/basedbench/pipeline/export.py` | Write snapshot to disk (JSONL + images + dataset card) |
 | `src/basedbench/pipeline/hf_push.py` | Push to HF Hub as multi-config dataset (untested end-to-end) |
@@ -127,7 +128,14 @@ native Reddit path (`--time-filter week`/`month`).
 Phases 1.4/1.5/2 gate/consensus *all* pending memes, not just newly-fetched
 ones. A small fetch can trigger a large backlog run if memes are ungated.
 
-### 8. Model id strings as of mid-2026
+### 8. Tracer rows are smoke-test rows, not leaderboard rows
+`basedbench tracer --fetch 12 --target-consensus 5 --predict gpt-5.5` creates a
+`batches` row, scopes gates/consensus/prediction to that batch, and predicts
+unreviewed consensus rows so the full system can be checked quickly. It does
+**not** validate memes, so normal leaderboard/snapshot commands still ignore
+those rows unless a human later validates them.
+
+### 9. Model id strings as of mid-2026
 - OpenAI flagship `gpt-5.5`, cheap `gpt-5.4-mini`
 - Anthropic flagship `claude-opus-4-7`, judge `claude-sonnet-4-6`
 - `gpt-4o*` / `claude-3-*` are deprecated — do not default to them. (Test
@@ -164,16 +172,11 @@ These were found in a repo-wide review and have **not** been fixed yet.
 5. **`basedbench view` is not actually read-only.** The command delegates to
    `review()`, which exposes validate/exclude/flag mutation controls. Either
    remove the read-only claim or add a real read-only mode.
-6. **Safety/quality prompt versions are silently not registered.** The
-   `prompt_versions.role` CHECK only permits `consensus`, `prediction`, and
-   `judge`; ingest registers `safety_gate` and `quality_gate`. Because
-   `register_prompt()` uses `INSERT OR IGNORE`, those prompt rows are silently
-   dropped.
-7. **Token/cost logging misses high-volume calls.** Safety, predictions, and
+6. **Token/cost logging misses high-volume calls.** Safety, predictions, and
    judges record usage, but quality gate and consensus do not store successful
    `prompt_tokens`/`completion_tokens`, which weakens the future `basedbench
    cost` command.
-8. **Prediction prompt versions are not first-class on prediction rows.**
+7. **Prediction prompt versions are not first-class on prediction rows.**
    Prompt IDs are content hashes (`prompt_id(role, system, user_template)`) and
    `llm_calls.prompt_version` records them, while ground truths and judgments
    have dedicated prompt-version columns. `predictions` does not: the prediction
@@ -202,6 +205,7 @@ uv run basedbench status                              # current state
 uv run basedbench ingest --limit 50                  # recent: fetch + gates + consensus
 uv run basedbench ingest -t week                     # recent top-of-week
 uv run basedbench ingest --after-date 2024-01-01 --before-date 2024-04-01  # historical (pullpush)
+uv run basedbench tracer --fetch 12 --target-consensus 5 --predict gpt-5.5  # bounded smoke test
 uv run basedbench review                             # Gradio at :7860
 uv run basedbench predict gpt-5.5
 uv run basedbench predict claude-opus-4-7

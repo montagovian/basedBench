@@ -89,6 +89,15 @@ class SnapshotInfo:
 
 
 @dataclass
+class BatchInfo:
+    batch_id: str
+    kind: str
+    created_at: str
+    params_json: str | None
+    notes: str | None
+
+
+@dataclass
 class ExportMeme:
     post_id: str
     title: str
@@ -676,6 +685,185 @@ def register_prompt(
            VALUES (?, ?, ?, ?, ?, ?)""",
         (prompt_id, role, system_prompt, user_prompt_template, version, _now()),
     )
+
+
+# ═══════════════════════════════════════════════════════
+# BATCHES
+# ═══════════════════════════════════════════════════════
+
+
+def create_batch(
+    db: Database,
+    batch_id: str,
+    kind: str,
+    params_json: str | None = None,
+    notes: str | None = None,
+) -> str:
+    """Create a persistent batch/scope for bounded runs."""
+    db.conn.execute(
+        """INSERT INTO batches (batch_id, kind, created_at, params_json, notes)
+           VALUES (?, ?, ?, ?, ?)""",
+        (batch_id, kind, _now(), params_json, notes),
+    )
+    return batch_id
+
+
+def find_batch(db: Database, batch_id: str) -> BatchInfo | None:
+    """Look up a batch by id."""
+    row = db.conn.execute(
+        """SELECT batch_id, kind, created_at, params_json, notes
+           FROM batches WHERE batch_id = ?""",
+        (batch_id,),
+    ).fetchone()
+    if row is None:
+        return None
+    return BatchInfo(
+        batch_id=row[0],
+        kind=row[1],
+        created_at=row[2],
+        params_json=row[3],
+        notes=row[4],
+    )
+
+
+def add_batch_meme(
+    db: Database,
+    batch_id: str,
+    post_id: str,
+    position: int,
+    stage_status: str = "inserted",
+) -> bool:
+    """Attach a meme to a batch. Returns True if newly added."""
+    cursor = db.conn.execute(
+        """INSERT OR IGNORE INTO batch_memes
+           (batch_id, post_id, position, added_at, stage_status)
+           VALUES (?, ?, ?, ?, ?)""",
+        (batch_id, post_id, position, _now(), stage_status),
+    )
+    return cursor.rowcount > 0
+
+
+def update_batch_meme_status(
+    db: Database, batch_id: str, post_id: str, stage_status: str
+) -> None:
+    """Update one batch meme's current tracer stage."""
+    db.conn.execute(
+        """UPDATE batch_memes SET stage_status = ?
+           WHERE batch_id = ? AND post_id = ?""",
+        (stage_status, batch_id, post_id),
+    )
+
+
+def batch_meme_ids(db: Database, batch_id: str) -> list[str]:
+    """Return post IDs in batch order."""
+    rows = db.conn.execute(
+        """SELECT post_id FROM batch_memes
+           WHERE batch_id = ? ORDER BY position""",
+        (batch_id,),
+    ).fetchall()
+    return [r[0] for r in rows]
+
+
+def batch_stage_counts(db: Database, batch_id: str) -> dict[str, int]:
+    """Return stage_status -> count for a batch."""
+    rows = db.conn.execute(
+        """SELECT stage_status, COUNT(*) FROM batch_memes
+           WHERE batch_id = ? GROUP BY stage_status""",
+        (batch_id,),
+    ).fetchall()
+    return {r[0]: r[1] for r in rows}
+
+
+def memes_for_prediction_by_ids(
+    db: Database,
+    model_id: str,
+    post_ids: list[str],
+    validated_only: bool = True,
+) -> list[MemeForPrediction]:
+    """Prediction candidates restricted to explicit post IDs."""
+    if not post_ids:
+        return []
+
+    placeholders = ",".join("?" * len(post_ids))
+    review_filter = (
+        "AND r.status = 'validated'"
+        if validated_only
+        else "AND (r.status IS NULL OR r.status != 'excluded')"
+    )
+    review_join = (
+        "JOIN reviews r ON m.post_id = r.post_id"
+        if validated_only
+        else "LEFT JOIN reviews r ON m.post_id = r.post_id"
+    )
+    rows = db.conn.execute(
+        f"""SELECT m.post_id, m.subreddit, m.title, m.image_url, m.local_image_path,
+                  m.permalink, gt.explanation, gt.consensus_confidence,
+                  gt.source_comment_ids, gt.num_agreeing_comments,
+                  gt.avg_comment_score, m.created_utc, gt.created_at
+           FROM memes m
+           JOIN ground_truths gt ON m.post_id = gt.post_id
+           {review_join}
+           LEFT JOIN predictions p ON m.post_id = p.post_id AND p.model_id = ?
+               AND p.error IS NULL
+           WHERE m.post_id IN ({placeholders})
+             AND p.id IS NULL
+             {review_filter}""",
+        (model_id, *post_ids),
+    ).fetchall()
+    by_id = {
+        r[0]: MemeForPrediction(
+            post_id=r[0],
+            subreddit=r[1],
+            title=r[2],
+            image_url=r[3],
+            local_image_path=r[4],
+            permalink=r[5] or "",
+            ground_truth_explanation=r[6],
+            consensus_confidence=r[7],
+            source_comment_ids=r[8] or "[]",
+            num_agreeing_comments=r[9] or 0,
+            avg_comment_score=r[10] or 0.0,
+            created_utc=r[11],
+            ground_truth_created_at=r[12],
+        )
+        for r in rows
+    }
+    return [by_id[pid] for pid in post_ids if pid in by_id]
+
+
+def predictions_needing_judgment_for_post_ids(
+    db: Database,
+    post_ids: list[str],
+    model_id: str,
+    judge_model: str,
+) -> list[PredictionForJudging]:
+    """Judgment candidates restricted to explicit post IDs and one judge."""
+    if not post_ids:
+        return []
+    placeholders = ",".join("?" * len(post_ids))
+    rows = db.conn.execute(
+        f"""SELECT p.id, p.post_id, p.model_id, p.prediction, gt.explanation
+           FROM predictions p
+           JOIN ground_truths gt ON p.post_id = gt.post_id
+           LEFT JOIN judgments j
+             ON p.id = j.prediction_id AND j.judge_model = ?
+           WHERE p.post_id IN ({placeholders})
+             AND p.model_id = ?
+             AND p.error IS NULL
+             AND j.id IS NULL""",
+        (judge_model, *post_ids, model_id),
+    ).fetchall()
+    by_id = {
+        r[1]: PredictionForJudging(
+            prediction_id=r[0],
+            post_id=r[1],
+            model_id=r[2],
+            prediction=r[3],
+            ground_truth=r[4],
+        )
+        for r in rows
+    }
+    return [by_id[pid] for pid in post_ids if pid in by_id]
 
 
 # ═══════════════════════════════════════════════════════
