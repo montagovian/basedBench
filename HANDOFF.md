@@ -190,20 +190,23 @@ These were found in a repo-wide review and have **not** been fixed yet.
 
 Batch `tracer-20260603-150757` completed successfully:
 50 inserted → 12 consensus → 12 `gpt-5.5` predictions, 0 prediction errors.
-It also exposed UX/performance gaps in the first tracer implementation.
+It also exposed UX/performance gaps in the first tracer implementation. The
+first three items below were addressed after that run: tracer curation,
+prediction, and judging now use bounded concurrent LLM calls with DB writes
+handled on the main coroutine; the command prints per-phase progress bars; and
+the final summary is computed from batch-scoped DB state where possible.
 
-1. **Make tracer phases concurrent but still batch-scoped.** Current tracer
-   curation and prediction are sequential, which is too slow for 50 candidates.
-   Port the ingest-style phased fan-out pattern to tracer for safety, quality,
-   consensus, and prediction, with a bounded semaphore and DB writes on the main
-   coroutine. Keep all candidate selection scoped to `batch_memes`.
-2. **Add real progress output.** The command is too quiet during long LLM loops.
-   Print per-phase candidate counts and rich progress bars or periodic counts
-   for completed/kept/excluded/no-consensus/predicted/error rows.
-3. **Compute the final tracer summary from the DB.** The current summary mostly
-   uses in-memory stats. Prefer `batch_stage_counts()` plus scoped prediction
-   and judgment counts so output remains accurate if retries, pre-existing rows,
-   or future concurrency affect in-memory accounting.
+1. **Done: make tracer phases concurrent but still batch-scoped.** The tracer
+   now ports the ingest-style fan-out pattern for safety, quality, prediction,
+   and judging. Consensus uses bounded lazy scheduling so it can stop once the
+   target consensus count is found without starting the whole remaining queue.
+2. **Done: add real progress output.** The command now prints per-phase
+   candidate counts plus rich progress bars for curation, prediction, and
+   judging.
+3. **Done: compute the final tracer summary from the DB.** The final summary
+   uses `batch_stage_counts()` plus scoped prediction and judgment counts so
+   output remains accurate if retries or future concurrency affect in-memory
+   accounting.
 4. **Clarify tracer sizing semantics.** `--fetch 50 --target-consensus 50`
    attempts to fetch 50 candidates, but only a subset become consensus rows.
    Consider a batteries-included mode that keeps fetching until N consensus rows

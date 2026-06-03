@@ -7,10 +7,13 @@ leaderboard-eligible evaluated rows.
 
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
+from typing import Any
 
 from rich.console import Console
 
@@ -40,16 +43,19 @@ from basedbench.llm.prompts import (
     SAFETY_GATE_USER_TEMPLATE,
 )
 from basedbench.llm.quality_gate import QualityGate
+from basedbench.llm.record import LlmCallRecord
 from basedbench.llm.safety_gate import SafetyGate
+from basedbench.pipeline._progress import make_progress
 from basedbench.pipeline import ingest as ingest_pipe
 from basedbench.pipeline.predict import USER_PROMPT, _build_predictor, _to_curated
 from basedbench.reddit.client import RedditClient
 from basedbench.reddit.images import ImageDownloader
-from basedbench.schemas import RawPost, dataset_version
+from basedbench.schemas import ModelPrediction, RawPost, dataset_version
 
 log = logging.getLogger(__name__)
 
 DEFAULT_TIME_FILTERS = ("day", "week", "month")
+MAX_INFLIGHT = 10
 
 
 @dataclass
@@ -78,9 +84,58 @@ class TracerStats:
     items: list[TracerItem] = field(default_factory=list)
 
 
+@dataclass
+class _Outcome:
+    item: Any
+    result: Any = None
+    record: LlmCallRecord | None = None
+    error: Exception | None = None
+
+
+@dataclass
+class _JudgeTask:
+    post_id: str
+    prediction_id: int
+    prediction: str
+    ground_truth: str
+    judge: Judge
+
+
 def _new_batch_id() -> str:
     stamp = datetime.now(timezone.utc).strftime("%Y%m%d-%H%M%S")
     return f"tracer-{stamp}"
+
+
+async def _fan_out(
+    items: list[Any],
+    worker_fn: Callable[[Any], Awaitable[tuple[Any, LlmCallRecord | None]]],
+    catchable: tuple[type[Exception], ...],
+    max_inflight: int = MAX_INFLIGHT,
+) -> tuple[list[asyncio.Task[None]], asyncio.Queue[_Outcome]]:
+    """Run network-bound calls concurrently while returning writes to caller."""
+    sem = asyncio.Semaphore(max_inflight)
+    queue: asyncio.Queue[_Outcome] = asyncio.Queue()
+
+    async def worker(item: Any) -> None:
+        async with sem:
+            try:
+                result, record = await worker_fn(item)
+                await queue.put(_Outcome(item=item, result=result, record=record))
+            except catchable as e:
+                await queue.put(_Outcome(item=item, error=e))
+
+    tasks = [asyncio.create_task(worker(item)) for item in items]
+    return tasks, queue
+
+
+def _set_status(
+    db: Database,
+    batch_id: str,
+    item: TracerItem,
+    status: str,
+) -> None:
+    item.status = status
+    queries.update_batch_meme_status(db, batch_id, item.post_id, status)
 
 
 async def _fetch_new_posts(
@@ -181,90 +236,219 @@ async def _run_gates_and_consensus(
     )
 
     item_by_id = {item.post_id: item for item in stats.items}
-    consensus_ids: list[str] = []
     console.print(
         f"\n[bold]Tracer curation:[/bold] stopping after {target_consensus} consensus rows"
     )
 
-    for post in posts:
-        item = item_by_id[post.post_id]
-        if len(consensus_ids) >= target_consensus:
-            item.status = "not_processed_target_met"
-            queries.update_batch_meme_status(db, batch_id, post.post_id, item.status)
-            continue
+    safety_kept: list[RawPost] = []
+    tasks, queue = await _fan_out(
+        posts,
+        safety.check,
+        catchable=(OpenAIError, LlmJsonParseError),
+    )
+    aborted = False
+    with make_progress() as prog:
+        task = prog.add_task("tracer safety", total=len(posts))
+        for _ in range(len(posts)):
+            outcome = await queue.get()
+            post = outcome.item
+            item = item_by_id[post.post_id]
+            if outcome.error is not None:
+                e = outcome.error
+                _set_status(db, batch_id, item, "safety_error")
+                if isinstance(e, OpenAIError) and is_fatal_llm_error(e):
+                    console.print(f"\n[bold red]Fatal safety gate error:[/bold red] {e}")
+                    aborted = True
+                else:
+                    log.warning("Safety gate failed for %s: %s", post.post_id, e)
+                prog.update(task, advance=1)
+                continue
+            if outcome.record is not None:
+                queries.insert_llm_call(db, outcome.record)
+            if outcome.result.keep:
+                safety_kept.append(post)
+            else:
+                stats.safety_excluded += 1
+                queries.insert_auto_review(
+                    db, post.post_id, f"safety: {outcome.result.category}"
+                )
+                _set_status(db, batch_id, item, "safety_excluded")
+            prog.update(task, advance=1)
+    await asyncio.gather(*tasks, return_exceptions=True)
+    if aborted:
+        return []
 
-        try:
-            safety_result, record = await safety.check(post)
-        except (OpenAIError, LlmJsonParseError) as e:
-            if isinstance(e, OpenAIError) and is_fatal_llm_error(e):
-                console.print(f"\n[bold red]Fatal safety gate error:[/bold red] {e}")
-                break
-            item.status = "safety_error"
-            queries.update_batch_meme_status(db, batch_id, post.post_id, item.status)
-            log.warning("Safety gate failed for %s: %s", post.post_id, e)
-            continue
-        queries.insert_llm_call(db, record)
-        if not safety_result.keep:
-            item.status = "safety_excluded"
-            stats.safety_excluded += 1
-            queries.insert_auto_review(
-                db, post.post_id, f"safety: {safety_result.category}"
+    quality_passed: list[RawPost] = []
+    console.print(f"  Safety kept {len(safety_kept)}/{len(posts)}")
+    tasks, queue = await _fan_out(
+        safety_kept,
+        quality.check,
+        catchable=(OpenAIError, LlmJsonParseError),
+    )
+    aborted = False
+    with make_progress() as prog:
+        task = prog.add_task("tracer quality", total=len(safety_kept))
+        for _ in range(len(safety_kept)):
+            outcome = await queue.get()
+            post = outcome.item
+            item = item_by_id[post.post_id]
+            if outcome.error is not None:
+                e = outcome.error
+                _set_status(db, batch_id, item, "quality_error")
+                if isinstance(e, OpenAIError) and is_fatal_llm_error(e):
+                    console.print(f"\n[bold red]Fatal quality gate error:[/bold red] {e}")
+                    aborted = True
+                else:
+                    log.warning("Quality gate failed for %s: %s", post.post_id, e)
+                prog.update(task, advance=1)
+                continue
+            if outcome.record is not None:
+                queries.insert_llm_call(db, outcome.record)
+            if outcome.result.passes:
+                quality_passed.append(post)
+            else:
+                stats.quality_excluded += 1
+                queries.insert_auto_review(
+                    db, post.post_id, f"auto: {outcome.result.reasoning}"
+                )
+                _set_status(db, batch_id, item, "quality_excluded")
+            prog.update(task, advance=1)
+    await asyncio.gather(*tasks, return_exceptions=True)
+    if aborted:
+        return []
+
+    consensus_ids = await _run_consensus_phase(
+        db,
+        config,
+        batch_id,
+        quality_passed,
+        target_consensus,
+        detector,
+        item_by_id,
+        stats,
+        console,
+    )
+
+    return consensus_ids
+
+
+async def _run_consensus_phase(
+    db: Database,
+    config: Config,
+    batch_id: str,
+    posts: list[RawPost],
+    target_consensus: int,
+    detector: ConsensusDetector,
+    item_by_id: dict[str, TracerItem],
+    stats: TracerStats,
+    console: Console,
+) -> list[str]:
+    """Run consensus concurrently, starting only enough calls to find the target."""
+    if target_consensus <= 0 or not posts:
+        for post in posts:
+            _set_status(
+                db,
+                batch_id,
+                item_by_id[post.post_id],
+                "not_processed_target_met",
             )
-            queries.update_batch_meme_status(db, batch_id, post.post_id, item.status)
-            continue
+        return []
 
-        try:
-            quality_result, record = await quality.check(post)
-        except (OpenAIError, LlmJsonParseError) as e:
-            if isinstance(e, OpenAIError) and is_fatal_llm_error(e):
-                console.print(f"\n[bold red]Fatal quality gate error:[/bold red] {e}")
-                break
-            item.status = "quality_error"
-            queries.update_batch_meme_status(db, batch_id, post.post_id, item.status)
-            log.warning("Quality gate failed for %s: %s", post.post_id, e)
-            continue
-        queries.insert_llm_call(db, record)
-        if not quality_result.passes:
-            item.status = "quality_excluded"
-            stats.quality_excluded += 1
-            queries.insert_auto_review(
-                db, post.post_id, f"auto: {quality_result.reasoning}"
-            )
-            queries.update_batch_meme_status(db, batch_id, post.post_id, item.status)
-            continue
+    consensus_ids: list[str] = []
+    next_idx = 0
+    pending: dict[asyncio.Task[_Outcome], RawPost] = {}
+    max_inflight = max(1, min(MAX_INFLIGHT, target_consensus))
 
+    async def call(post: RawPost) -> _Outcome:
         try:
-            consensus_result, record = await detector.detect_consensus(post)
+            result, record = await detector.detect_consensus(post)
+            return _Outcome(item=post, result=result, record=record)
         except OpenAIError as e:
-            if is_fatal_llm_error(e):
-                console.print(f"\n[bold red]Fatal consensus error:[/bold red] {e}")
-                break
-            consensus_result = None
-            record = None
-            log.warning("Consensus failed for %s: %s", post.post_id, e)
-        if record is not None:
-            queries.insert_llm_call(db, record)
-        if consensus_result is None or not consensus_result.has_consensus:
-            item.status = "no_consensus"
-            stats.no_consensus += 1
-            queries.update_batch_meme_status(db, batch_id, post.post_id, item.status)
-            continue
+            return _Outcome(item=post, error=e)
 
-        queries.upsert_ground_truth(
-            db,
-            post.post_id,
-            consensus_result.selected_explanation or "",
-            consensus_result.confidence,
-            consensus_result.agreeing_comment_ids,
-            consensus_result.num_agreeing_comments,
-            consensus_result.avg_comment_score,
-            config.consensus_model,
-            detector.prompt_id,
-        )
-        item.status = "consensus"
-        stats.consensus_found += 1
-        consensus_ids.append(post.post_id)
-        queries.update_batch_meme_status(db, batch_id, post.post_id, item.status)
+    def schedule() -> None:
+        nonlocal next_idx
+        while (
+            len(pending) < max_inflight
+            and next_idx < len(posts)
+            and len(consensus_ids) < target_consensus
+        ):
+            post = posts[next_idx]
+            next_idx += 1
+            pending[asyncio.create_task(call(post))] = post
+
+    console.print(f"  Quality passed {len(posts)} candidates")
+    schedule()
+    with make_progress() as prog:
+        task = prog.add_task("tracer consensus", total=len(posts))
+        while pending:
+            done, _ = await asyncio.wait(
+                pending.keys(), return_when=asyncio.FIRST_COMPLETED
+            )
+            for finished in done:
+                pending.pop(finished)
+                outcome = await finished
+                post = outcome.item
+                item = item_by_id[post.post_id]
+                if outcome.error is not None:
+                    e = outcome.error
+                    if isinstance(e, OpenAIError) and is_fatal_llm_error(e):
+                        console.print(f"\n[bold red]Fatal consensus error:[/bold red] {e}")
+                        for task_to_cancel in pending:
+                            task_to_cancel.cancel()
+                        await asyncio.gather(*pending.keys(), return_exceptions=True)
+                        return consensus_ids
+                    _set_status(db, batch_id, item, "consensus_error")
+                    stats.no_consensus += 1
+                    log.warning("Consensus failed for %s: %s", post.post_id, e)
+                    prog.update(task, advance=1)
+                    continue
+                if outcome.record is not None:
+                    queries.insert_llm_call(db, outcome.record)
+                if outcome.result is None or not outcome.result.has_consensus:
+                    _set_status(db, batch_id, item, "no_consensus")
+                    stats.no_consensus += 1
+                elif len(consensus_ids) < target_consensus:
+                    queries.upsert_ground_truth(
+                        db,
+                        post.post_id,
+                        outcome.result.selected_explanation or "",
+                        outcome.result.confidence,
+                        outcome.result.agreeing_comment_ids,
+                        outcome.result.num_agreeing_comments,
+                        outcome.result.avg_comment_score,
+                        config.consensus_model,
+                        detector.prompt_id,
+                    )
+                    _set_status(db, batch_id, item, "consensus")
+                    stats.consensus_found += 1
+                    consensus_ids.append(post.post_id)
+                else:
+                    _set_status(db, batch_id, item, "not_processed_target_met")
+                prog.update(task, advance=1)
+            if len(consensus_ids) >= target_consensus:
+                for task_to_cancel in pending:
+                    task_to_cancel.cancel()
+                await asyncio.gather(*pending.keys(), return_exceptions=True)
+                break
+            schedule()
+
+        for post in posts[next_idx:]:
+            _set_status(
+                db,
+                batch_id,
+                item_by_id[post.post_id],
+                "not_processed_target_met",
+            )
+            prog.update(task, advance=1)
+        for post in pending.values():
+            _set_status(
+                db,
+                batch_id,
+                item_by_id[post.post_id],
+                "not_processed_target_met",
+            )
+            prog.update(task, advance=1)
 
     return consensus_ids
 
@@ -296,34 +480,50 @@ async def _predict_batch(
     predicted_ids: list[str] = []
 
     console.print(f"\n[bold]Tracer predict:[/bold] {len(rows)} rows for {model}")
-    for idx, row in enumerate(rows, start=1):
-        item = item_by_id[row.post_id]
+
+    async def predict_one(payload: tuple[int, queries.MemeForPrediction]):
+        idx, row = payload
         curated = _to_curated(row, idx)
-        try:
-            prediction, record = await predictor.predict(curated, ds_version)
-        except ImageNotFoundError as e:
-            item.status = "prediction_error"
-            stats.prediction_errors += 1
-            queries.update_batch_meme_status(db, batch_id, row.post_id, item.status)
-            log.warning("%s", e)
-            continue
-        except (OpenAIError, AnthropicError) as e:
-            if is_fatal_llm_error(e):
-                console.print(f"\n[bold red]Fatal prediction error:[/bold red] {e}")
-                break
-            raise
-        if record is not None:
-            queries.insert_llm_call(db, record)
-        queries.insert_prediction(db, prediction)
-        if prediction.is_success:
-            item.predicted = True
-            item.status = "predicted"
-            stats.predictions += 1
-            predicted_ids.append(row.post_id)
-        else:
-            item.status = "prediction_error"
-            stats.prediction_errors += 1
-        queries.update_batch_meme_status(db, batch_id, row.post_id, item.status)
+        return await predictor.predict(curated, ds_version)
+
+    tasks, queue = await _fan_out(
+        list(enumerate(rows, start=1)),
+        predict_one,
+        catchable=(ImageNotFoundError, OpenAIError, AnthropicError),
+    )
+    aborted = False
+    with make_progress() as prog:
+        task = prog.add_task(f"tracer predict {model}", total=len(rows))
+        for _ in range(len(rows)):
+            outcome = await queue.get()
+            _, row = outcome.item
+            item = item_by_id[row.post_id]
+            if outcome.error is not None:
+                stats.prediction_errors += 1
+                _set_status(db, batch_id, item, "prediction_error")
+                if is_fatal_llm_error(outcome.error):
+                    console.print(f"\n[bold red]Fatal prediction error:[/bold red] {outcome.error}")
+                    aborted = True
+                else:
+                    log.warning("Prediction failed for %s: %s", row.post_id, outcome.error)
+                prog.update(task, advance=1)
+                continue
+            prediction: ModelPrediction = outcome.result
+            if outcome.record is not None:
+                queries.insert_llm_call(db, outcome.record)
+            queries.insert_prediction(db, prediction)
+            if prediction.is_success:
+                item.predicted = True
+                stats.predictions += 1
+                predicted_ids.append(row.post_id)
+                _set_status(db, batch_id, item, "predicted")
+            else:
+                stats.prediction_errors += 1
+                _set_status(db, batch_id, item, "prediction_error")
+            prog.update(task, advance=1)
+    await asyncio.gather(*tasks, return_exceptions=True)
+    if aborted:
+        return predicted_ids
     return predicted_ids
 
 
@@ -350,38 +550,112 @@ async def _judge_batch(
             "1.0",
         )
 
-    console.print(
-        f"\n[bold]Tracer judge:[/bold] {len(post_ids)} predictions across "
-        f"{len(judges)} judges"
-    )
+    judge_tasks: list[_JudgeTask] = []
     for judge_model, judge in judges.items():
         preds = queries.predictions_needing_judgment_for_post_ids(
             db, post_ids, model, judge_model
         )
         for pred in preds:
-            item = item_by_id[pred.post_id]
-            try:
-                result, record = await judge.judge(
-                    pred.prediction, pred.ground_truth, pred.post_id
+            judge_tasks.append(
+                _JudgeTask(
+                    post_id=pred.post_id,
+                    prediction_id=pred.prediction_id,
+                    prediction=pred.prediction,
+                    ground_truth=pred.ground_truth,
+                    judge=judge,
                 )
-            except (OpenAIError, AnthropicError, LlmJsonParseError) as e:
-                if is_fatal_llm_error(e):
-                    console.print(f"\n[bold red]Fatal judge error:[/bold red] {e}")
-                    break
+            )
+
+    console.print(
+        f"\n[bold]Tracer judge:[/bold] {len(judge_tasks)} judgments across "
+        f"{len(judges)} judges"
+    )
+
+    async def judge_one(task: _JudgeTask):
+        return await task.judge.judge(
+            task.prediction, task.ground_truth, task.post_id
+        )
+
+    tasks, queue = await _fan_out(
+        judge_tasks,
+        judge_one,
+        catchable=(OpenAIError, AnthropicError, LlmJsonParseError),
+    )
+    fatal_judges: set[str] = set()
+    with make_progress() as prog:
+        prog_task = prog.add_task("tracer judge", total=len(judge_tasks))
+        for _ in range(len(judge_tasks)):
+            outcome = await queue.get()
+            judge_task: _JudgeTask = outcome.item
+            item = item_by_id[judge_task.post_id]
+            if outcome.error is not None:
+                if is_fatal_llm_error(outcome.error):
+                    fatal_judges.add(judge_task.judge.model_id)
+                    console.print(
+                        f"\n[bold red]Fatal judge error from "
+                        f"{judge_task.judge.model_id}:[/bold red] {outcome.error}"
+                    )
+                else:
+                    log.warning(
+                        "Judge %s failed on %s: %s",
+                        judge_task.judge.model_id,
+                        judge_task.post_id,
+                        outcome.error,
+                    )
                 stats.judgment_errors += 1
-                log.warning("Judge %s failed on %s: %s", judge_model, pred.post_id, e)
+                prog.update(prog_task, advance=1)
                 continue
-            queries.insert_llm_call(db, record)
+            result = outcome.result
+            if outcome.record is not None:
+                queries.insert_llm_call(db, outcome.record)
             queries.insert_judgment(
                 db,
-                pred.prediction_id,
+                judge_task.prediction_id,
                 result.verdict.value,
                 result.reasoning,
-                judge.model_id,
-                judge.prompt_id,
+                judge_task.judge.model_id,
+                judge_task.judge.prompt_id,
             )
             item.judged += 1
             stats.judgments += 1
+            prog.update(prog_task, advance=1)
+    await asyncio.gather(*tasks, return_exceptions=True)
+
+
+def _db_summary(
+    db: Database, batch_id: str, predict_model: str
+) -> tuple[int, int, int, int, int]:
+    post_ids = queries.batch_meme_ids(db, batch_id)
+    if not post_ids:
+        return 0, 0, 0, 0, 0
+    placeholders = ",".join("?" * len(post_ids))
+    consensus = db.conn.execute(
+        f"""SELECT COUNT(*) FROM ground_truths
+            WHERE post_id IN ({placeholders})""",
+        post_ids,
+    ).fetchone()[0]
+    predictions = db.conn.execute(
+        f"""SELECT COUNT(*) FROM predictions
+            WHERE post_id IN ({placeholders})
+              AND model_id = ?
+              AND error IS NULL""",
+        (*post_ids, predict_model),
+    ).fetchone()[0]
+    prediction_errors = db.conn.execute(
+        f"""SELECT COUNT(*) FROM batch_memes
+            WHERE batch_id = ?
+              AND stage_status = 'prediction_error'""",
+        (batch_id,),
+    ).fetchone()[0]
+    judgments = db.conn.execute(
+        f"""SELECT COUNT(*) FROM judgments j
+            JOIN predictions p ON p.id = j.prediction_id
+            WHERE p.post_id IN ({placeholders})
+              AND p.model_id = ?
+              AND p.error IS NULL""",
+        (*post_ids, predict_model),
+    ).fetchone()[0]
+    return len(post_ids), consensus, predictions, prediction_errors, judgments
 
 
 async def run(
@@ -446,13 +720,17 @@ async def run(
         )
 
     console.print("\n[bold green]Tracer complete[/bold green]")
+    inserted, consensus, predictions, prediction_errors, judgments = _db_summary(
+        db, batch_id, predict_model
+    )
+    stage_counts = queries.batch_stage_counts(db, batch_id)
     console.print(
         f"  Batch:            {batch_id}\n"
-        f"  Inserted:         {stats.inserted}\n"
-        f"  Consensus found:  {stats.consensus_found}\n"
-        f"  No consensus:     {stats.no_consensus}\n"
-        f"  Predictions:      {stats.predictions}\n"
-        f"  Prediction errors:{stats.prediction_errors}\n"
-        f"  Judgments:        {stats.judgments}"
+        f"  Inserted:         {inserted}\n"
+        f"  Consensus found:  {consensus}\n"
+        f"  No consensus:     {stage_counts.get('no_consensus', 0)}\n"
+        f"  Predictions:      {predictions}\n"
+        f"  Prediction errors:{prediction_errors}\n"
+        f"  Judgments:        {judgments}"
     )
     return stats
