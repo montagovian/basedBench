@@ -186,6 +186,29 @@ These were found in a repo-wide review and have **not** been fixed yet.
    insert, and consider human-readable labels such as `prediction_baseline_v1`
    / `prediction_structured_v2` alongside the immutable hash.
 
+## Tracer Follow-ups From 50-Row Run (2026-06-03)
+
+Batch `tracer-20260603-150757` completed successfully:
+50 inserted → 12 consensus → 12 `gpt-5.5` predictions, 0 prediction errors.
+It also exposed UX/performance gaps in the first tracer implementation.
+
+1. **Make tracer phases concurrent but still batch-scoped.** Current tracer
+   curation and prediction are sequential, which is too slow for 50 candidates.
+   Port the ingest-style phased fan-out pattern to tracer for safety, quality,
+   consensus, and prediction, with a bounded semaphore and DB writes on the main
+   coroutine. Keep all candidate selection scoped to `batch_memes`.
+2. **Add real progress output.** The command is too quiet during long LLM loops.
+   Print per-phase candidate counts and rich progress bars or periodic counts
+   for completed/kept/excluded/no-consensus/predicted/error rows.
+3. **Compute the final tracer summary from the DB.** The current summary mostly
+   uses in-memory stats. Prefer `batch_stage_counts()` plus scoped prediction
+   and judgment counts so output remains accurate if retries, pre-existing rows,
+   or future concurrency affect in-memory accounting.
+4. **Clarify tracer sizing semantics.** `--fetch 50 --target-consensus 50`
+   attempts to fetch 50 candidates, but only a subset become consensus rows.
+   Consider a batteries-included mode that keeps fetching until N consensus rows
+   are found, with a max-candidates guard.
+
 ## Open thread the user raised earlier
 
 > "do you get spend metrics back from the providers… keep track of that"
