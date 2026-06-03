@@ -3,7 +3,7 @@
 **Date:** 2026-06-01
 **Repo:** https://github.com/montagovian/basedBench (private)
 **Branch:** main (check `git status -sb` for working tree and push state)
-**Tests:** 162 passing (`uv run pytest`)
+**Tests:** 172 passing (`uv run pytest`)
 
 ## What this is
 
@@ -23,7 +23,7 @@ current operational state:
 uv run basedbench status
 ```
 
-Expected DB shape: `data/basedbench.db`, `PRAGMA user_version` = 7. Snapshots
+Expected DB shape: `data/basedbench.db`, `PRAGMA user_version` = 8. Snapshots
 may still be absent unless `basedbench snapshot create` has been run.
 
 ## Working model defaults (verify against `config.py` before trusting)
@@ -64,7 +64,7 @@ the consensus prompt.
 | `src/basedbench/errors.py` | Exception hierarchy + `is_fatal_llm_error` (auth/quota fast-fail) |
 | `src/basedbench/schemas.py` | Pydantic models for posts, predictions, consensus, judgments |
 | `src/basedbench/db/connection.py` | SQLite; **autocommit mode** (isolation_level=None) — see Gotcha 1 |
-| `src/basedbench/db/migrations.py` | PRAGMA user_version migrations (currently 7): + `consensus_regression` (005), `gate_feedback` (006), tracer batches + gate prompt roles (007) |
+| `src/basedbench/db/migrations.py` | PRAGMA user_version migrations (currently 8): + `consensus_regression` (005), `gate_feedback` (006), tracer batches + gate prompt roles (007), prompt-versioned processing state (008) |
 | `src/basedbench/db/queries.py` | All query helpers (pure fns taking `Database` first); regression, gate-feedback, and batch-scoped helpers |
 | `src/basedbench/llm/_retry.py` | Shared tenacity retry that excludes fatal errors |
 | `src/basedbench/llm/provider.py` | `Predictor` Protocol |
@@ -167,10 +167,11 @@ These were found in a repo-wide review and have **not** been fixed yet.
    `get_prediction_counts()` counts all successful predictions by model but uses
    the validated set as the denominator. If `--include-unreviewed` was used, or
    a meme was later excluded, status can show misleading completion counts.
-4. **No-consensus rows are reprocessed indefinitely.**
-   `memes_without_ground_truth()` selects every non-excluded meme without ground
-   truth, and ingest does not persist a terminal "no consensus" decision. Every
-   ingest reruns consensus on known rejects unless they are manually excluded.
+4. **Fixed: no-consensus rows were reprocessed indefinitely.**
+   Migration 008 adds prompt-versioned `meme_processing_state` and backfills it
+   from existing `llm_calls`; ingest/tracer now record terminal safety and
+   consensus outcomes. Candidate queries skip terminal rows for the same
+   model/prompt while still reprocessing intentionally after prompt changes.
 5. **`basedbench view` is not actually read-only.** The command delegates to
    `review()`, which exposes validate/exclude/flag mutation controls. Either
    remove the read-only claim or add a real read-only mode.

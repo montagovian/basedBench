@@ -224,6 +224,64 @@ CREATE INDEX IF NOT EXISTS idx_batch_memes_post_id ON batch_memes(post_id);
 PRAGMA foreign_keys=ON;
 """
 
+MIGRATION_008 = """\
+CREATE TABLE IF NOT EXISTS meme_processing_state (
+    post_id TEXT NOT NULL REFERENCES memes(post_id),
+    stage TEXT NOT NULL CHECK(stage IN ('safety', 'consensus')),
+    model TEXT NOT NULL,
+    prompt_version TEXT NOT NULL,
+    status TEXT NOT NULL CHECK(status IN (
+        'passed', 'excluded', 'consensus', 'no_consensus'
+    )),
+    reasoning TEXT,
+    llm_call_id INTEGER REFERENCES llm_calls(id),
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL,
+    PRIMARY KEY (post_id, stage, model, prompt_version)
+);
+CREATE INDEX IF NOT EXISTS idx_meme_processing_state_lookup
+    ON meme_processing_state(stage, model, prompt_version, status);
+CREATE INDEX IF NOT EXISTS idx_meme_processing_state_post
+    ON meme_processing_state(post_id);
+
+INSERT OR REPLACE INTO meme_processing_state
+    (post_id, stage, model, prompt_version, status, reasoning, llm_call_id,
+     created_at, updated_at)
+SELECT
+    post_id, stage, model, prompt_version, status, reasoning, llm_call_id,
+    created_at, updated_at
+FROM (
+    SELECT
+        lc.post_id,
+        CASE lc.role
+            WHEN 'safety_gate' THEN 'safety'
+            WHEN 'consensus' THEN 'consensus'
+        END AS stage,
+        lc.model,
+        lc.prompt_version,
+        CASE
+            WHEN lc.role = 'safety_gate' AND lc.verdict = 'keep' THEN 'passed'
+            WHEN lc.role = 'safety_gate' AND lc.verdict = 'exclude' THEN 'excluded'
+            WHEN lc.role = 'consensus' AND lc.verdict = 'consensus' THEN 'consensus'
+            WHEN lc.role = 'consensus' AND lc.verdict = 'no_consensus' THEN 'no_consensus'
+        END AS status,
+        lc.reasoning,
+        lc.id AS llm_call_id,
+        lc.created_at,
+        lc.created_at AS updated_at
+    FROM llm_calls lc
+    JOIN (
+        SELECT post_id, role, model, prompt_version, MAX(id) AS id
+        FROM llm_calls
+        WHERE role IN ('safety_gate', 'consensus')
+          AND verdict IN ('keep', 'exclude', 'consensus', 'no_consensus')
+          AND error IS NULL
+        GROUP BY post_id, role, model, prompt_version
+    ) latest ON latest.id = lc.id
+) backfill
+WHERE status IS NOT NULL;
+"""
+
 
 def _column_exists(conn: sqlite3.Connection, table: str, column: str) -> bool:
     cursor = conn.execute(
@@ -265,3 +323,7 @@ def run_migrations(conn: sqlite3.Connection) -> None:
     if version < 7:
         conn.executescript(MIGRATION_007)
         conn.execute("PRAGMA user_version = 7")
+
+    if version < 8:
+        conn.executescript(MIGRATION_008)
+        conn.execute("PRAGMA user_version = 8")

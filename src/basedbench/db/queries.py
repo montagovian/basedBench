@@ -322,14 +322,40 @@ def get_all_ground_truths(db: Database) -> list[tuple[str, str]]:
     return [(r[0], r[1]) for r in rows]
 
 
-def memes_without_ground_truth(db: Database) -> list[str]:
-    """Find memes that have no ground truth, excluding already-excluded memes."""
+def memes_without_ground_truth(
+    db: Database,
+    model: str | None = None,
+    prompt_version: str | None = None,
+) -> list[str]:
+    """Find memes needing consensus, excluding terminal no-consensus state.
+
+    When `model` and `prompt_version` are provided, skips memes that already
+    reached a terminal consensus state under that exact consensus prompt. This
+    lets prompt changes intentionally reprocess old no-consensus rows while
+    preventing accidental repeated spend on the same prompt.
+    """
+    params: tuple[str, ...] = ()
+    state_filter = ""
+    if model is not None and prompt_version is not None:
+        state_filter = """
+             AND NOT EXISTS (
+                 SELECT 1 FROM meme_processing_state ps
+                 WHERE ps.post_id = m.post_id
+                   AND ps.stage = 'consensus'
+                   AND ps.model = ?
+                   AND ps.prompt_version = ?
+                   AND ps.status IN ('consensus', 'no_consensus')
+             )"""
+        params = (model, prompt_version)
+
     rows = db.conn.execute(
-        """SELECT m.post_id FROM memes m
+        f"""SELECT m.post_id FROM memes m
            LEFT JOIN ground_truths gt ON m.post_id = gt.post_id
            LEFT JOIN reviews r ON m.post_id = r.post_id
            WHERE gt.post_id IS NULL
-             AND (r.status IS NULL OR r.status != 'excluded')"""
+             AND (r.status IS NULL OR r.status != 'excluded')
+             {state_filter}""",
+        params,
     ).fetchall()
     return [r[0] for r in rows]
 
@@ -375,9 +401,36 @@ def _memes_pending_gate(db: Database) -> list[str]:
     return [r[0] for r in rows]
 
 
-def memes_needing_safety_gate(db: Database) -> list[str]:
-    """Memes pending a safety-appropriateness decision (no prior auto/human review)."""
-    return _memes_pending_gate(db)
+def memes_needing_safety_gate(
+    db: Database,
+    model: str | None = None,
+    prompt_version: str | None = None,
+) -> list[str]:
+    """Memes pending a safety decision for this safety prompt.
+
+    When `model` and `prompt_version` are provided, skips memes that already
+    reached a terminal safety state under that exact safety prompt.
+    """
+    if model is None or prompt_version is None:
+        return _memes_pending_gate(db)
+
+    rows = db.conn.execute(
+        """SELECT m.post_id FROM memes m
+           LEFT JOIN reviews r ON m.post_id = r.post_id
+           LEFT JOIN ground_truths gt ON m.post_id = gt.post_id
+           WHERE r.post_id IS NULL
+             AND gt.post_id IS NULL
+             AND NOT EXISTS (
+                 SELECT 1 FROM meme_processing_state ps
+                 WHERE ps.post_id = m.post_id
+                   AND ps.stage = 'safety'
+                   AND ps.model = ?
+                   AND ps.prompt_version = ?
+                   AND ps.status IN ('passed', 'excluded')
+             )""",
+        (model, prompt_version),
+    ).fetchall()
+    return [r[0] for r in rows]
 
 
 def memes_needing_quality_gate(db: Database) -> list[str]:
@@ -1110,9 +1163,9 @@ def snapshot_leaderboard(db: Database, snapshot_id: str) -> list[LeaderboardEntr
 # ═══════════════════════════════════════════════════════
 
 
-def insert_llm_call(db: Database, record: LlmCallRecord) -> None:
-    """Insert an LLM API call record."""
-    db.conn.execute(
+def insert_llm_call(db: Database, record: LlmCallRecord) -> int:
+    """Insert an LLM API call record and return its row id."""
+    cursor = db.conn.execute(
         """INSERT INTO llm_calls
            (session_id, role, post_id, model, system_prompt, user_prompt,
             prompt_version, latency_ms, response, error, verdict, reasoning,
@@ -1134,6 +1187,43 @@ def insert_llm_call(db: Database, record: LlmCallRecord) -> None:
             record.image_path,
             record.completion_tokens,
             record.prompt_tokens,
+        ),
+    )
+    return int(cursor.lastrowid)
+
+
+def record_meme_processing_state(
+    db: Database,
+    post_id: str,
+    stage: str,
+    model: str,
+    prompt_version: str,
+    status: str,
+    reasoning: str | None = None,
+    llm_call_id: int | None = None,
+) -> None:
+    """Record a terminal automated state for a stage/model/prompt tuple."""
+    now = _now()
+    db.conn.execute(
+        """INSERT INTO meme_processing_state
+           (post_id, stage, model, prompt_version, status, reasoning,
+            llm_call_id, created_at, updated_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+           ON CONFLICT(post_id, stage, model, prompt_version) DO UPDATE SET
+               status = excluded.status,
+               reasoning = excluded.reasoning,
+               llm_call_id = excluded.llm_call_id,
+               updated_at = excluded.updated_at""",
+        (
+            post_id,
+            stage,
+            model,
+            prompt_version,
+            status,
+            reasoning,
+            llm_call_id,
+            now,
+            now,
         ),
     )
 

@@ -251,13 +251,35 @@ async def _run_gates_and_consensus(
                 prog.update(task, advance=1)
                 continue
             if outcome.record is not None:
-                queries.insert_llm_call(db, outcome.record)
+                call_id = queries.insert_llm_call(db, outcome.record)
+            else:
+                call_id = None
             if outcome.result.keep:
+                queries.record_meme_processing_state(
+                    db,
+                    post.post_id,
+                    "safety",
+                    config.consensus_model,
+                    safety.prompt_id,
+                    "passed",
+                    outcome.result.category,
+                    call_id,
+                )
                 safety_kept.append(post)
             else:
                 stats.safety_excluded += 1
                 queries.insert_auto_review(
                     db, post.post_id, f"safety: {outcome.result.category}"
+                )
+                queries.record_meme_processing_state(
+                    db,
+                    post.post_id,
+                    "safety",
+                    config.consensus_model,
+                    safety.prompt_id,
+                    "excluded",
+                    outcome.result.category,
+                    call_id,
                 )
                 _set_status(db, batch_id, item, "safety_excluded")
             prog.update(task, advance=1)
@@ -353,8 +375,24 @@ async def _run_consensus_phase(
                     prog.update(task, advance=1)
                     continue
                 if outcome.record is not None:
-                    queries.insert_llm_call(db, outcome.record)
+                    call_id = queries.insert_llm_call(db, outcome.record)
+                else:
+                    call_id = None
                 if outcome.result is None or not outcome.result.has_consensus:
+                    if outcome.record is None or (
+                        outcome.record.error is None
+                        and outcome.record.verdict == "no_consensus"
+                    ):
+                        queries.record_meme_processing_state(
+                            db,
+                            post.post_id,
+                            "consensus",
+                            config.consensus_model,
+                            detector.prompt_id,
+                            "no_consensus",
+                            outcome.result.reasoning if outcome.result else None,
+                            call_id,
+                        )
                     _set_status(db, batch_id, item, "no_consensus")
                     stats.no_consensus += 1
                 elif len(consensus_ids) < target_consensus:
@@ -368,6 +406,16 @@ async def _run_consensus_phase(
                         outcome.result.avg_comment_score,
                         config.consensus_model,
                         detector.prompt_id,
+                    )
+                    queries.record_meme_processing_state(
+                        db,
+                        post.post_id,
+                        "consensus",
+                        config.consensus_model,
+                        detector.prompt_id,
+                        "consensus",
+                        outcome.result.reasoning,
+                        call_id,
                     )
                     _set_status(db, batch_id, item, "consensus")
                     stats.consensus_found += 1

@@ -274,19 +274,20 @@ async def run(
 
     # ─── Phase 1.4: safety gate (concurrent) ───
     console.print("\n[bold]Phase 1.4:[/bold] Running safety gate...")
-    safety_candidates = queries.memes_needing_safety_gate(db)
+    safety = SafetyGate(config)
+    queries.register_prompt(
+        db,
+        safety.prompt_id,
+        "safety_gate",
+        SAFETY_GATE_SYSTEM_PROMPT,
+        SAFETY_GATE_USER_TEMPLATE,
+        "1.0",
+    )
+    safety_candidates = queries.memes_needing_safety_gate(
+        db, config.consensus_model, safety.prompt_id
+    )
     console.print(f"  {len(safety_candidates)} memes need safety check")
     if safety_candidates:
-        safety = SafetyGate(config)
-        queries.register_prompt(
-            db,
-            safety.prompt_id,
-            "safety_gate",
-            SAFETY_GATE_SYSTEM_PROMPT,
-            SAFETY_GATE_USER_TEMPLATE,
-            "1.0",
-        )
-
         # Pre-load posts (sequential DB reads, fast) and filter unreconstructable ones.
         safety_posts: list[RawPost] = []
         for pid in safety_candidates:
@@ -324,13 +325,34 @@ async def run(
                         log.warning("Safety gate failed for %s: %s", outcome.post.post_id, e)
                         stats.safety_skipped += 1
                 else:
+                    call_id = None
                     if outcome.record is not None:
-                        queries.insert_llm_call(db, outcome.record)
+                        call_id = queries.insert_llm_call(db, outcome.record)
                     if outcome.result.keep:
+                        queries.record_meme_processing_state(
+                            db,
+                            outcome.post.post_id,
+                            "safety",
+                            config.consensus_model,
+                            safety.prompt_id,
+                            "passed",
+                            outcome.result.category,
+                            call_id,
+                        )
                         stats.safety_passed += 1
                     else:
                         queries.insert_auto_review(
                             db, outcome.post.post_id, f"safety: {outcome.result.category}"
+                        )
+                        queries.record_meme_processing_state(
+                            db,
+                            outcome.post.post_id,
+                            "safety",
+                            config.consensus_model,
+                            safety.prompt_id,
+                            "excluded",
+                            outcome.result.category,
+                            call_id,
                         )
                         stats.safety_failed += 1
                 prog.update(task, advance=1)
@@ -345,19 +367,20 @@ async def run(
 
     # ─── Phase 2: consensus (concurrent) ───
     console.print("\n[bold]Phase 2:[/bold] Running consensus detection...")
-    missing = queries.memes_without_ground_truth(db)
+    detector = ConsensusDetector(config)
+    queries.register_prompt(
+        db,
+        detector.prompt_id,
+        "consensus",
+        CONSENSUS_SYSTEM_PROMPT,
+        CONSENSUS_USER_TEMPLATE,
+        "1.0",
+    )
+    missing = queries.memes_without_ground_truth(
+        db, config.consensus_model, detector.prompt_id
+    )
     console.print(f"  {len(missing)} memes need consensus detection")
     if missing:
-        detector = ConsensusDetector(config)
-        queries.register_prompt(
-            db,
-            detector.prompt_id,
-            "consensus",
-            CONSENSUS_SYSTEM_PROMPT,
-            CONSENSUS_USER_TEMPLATE,
-            "1.0",
-        )
-
         consensus_posts: list[RawPost] = []
         for pid in missing:
             post = queries.reconstruct_raw_post(db, pid)
@@ -393,8 +416,9 @@ async def run(
                         log.warning("Consensus failed for %s: %s", outcome.post.post_id, e)
                         stats.consensus_failed += 1
                 else:
+                    call_id = None
                     if outcome.record is not None:
-                        queries.insert_llm_call(db, outcome.record)
+                        call_id = queries.insert_llm_call(db, outcome.record)
                     if outcome.result.has_consensus:
                         queries.upsert_ground_truth(
                             db,
@@ -407,8 +431,32 @@ async def run(
                             config.consensus_model,
                             detector.prompt_id,
                         )
+                        queries.record_meme_processing_state(
+                            db,
+                            outcome.post.post_id,
+                            "consensus",
+                            config.consensus_model,
+                            detector.prompt_id,
+                            "consensus",
+                            outcome.result.reasoning,
+                            call_id,
+                        )
                         stats.consensus_found += 1
                     else:
+                        if outcome.record is None or (
+                            outcome.record.error is None
+                            and outcome.record.verdict == "no_consensus"
+                        ):
+                            queries.record_meme_processing_state(
+                                db,
+                                outcome.post.post_id,
+                                "consensus",
+                                config.consensus_model,
+                                detector.prompt_id,
+                                "no_consensus",
+                                outcome.result.reasoning,
+                                call_id,
+                            )
                         stats.consensus_failed += 1
                 prog.update(task, advance=1)
 

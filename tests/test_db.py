@@ -59,6 +59,15 @@ def test_migrate_creates_batches_tables(db: Database):
     assert batch_memes == 1
 
 
+def test_migrate_creates_processing_state_table(db: Database):
+    count = db.conn.execute(
+        "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='meme_processing_state'"
+    ).fetchone()[0]
+    version = db.conn.execute("PRAGMA user_version").fetchone()[0]
+    assert count == 1
+    assert version == 8
+
+
 # ═══════════════════════════════════════════════════════
 # Memes
 # ═══════════════════════════════════════════════════════
@@ -147,6 +156,32 @@ def test_quality_gate_query(db: Database):
 
     needing = q.memes_needing_quality_gate(db)
     assert "post1" in needing
+
+
+def test_safety_candidates_skip_same_prompt_terminal_state(db: Database):
+    post = sample_post("post1")
+    q.insert_meme(db, post)
+
+    assert q.memes_needing_safety_gate(db, "model-a", "safety-v1") == ["post1"]
+    q.record_meme_processing_state(
+        db, "post1", "safety", "model-a", "safety-v1", "passed"
+    )
+
+    assert q.memes_needing_safety_gate(db, "model-a", "safety-v1") == []
+    assert q.memes_needing_safety_gate(db, "model-a", "safety-v2") == ["post1"]
+
+
+def test_consensus_candidates_skip_same_prompt_no_consensus(db: Database):
+    post = sample_post("post1")
+    q.insert_meme(db, post)
+
+    assert q.memes_without_ground_truth(db, "model-a", "consensus-v1") == ["post1"]
+    q.record_meme_processing_state(
+        db, "post1", "consensus", "model-a", "consensus-v1", "no_consensus"
+    )
+
+    assert q.memes_without_ground_truth(db, "model-a", "consensus-v1") == []
+    assert q.memes_without_ground_truth(db, "model-a", "consensus-v2") == ["post1"]
 
 
 def test_auto_review_idempotent(db: Database):
