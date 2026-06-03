@@ -138,6 +138,42 @@ Previously the Browse/Comparison dropdowns were frozen at app-startup state.
 Now Browse, Prediction Comparison, Inspect, Stats, AI Gloss Failures, and Filter
 Misfires all refresh via `tab.select(...)`.
 
+## Open Issues From Deep Review (2026-06-03)
+
+These were found in a repo-wide review and have **not** been fixed yet.
+
+1. **Quick start blocks OpenAI-only users.** README tells users to fill only
+   Reddit + `OPENAI_API_KEY`, but default `judge_models` includes
+   `claude-sonnet-4-6`, and `Config()` rejects missing `ANTHROPIC_API_KEY`.
+   Because every CLI command constructs `Config()`, even `status`/`ingest` can
+   fail before judging. Options: make Anthropic required in quick start, default
+   to OpenAI-only judges, or defer Claude-key validation to `judge`.
+2. **Snapshot export/HF push can publish failed predictions.**
+   `snapshot_model_ids()` and `snapshot_predictions_for_model()` do not filter
+   `p.error IS NULL`; `export` and `hf_push` use those helpers directly. A
+   transient/API failure row has `prediction=""`, so a snapshot can contain
+   empty model answers.
+3. **Prediction status counts are not scoped to validated rows.**
+   `get_prediction_counts()` counts all successful predictions by model but uses
+   the validated set as the denominator. If `--include-unreviewed` was used, or
+   a meme was later excluded, status can show misleading completion counts.
+4. **No-consensus rows are reprocessed indefinitely.**
+   `memes_without_ground_truth()` selects every non-excluded meme without ground
+   truth, and ingest does not persist a terminal "no consensus" decision. Every
+   ingest reruns consensus on known rejects unless they are manually excluded.
+5. **`basedbench view` is not actually read-only.** The command delegates to
+   `review()`, which exposes validate/exclude/flag mutation controls. Either
+   remove the read-only claim or add a real read-only mode.
+6. **Safety/quality prompt versions are silently not registered.** The
+   `prompt_versions.role` CHECK only permits `consensus`, `prediction`, and
+   `judge`; ingest registers `safety_gate` and `quality_gate`. Because
+   `register_prompt()` uses `INSERT OR IGNORE`, those prompt rows are silently
+   dropped.
+7. **Token/cost logging misses high-volume calls.** Safety, predictions, and
+   judges record usage, but quality gate and consensus do not store successful
+   `prompt_tokens`/`completion_tokens`, which weakens the future `basedbench
+   cost` command.
+
 ## Open thread the user raised earlier
 
 > "do you get spend metrics back from the providers… keep track of that"
