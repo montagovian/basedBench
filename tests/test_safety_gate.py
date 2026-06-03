@@ -110,32 +110,32 @@ async def test_safety_gate_defaults_category_when_omitted():
 # ───────── Pipeline integration: idempotency / phase ordering ─────────
 
 
-def test_safety_excluded_meme_skipped_by_quality_gate(db: Database):
-    """A meme excluded by safety must NOT show up in quality-gate's candidate list."""
+def test_safety_excluded_meme_skipped_by_consensus(db: Database):
+    """A meme excluded by safety must NOT show up in consensus candidates."""
     post = sample_post("post1")
     q.insert_meme(db, post)
     for c in post.comments:
         q.insert_comment(db, "post1", c)
 
-    # Before any gate runs, both predicates return the meme.
+    # Before safety runs, both predicates return the meme.
     assert "post1" in q.memes_needing_safety_gate(db)
-    assert "post1" in q.memes_needing_quality_gate(db)
+    assert "post1" in q.memes_without_ground_truth(db)
 
     # Safety gate excludes it.
     q.insert_auto_review(db, "post1", "safety: explicit_sexual")
 
-    # Now neither predicate returns it — quality gate skips, no wasted tokens.
+    # Now neither predicate returns it — consensus skips, no wasted tokens.
     assert "post1" not in q.memes_needing_safety_gate(db)
-    assert "post1" not in q.memes_needing_quality_gate(db)
+    assert "post1" not in q.memes_without_ground_truth(db)
 
 
-def test_safety_kept_meme_still_visible_to_quality_gate(db: Database):
-    """Memes that PASS safety still need quality gating — no review row is written."""
+def test_safety_kept_meme_still_visible_to_consensus(db: Database):
+    """Memes that PASS safety still need consensus — no review row is written."""
     post = sample_post("post1")
     q.insert_meme(db, post)
     for c in post.comments:
         q.insert_comment(db, "post1", c)
 
-    # Safety pass writes no review row (only failures do).
-    # Quality gate should still pick this up.
-    assert "post1" in q.memes_needing_quality_gate(db)
+    # Safety pass writes no review row (only failures do), so consensus should
+    # still pick this up.
+    assert "post1" in q.memes_without_ground_truth(db)

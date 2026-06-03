@@ -1,6 +1,6 @@
 """Tests for llm/prompts.py — mirrors v4 prompt tests."""
 
-from basedbench.llm.prompts import VAGUE_PHRASES, prompt_id
+from basedbench.llm.prompts import CONSENSUS_SYSTEM_PROMPT, VAGUE_PHRASES, prompt_id
 
 
 def test_prompt_id_deterministic():
@@ -31,3 +31,10 @@ def test_no_vague_phrases():
     lower = explanation.lower()
     has_vague = any(phrase in lower for phrase in VAGUE_PHRASES)
     assert not has_vague
+
+
+def test_consensus_rejects_pure_scrambled_nonsense():
+    prompt = CONSENSUS_SYSTEM_PROMPT.lower()
+    assert "scrambled" in prompt
+    assert "nonsense" in prompt
+    assert "no specific scenario" in prompt

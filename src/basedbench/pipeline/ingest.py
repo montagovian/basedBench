@@ -1,10 +1,9 @@
-"""Ingest pipeline: Reddit fetch → image download → safety gate → quality gate → consensus.
+"""Ingest pipeline: Reddit fetch → image download → safety gate → consensus.
 
-The three LLM phases (safety, quality, consensus) run their calls concurrently
-via a per-phase semaphore. DB writes stay on the main coroutine to keep sqlite
-single-threaded and avoid write contention. Each phase pre-loads the candidate
-RawPosts upfront (sequential, fast) so workers only do the network-bound LLM
-call.
+The LLM phases run their calls concurrently via a per-phase semaphore. DB writes
+stay on the main coroutine to keep sqlite single-threaded and avoid write
+contention. Each phase pre-loads the candidate RawPosts upfront (sequential,
+fast) so workers only do the network-bound LLM call.
 """
 
 from __future__ import annotations
@@ -31,12 +30,9 @@ from basedbench.llm.consensus import ConsensusDetector
 from basedbench.llm.prompts import (
     CONSENSUS_SYSTEM_PROMPT,
     CONSENSUS_USER_TEMPLATE,
-    QUALITY_GATE_SYSTEM_PROMPT,
-    QUALITY_GATE_USER_TEMPLATE,
     SAFETY_GATE_SYSTEM_PROMPT,
     SAFETY_GATE_USER_TEMPLATE,
 )
-from basedbench.llm.quality_gate import QualityGate
 from basedbench.llm.record import LlmCallRecord
 from basedbench.llm.safety_gate import SafetyGate
 from basedbench.pipeline._progress import make_progress
@@ -64,9 +60,6 @@ class IngestStats:
     safety_passed: int = 0
     safety_failed: int = 0
     safety_skipped: int = 0
-    gate_passed: int = 0
-    gate_failed: int = 0
-    gate_skipped: int = 0
     consensus_found: int = 0
     consensus_failed: int = 0
 
@@ -255,8 +248,8 @@ async def run(
         posts via pullpush.io for that specific window, then fetch comments
         via Reddit OAuth.
 
-    All downstream phases (safety / quality / consensus) are identical
-    regardless of fetch mode.
+    All downstream phases (safety / consensus) are identical regardless of
+    fetch mode.
     """
     console = console or Console()
     stats = IngestStats()
@@ -348,82 +341,6 @@ async def run(
         console.print(
             f"  Kept: {stats.safety_passed}, Excluded: {stats.safety_failed}, "
             f"Skipped: {stats.safety_skipped}"
-        )
-
-    # ─── Phase 1.5: quality gate (concurrent) ───
-    console.print("\n[bold]Phase 1.5:[/bold] Running quality gate...")
-    gate_candidates = queries.memes_needing_quality_gate(db)
-    console.print(f"  {len(gate_candidates)} memes need quality gate")
-    if gate_candidates:
-        gate = QualityGate(config)
-        queries.register_prompt(
-            db,
-            gate.prompt_id,
-            "quality_gate",
-            QUALITY_GATE_SYSTEM_PROMPT,
-            QUALITY_GATE_USER_TEMPLATE,
-            "1.0",
-        )
-
-        gate_posts: list[RawPost] = []
-        for pid in gate_candidates:
-            post = queries.reconstruct_raw_post(db, pid)
-            if post is None:
-                log.warning("Could not reconstruct post %s", pid)
-                stats.gate_skipped += 1
-                continue
-            qualifying = [
-                c for c in post.comments if c.score >= config.min_comment_score
-            ]
-            if not qualifying:
-                stats.gate_skipped += 1
-                continue
-            gate_posts.append(post)
-
-        tasks, queue = await _fan_out(
-            gate_posts,
-            gate.check,
-            catchable=(OpenAIError, LlmJsonParseError),
-        )
-
-        aborted = False
-        with make_progress() as prog:
-            task = prog.add_task("quality gate", total=len(gate_posts))
-            for _ in range(len(gate_posts)):
-                outcome = await queue.get()
-                if outcome.error is not None:
-                    e = outcome.error
-                    if isinstance(e, OpenAIError) and is_fatal_llm_error(e):
-                        if not aborted:
-                            console.print(
-                                f"\n[bold red]Fatal OpenAI error during quality gate:[/bold red] {e}"
-                            )
-                            console.print(
-                                "[red]Aborting phase. Inflight requests will still drain.[/red]"
-                            )
-                            aborted = True
-                        stats.gate_skipped += 1
-                    else:
-                        log.warning("Quality gate failed for %s: %s", outcome.post.post_id, e)
-                        stats.gate_skipped += 1
-                else:
-                    if outcome.record is not None:
-                        queries.insert_llm_call(db, outcome.record)
-                    if outcome.result.passes:
-                        stats.gate_passed += 1
-                    else:
-                        queries.insert_auto_review(
-                            db, outcome.post.post_id, f"auto: {outcome.result.reasoning}"
-                        )
-                        stats.gate_failed += 1
-                prog.update(task, advance=1)
-
-        await asyncio.gather(*tasks, return_exceptions=True)
-        if aborted:
-            return stats
-        console.print(
-            f"  Passed: {stats.gate_passed}, Excluded: {stats.gate_failed}, "
-            f"Skipped: {stats.gate_skipped}"
         )
 
     # ─── Phase 2: consensus (concurrent) ───

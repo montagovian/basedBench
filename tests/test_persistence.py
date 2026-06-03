@@ -78,7 +78,7 @@ def test_status_counts_never_negative(tmp_path: Path):
     db_path = tmp_path / "test.db"
     db = Database.open(db_path)
 
-    # 10 memes, 2 with consensus, 8 auto-excluded by quality gate
+    # 10 memes, 2 with consensus, 8 historical auto-exclusions
     for i in range(10):
         queries.insert_meme(db, _post(f"p{i}"))
     for i in range(2):

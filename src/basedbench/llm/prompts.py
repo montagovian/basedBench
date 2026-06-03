@@ -43,6 +43,9 @@ REJECT (has_consensus: false) if:
 - Fewer than 3 substantive comments agree
 - Comments disagree on the core humor mechanism
 - The meme relies on "you had to be there" humor with no transferable explanation
+- The entire joke is only that a known phrase, slogan, or format was scrambled,
+  word-swapped, or randomized into nonsense, and there is no specific scenario,
+  target, point, or new meaning to recover beyond "it is nonsensical"
 
 IMPORTANT: Include SPECIFIC references in the explanation:
 - Exact names of people, characters, or public figures

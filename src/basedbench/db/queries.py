@@ -381,11 +381,11 @@ def memes_needing_safety_gate(db: Database) -> list[str]:
 
 
 def memes_needing_quality_gate(db: Database) -> list[str]:
-    """Memes pending a quality-gate decision (no prior auto/human review).
+    """Legacy quality-gate candidates (no prior auto/human review).
 
-    Same predicate as memes_needing_safety_gate; safety runs first in the
-    pipeline so its exclusions are already in the reviews table by the
-    time this is called.
+    The standalone quality gate is no longer used by ingest/tracer; its narrow
+    scrambled-nonsense rule now lives in consensus. This helper is retained for
+    historical callers/tests and old quality-gate trace analysis.
     """
     return _memes_pending_gate(db)
 
@@ -1499,8 +1499,9 @@ def flag_gate_feedback(
     correct_decision: str | None = None,
     notes: str | None = None,
 ) -> None:
-    """Record that a safety/quality/consensus filter decision was wrong.
+    """Record that a safety/consensus filter decision was wrong.
 
+    The `quality` gate value is retained for historical quality-gate rows.
     Keyed on (post_id, gate) so re-flagging the same gate updates in place.
     """
     db.conn.execute(

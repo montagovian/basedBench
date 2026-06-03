@@ -68,7 +68,7 @@ def ingest(
         help="End of date range (YYYY-MM-DD, exclusive). Uses pullpush.io.",
     ),
 ) -> None:
-    """Fetch memes from Reddit, download images, run quality gate + consensus."""
+    """Fetch memes from Reddit, download images, run safety gate + consensus."""
     _configure_logging()
 
     # Validate mode selection: date-range OR time-filter, not both.
@@ -369,7 +369,8 @@ def push(
 def traces(
     id: int | None = typer.Option(None, help="Show full detail for this call id."),
     role: str | None = typer.Option(
-        None, help="Filter by role (quality_gate, consensus, prediction, judge)."
+        None,
+        help="Filter by role (safety_gate, quality_gate, consensus, prediction, judge).",
     ),
     post_id: str | None = typer.Option(None, "--post-id", help="Filter by post id."),
     session: str | None = typer.Option(None, help="Filter by session id."),

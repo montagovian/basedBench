@@ -1,4 +1,9 @@
-"""Quality gate — cheap text-only pre-filter to reject non-meme posts before vision/consensus."""
+"""Legacy quality gate.
+
+The live ingest/tracer pipeline folds this narrow rejection rule into consensus.
+This module remains for historical trace analysis and any explicit regression
+work against old quality-gate behavior.
+"""
 
 from __future__ import annotations
 

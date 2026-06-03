@@ -25,7 +25,7 @@ the HuggingFace ecosystem (Datasets + Spaces).
 ## Pipeline
 
 ```
-Reddit → safety gate → quality gate → consensus → human review → prediction → judge → snapshot → HF Hub
+Reddit → safety gate → consensus → human review → prediction → judge → snapshot → HF Hub
 ```
 
 - **Reddit fetch** (`r/ExplainTheJoke`, `r/PeterExplainsTheJoke` by default; recent
@@ -33,11 +33,9 @@ Reddit → safety gate → quality gate → consensus → human review → predi
   over pullpush.io)
 - **Safety gate**: text-only LLM pre-filter that drops content unfit for a public
   dataset (explicit sexual content, slurs, hate, doxx). Keeps edgy/dark/political humor.
-- **Quality gate**: cheap text-only LLM pre-filter that rejects memes with no
-  recoverable meaning (e.g. a known phrase scrambled into pure nonsense)
 - **Consensus**: `gpt-5.4-mini` analyzes top comments, must agree on a specific
   explanation passing 10 stages of validation (confidence ≥ 0.6, len ≥ 100, no
-  vague phrases, etc.)
+  vague phrases, no pure scrambled-nonsense jokes, etc.)
 - **Review**: Gradio UI to validate/exclude individual memes before they become ground truth
 - **Predict**: any OpenAI or Anthropic vision model explains each validated meme
   (image only — no comments, no title, no web search)
@@ -94,16 +92,17 @@ incompatible readings, ignores a linked source):
 
 ### 2. Filter decisions — "Filter Misfires"
 
-When a meme was *excluded* (or *kept*) by the wrong call — the safety/quality
-gate dropped a good meme, kept a bad one, or consensus missed a real agreement:
+When a meme was *excluded* (or *kept*) by the wrong call — the safety gate
+dropped a good meme, kept a bad one, or consensus missed a real agreement:
 
 1. In the **Inspect** tab, browse **all** content (including excluded memes) in
    the rich review view. Each meme shows the gate/consensus model's own verdict
    and reasoning, so you can judge whether the decision was right.
 2. Open the **🚩 A filter got this wrong** accordion, pick which filter erred
    (it defaults to whichever acted on the meme), and say what should have happened.
-3. Flagged misfires collect in the **Filter Misfires** tab, grouped by gate —
-   the evidence base for the next gate-prompt revision.
+3. Flagged misfires collect in the **Filter Misfires** tab, grouped by filter —
+   the evidence base for the next prompt revision. Historical quality-gate
+   feedback remains visible there, but new ingests fold that rule into consensus.
 
 ## Snapshot and publish
 
@@ -118,7 +117,7 @@ uv run basedbench push v0.1 --repo your-username/basedbench
 
 | Command | Description |
 |---|---|
-| `ingest` | Fetch posts, download images, run safety + quality gate + consensus |
+| `ingest` | Fetch posts, download images, run safety gate + consensus |
 | `predict <model>` | Run a VLM over memes that need a prediction |
 | `judge` | Score predictions — each is judged by every configured judge model |
 | `status` | Pipeline state + next-step hints |

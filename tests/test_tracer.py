@@ -44,18 +44,6 @@ class _FakeSafetyGate:
         )
 
 
-class _FakeQualityGate:
-    prompt_id = "fake_quality"
-
-    def __init__(self, config) -> None:
-        pass
-
-    async def check(self, post):
-        return SimpleNamespace(passes=True, reasoning="ok"), _record(
-            "quality_gate", post.post_id, self.prompt_id
-        )
-
-
 class _FakeConsensusDetector:
     prompt_id = "fake_consensus"
 
@@ -150,7 +138,6 @@ async def test_tracer_scopes_predictions_and_judgments(monkeypatch, db: Database
     )
 
     monkeypatch.setattr(tracer, "SafetyGate", _FakeSafetyGate)
-    monkeypatch.setattr(tracer, "QualityGate", _FakeQualityGate)
     monkeypatch.setattr(tracer, "ConsensusDetector", _FakeConsensusDetector)
     monkeypatch.setattr(
         tracer, "_build_predictor", lambda model, config: _FakePredictor()

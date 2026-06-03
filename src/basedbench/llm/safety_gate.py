@@ -1,9 +1,9 @@
 """Safety gate — content-appropriateness pre-filter for dataset publication.
 
-Runs before the quality gate. Excludes memes that would embarrass the dataset
-when published (explicit sexual content, slurs, hate speech, doxxing, etc.)
-while preserving mild edge, dark humor, and political satire. The prompt is
-explicit about what NOT to filter so we don't lose the cultural signal.
+Runs before consensus. Excludes memes that would embarrass the dataset when
+published (explicit sexual content, slurs, hate speech, doxxing, etc.) while
+preserving mild edge, dark humor, and political satire. The prompt is explicit
+about what NOT to filter so we don't lose the cultural signal.
 """
 
 from __future__ import annotations

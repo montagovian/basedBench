@@ -62,7 +62,7 @@ def test_500_server_error_is_transient():
     assert not is_fatal_llm_error(e)
 
 
-# ─── Consensus + quality gate raise on fatal, swallow on transient ───
+# ─── Consensus raises on fatal, swallows transient errors ───
 
 
 @pytest.mark.asyncio

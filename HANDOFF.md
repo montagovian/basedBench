@@ -38,7 +38,7 @@ may still be absent unless `basedbench snapshot create` has been run.
 ## The strict workflow (how the user wants ingest run)
 
 Human review gate **before** spending predict/judge tokens. `ingest` deliberately
-stops at consensus: fetch → safety gate → quality gate → consensus. The user then
+stops at consensus: fetch → safety gate → consensus. The user then
 validates in Gradio. Only run `predict`/`judge` against the validated set.
 
 ## Two feedback loops (the recent focus)
@@ -47,12 +47,14 @@ validates in Gradio. Only run `predict`/`judge` against the validated set.
    *gloss* from the Review Queue tab → collected in the AI Gloss Failures tab →
    `basedbench regression-eval` replays current consensus over the set (read-only).
 2. **Filter Misfires** (`gate_feedback` table): in the Inspect tab, browse ALL
-   content (incl. excluded) and flag when a safety/quality/consensus *decision*
-   was wrong → collected in the Filter Misfires tab.
+   content (incl. excluded) and flag when a safety/consensus *decision* was
+   wrong → collected in the Filter Misfires tab. Historical quality-gate
+   feedback remains visible, but new runs fold that rule into consensus.
 
 Golden rule (now in README): retune a gate/consensus prompt against the real
-flagged cases + a known-good sample, never from intuition. This is exactly how
-the scrambled-into-nonsense quality-gate fix (`6f5dcbc`) was validated.
+flagged cases + a known-good sample, never from intuition. The
+scrambled-into-nonsense rule that used to live in the quality gate now lives in
+the consensus prompt.
 
 ## Architecture (one-liner per module)
 
@@ -68,15 +70,15 @@ the scrambled-into-nonsense quality-gate fix (`6f5dcbc`) was validated.
 | `src/basedbench/llm/provider.py` | `Predictor` Protocol |
 | `src/basedbench/llm/openai.py` | OpenAI vision predictor; predict uses `reasoning_effort="medium"` (image only) |
 | `src/basedbench/llm/anthropic.py` | Anthropic vision predictor; predict uses adaptive thinking + `effort=medium` |
-| `src/basedbench/llm/consensus.py` | 10-stage post-parse validation; hardest piece, ported from v4 |
+| `src/basedbench/llm/consensus.py` | 10-stage post-parse validation; hardest piece, ported from v4; also rejects pure scrambled-nonsense jokes |
 | `src/basedbench/llm/judge.py` | `Judge` Protocol + OpenAI/Anthropic judges + `make_judge()` factory (routes by model id) |
 | `src/basedbench/llm/safety_gate.py` | Content-appropriateness pre-filter (drops explicit/hate/doxx; keeps edgy) |
-| `src/basedbench/llm/quality_gate.py` | "Is there a recoverable meaning" pre-filter (rejects scrambled-nonsense) |
+| `src/basedbench/llm/quality_gate.py` | Legacy standalone quality pre-filter retained for historical traces/tests; no longer used by ingest/tracer |
 | `src/basedbench/llm/prompts.py` | All prompt constants + `VAGUE_PHRASES` + `load_image_base64` + `prompt_id` hash |
 | `src/basedbench/reddit/client.py` | httpx async OAuth client; `--time-filter` windows; 404-skips removed posts |
 | `src/basedbench/reddit/pullpush.py` | pullpush.io client for historical date-range ingest (lags on recent dates) |
 | `src/basedbench/reddit/images.py` | Image download + Pillow validation + idempotent storage |
-| `src/basedbench/pipeline/ingest.py` | fetch → safety gate → quality gate → consensus, concurrent (Semaphore 10) |
+| `src/basedbench/pipeline/ingest.py` | fetch → safety gate → consensus, concurrent (Semaphore 10) |
 | `src/basedbench/pipeline/predict.py` | Route by model_id, run VLM, store prediction |
 | `src/basedbench/pipeline/judge.py` | Multi-judge concurrent judging; per-judge stats + agreement summary |
 | `src/basedbench/pipeline/tracer.py` | Bounded fetch → gates → consensus → prediction smoke test scoped to one DB-backed batch |
@@ -125,8 +127,8 @@ For historical date ranges (`--after-date/--before-date`) pullpush works, but it
 native Reddit path (`--time-filter week`/`month`).
 
 ### 7. Any ingest processes the whole pending backlog
-Phases 1.4/1.5/2 gate/consensus *all* pending memes, not just newly-fetched
-ones. A small fetch can trigger a large backlog run if memes are ungated.
+Phases 1.4/2 safety/consensus *all* pending memes, not just newly-fetched ones.
+A small fetch can trigger a large backlog run if memes are ungated.
 
 ### 8. Tracer rows are smoke-test rows, not leaderboard rows
 `basedbench tracer --fetch 12 --target-consensus 5 --predict gpt-5.5` creates a
@@ -173,7 +175,7 @@ These were found in a repo-wide review and have **not** been fixed yet.
    `review()`, which exposes validate/exclude/flag mutation controls. Either
    remove the read-only claim or add a real read-only mode.
 6. **Token/cost logging misses high-volume calls.** Safety, predictions, and
-   judges record usage, but quality gate and consensus do not store successful
+   judges record usage, but consensus does not store successful
    `prompt_tokens`/`completion_tokens`, which weakens the future `basedbench
    cost` command.
 7. **Prediction prompt versions are not first-class on prediction rows.**
@@ -197,9 +199,9 @@ handled on the main coroutine; the command prints per-phase progress bars; and
 the final summary is computed from batch-scoped DB state where possible.
 
 1. **Done: make tracer phases concurrent but still batch-scoped.** The tracer
-   now ports the ingest-style fan-out pattern for safety, quality, prediction,
-   and judging. Consensus uses bounded lazy scheduling so it can stop once the
-   target consensus count is found without starting the whole remaining queue.
+   now ports the ingest-style fan-out pattern for safety, prediction, and
+   judging. Consensus uses bounded lazy scheduling so it can stop once the target
+   consensus count is found without starting the whole remaining queue.
 2. **Done: add real progress output.** The command now prints per-phase
    candidate counts plus rich progress bars for curation, prediction, and
    judging.

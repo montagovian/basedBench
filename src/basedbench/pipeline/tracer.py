@@ -37,12 +37,9 @@ from basedbench.llm.prompts import (
     EXPLAIN_MEME_PROMPT,
     JUDGE_SYSTEM_PROMPT,
     JUDGE_USER_TEMPLATE,
-    QUALITY_GATE_SYSTEM_PROMPT,
-    QUALITY_GATE_USER_TEMPLATE,
     SAFETY_GATE_SYSTEM_PROMPT,
     SAFETY_GATE_USER_TEMPLATE,
 )
-from basedbench.llm.quality_gate import QualityGate
 from basedbench.llm.record import LlmCallRecord
 from basedbench.llm.safety_gate import SafetyGate
 from basedbench.pipeline._progress import make_progress
@@ -74,7 +71,6 @@ class TracerStats:
     comments: int = 0
     images_downloaded: int = 0
     safety_excluded: int = 0
-    quality_excluded: int = 0
     no_consensus: int = 0
     consensus_found: int = 0
     predictions: int = 0
@@ -208,7 +204,6 @@ async def _run_gates_and_consensus(
     console: Console,
 ) -> list[str]:
     safety = SafetyGate(config)
-    quality = QualityGate(config)
     detector = ConsensusDetector(config)
     queries.register_prompt(
         db,
@@ -216,14 +211,6 @@ async def _run_gates_and_consensus(
         "safety_gate",
         SAFETY_GATE_SYSTEM_PROMPT,
         SAFETY_GATE_USER_TEMPLATE,
-        "1.0",
-    )
-    queries.register_prompt(
-        db,
-        quality.prompt_id,
-        "quality_gate",
-        QUALITY_GATE_SYSTEM_PROMPT,
-        QUALITY_GATE_USER_TEMPLATE,
         "1.0",
     )
     queries.register_prompt(
@@ -278,50 +265,12 @@ async def _run_gates_and_consensus(
     if aborted:
         return []
 
-    quality_passed: list[RawPost] = []
     console.print(f"  Safety kept {len(safety_kept)}/{len(posts)}")
-    tasks, queue = await _fan_out(
-        safety_kept,
-        quality.check,
-        catchable=(OpenAIError, LlmJsonParseError),
-    )
-    aborted = False
-    with make_progress() as prog:
-        task = prog.add_task("tracer quality", total=len(safety_kept))
-        for _ in range(len(safety_kept)):
-            outcome = await queue.get()
-            post = outcome.item
-            item = item_by_id[post.post_id]
-            if outcome.error is not None:
-                e = outcome.error
-                _set_status(db, batch_id, item, "quality_error")
-                if isinstance(e, OpenAIError) and is_fatal_llm_error(e):
-                    console.print(f"\n[bold red]Fatal quality gate error:[/bold red] {e}")
-                    aborted = True
-                else:
-                    log.warning("Quality gate failed for %s: %s", post.post_id, e)
-                prog.update(task, advance=1)
-                continue
-            if outcome.record is not None:
-                queries.insert_llm_call(db, outcome.record)
-            if outcome.result.passes:
-                quality_passed.append(post)
-            else:
-                stats.quality_excluded += 1
-                queries.insert_auto_review(
-                    db, post.post_id, f"auto: {outcome.result.reasoning}"
-                )
-                _set_status(db, batch_id, item, "quality_excluded")
-            prog.update(task, advance=1)
-    await asyncio.gather(*tasks, return_exceptions=True)
-    if aborted:
-        return []
-
     consensus_ids = await _run_consensus_phase(
         db,
         config,
         batch_id,
-        quality_passed,
+        safety_kept,
         target_consensus,
         detector,
         item_by_id,
@@ -377,7 +326,7 @@ async def _run_consensus_phase(
             next_idx += 1
             pending[asyncio.create_task(call(post))] = post
 
-    console.print(f"  Quality passed {len(posts)} candidates")
+    console.print(f"  Consensus candidates: {len(posts)}")
     schedule()
     with make_progress() as prog:
         task = prog.add_task("tracer consensus", total=len(posts))

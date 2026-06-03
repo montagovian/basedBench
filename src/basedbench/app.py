@@ -7,7 +7,7 @@ Tabs:
 - Inspect: read-only viewer over ALL content (incl. excluded), flag filter misfires
 - Stats & Leaderboard: corpus/prediction/judge stats
 - AI Gloss Failures: consensus-gloss regression set
-- Filter Misfires: flagged safety/quality/consensus misfires
+- Filter Misfires: flagged safety/consensus misfires, plus legacy quality-gate rows
 """
 
 from __future__ import annotations
@@ -451,7 +451,7 @@ _INSPECT_STATES: list[tuple[str, str]] = [
     ("unreviewed", "❓ In review queue"),
     ("validated", "✅ Validated"),
     ("no_consensus", "⭕ No consensus"),
-    ("quality_excluded", "❌ Quality gate excluded"),
+    ("quality_excluded", "❌ Legacy quality gate excluded"),
     ("safety_excluded", "❌ Safety gate excluded"),
     ("human_excluded", "❌ Reviewer excluded"),
     ("image_missing", "❌ Image missing"),
@@ -611,7 +611,7 @@ def _render_inspect(post_id: str | None):
             gr.update(value="", visible=False),
             gr.update(value="", visible=False),
             "",
-            gr.update(value="quality"),
+            gr.update(value="consensus"),
         )
 
     detail = _inspect_detail(post_id)
@@ -623,7 +623,7 @@ def _render_inspect(post_id: str | None):
             gr.update(value="", visible=False),
             gr.update(value="", visible=False),
             "",
-            gr.update(value="quality"),
+            gr.update(value="consensus"),
         )
 
     row = detail["row"]
@@ -690,7 +690,7 @@ def _render_inspect(post_id: str | None):
         meta_update,
         gr.update(value=comments_text or "_no comments_", visible=True),
         post_id,
-        gr.update(value=_STATE_TO_GATE.get(state, "quality")),
+        gr.update(value=_STATE_TO_GATE.get(state, "consensus")),
     )
 
 
@@ -988,7 +988,7 @@ def _load_regressions() -> str:
 
 
 def _load_gate_feedback() -> str:
-    """Render the table of flagged safety/quality/consensus misfires."""
+    """Render the table of flagged safety/consensus misfires."""
     from basedbench.db import Database
     from basedbench.db import queries
 
@@ -1003,7 +1003,7 @@ def _load_gate_feedback() -> str:
             "### Filter Misfires\n\n"
             "_None flagged yet. In the **Inspect** tab, open the "
             "**🚩 A filter got this wrong** accordion to flag a meme the "
-            "safety/quality/consensus filter handled incorrectly._"
+            "safety/consensus filter handled incorrectly._"
         )
 
     by_gate: dict[str, int] = {}
@@ -1225,7 +1225,8 @@ def build_app() -> gr.Blocks:
         with gr.Tab("Inspect") as inspect_tab:
             gr.Markdown(
                 "_Read-only viewer over **all** content — including memes the "
-                "safety/quality/consensus filters excluded. Filter, then step "
+                "safety/consensus filters excluded. Legacy quality-gate "
+                "exclusions remain visible too. Filter, then step "
                 "through with Prev/Next. No reviewer actions here; use the flag "
                 "below if a filter got a meme wrong._"
             )
@@ -1273,14 +1274,15 @@ def build_app() -> gr.Blocks:
 
             with gr.Accordion("🚩 A filter got this wrong", open=False):
                 gr.Markdown(
-                    "_Flag a meme the safety/quality/consensus filter handled "
+                    "_Flag a meme the safety/consensus filter handled "
                     "incorrectly — e.g. excluded a good meme, kept a bad one, or "
                     "missed a real consensus. Goes into the **Filter Misfires** "
-                    "set for tuning the gates/consensus._"
+                    "set for tuning the gates/consensus. Use `quality` only for "
+                    "legacy quality-gate rows._"
                 )
                 misfire_gate = gr.Radio(
-                    choices=["safety", "quality", "consensus"],
-                    value="quality",
+                    choices=["safety", "consensus", "quality"],
+                    value="consensus",
                     label="Which filter got it wrong?",
                     info="Defaults to whichever filter acted on this meme.",
                 )
@@ -1368,9 +1370,9 @@ def build_app() -> gr.Blocks:
 
         with gr.Tab("Filter Misfires") as misfires_tab:
             gr.Markdown(
-                "_Memes the safety/quality/consensus filters got wrong, flagged "
-                "from the Inspect tab. Use these to tune the gate prompts and "
-                "consensus criteria._"
+                "_Memes the safety/consensus filters got wrong, flagged from "
+                "the Inspect tab. Historical quality-gate rows remain visible. "
+                "Use these to tune the gate prompts and consensus criteria._"
             )
             misfires_md = gr.Markdown()
             misfires_tab.select(_load_gate_feedback, outputs=[misfires_md])
