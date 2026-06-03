@@ -173,6 +173,15 @@ These were found in a repo-wide review and have **not** been fixed yet.
    judges record usage, but quality gate and consensus do not store successful
    `prompt_tokens`/`completion_tokens`, which weakens the future `basedbench
    cost` command.
+8. **Prediction prompt versions are not first-class on prediction rows.**
+   Prompt IDs are content hashes (`prompt_id(role, system, user_template)`) and
+   `llm_calls.prompt_version` records them, while ground truths and judgments
+   have dedicated prompt-version columns. `predictions` does not: the prediction
+   prompt is only recoverable indirectly through `llm_calls`. Before changing
+   `EXPLAIN_MEME_PROMPT` or A/B testing a stronger prompt, add something like
+   `predictions.prediction_prompt_version`, store `predictor.prompt_id` on
+   insert, and consider human-readable labels such as `prediction_baseline_v1`
+   / `prediction_structured_v2` alongside the immutable hash.
 
 ## Open thread the user raised earlier
 
