@@ -443,19 +443,31 @@ def memes_needing_quality_gate(db: Database) -> list[str]:
     return _memes_pending_gate(db)
 
 
-def auto_exclude_missing_images(db: Database) -> int:
+def auto_exclude_missing_images(
+    db: Database, post_ids: list[str] | None = None
+) -> int:
     """Mark consensus-passed memes that never got a local image as excluded.
 
     These show up in the review queue as broken placeholders since there's
     no file on disk. They're also unusable for `basedbench predict` (which
     requires the image). Returns the count of newly-excluded memes.
     """
+    params: tuple[str, ...] = ()
+    scope_filter = ""
+    if post_ids is not None:
+        if not post_ids:
+            return 0
+        scope_filter = f" AND m.post_id IN ({','.join('?' * len(post_ids))})"
+        params = tuple(post_ids)
+
     rows = db.conn.execute(
-        """SELECT m.post_id FROM memes m
+        f"""SELECT m.post_id FROM memes m
            JOIN ground_truths gt ON m.post_id = gt.post_id
            LEFT JOIN reviews r ON m.post_id = r.post_id
            WHERE r.post_id IS NULL
-             AND (m.local_image_path IS NULL OR m.local_image_path = '')"""
+             AND (m.local_image_path IS NULL OR m.local_image_path = '')
+             {scope_filter}""",
+        params,
     ).fetchall()
     count = 0
     for (post_id,) in rows:

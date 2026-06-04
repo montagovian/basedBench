@@ -71,6 +71,7 @@ class TracerStats:
     comments: int = 0
     images_downloaded: int = 0
     safety_excluded: int = 0
+    missing_images_excluded: int = 0
     no_consensus: int = 0
     consensus_found: int = 0
     predictions: int = 0
@@ -702,6 +703,28 @@ async def run(
     consensus_ids = await _run_gates_and_consensus(
         db, config, batch_id, posts, target_consensus, stats, console
     )
+    stats.missing_images_excluded = queries.auto_exclude_missing_images(
+        db, consensus_ids
+    )
+    if stats.missing_images_excluded:
+        consensus_ids = [
+            post_id
+            for post_id in consensus_ids
+            if db.conn.execute(
+                """SELECT 1 FROM memes m
+                   LEFT JOIN reviews r ON r.post_id = m.post_id
+                   WHERE m.post_id = ?
+                     AND m.local_image_path IS NOT NULL
+                     AND m.local_image_path <> ''
+                     AND (r.post_id IS NULL OR r.status != 'excluded')""",
+                (post_id,),
+            ).fetchone()
+            is not None
+        ]
+        console.print(
+            f"  Auto-excluded {stats.missing_images_excluded} consensus memes "
+            "with missing images"
+        )
     predicted_ids = await _predict_batch(
         db, config, batch_id, consensus_ids, predict_model, stats, console
     )
@@ -725,6 +748,7 @@ async def run(
         f"  Batch:            {batch_id}\n"
         f"  Inserted:         {inserted}\n"
         f"  Consensus found:  {consensus}\n"
+        f"  Missing images:   {stats.missing_images_excluded}\n"
         f"  No consensus:     {stage_counts.get('no_consensus', 0)}\n"
         f"  Predictions:      {predictions}\n"
         f"  Prediction errors:{prediction_errors}\n"

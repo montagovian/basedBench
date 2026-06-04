@@ -57,6 +57,7 @@ class IngestStats:
     new_memes: int = 0
     new_comments: int = 0
     images_downloaded: int = 0
+    missing_images_excluded: int = 0
     safety_passed: int = 0
     safety_failed: int = 0
     safety_skipped: int = 0
@@ -462,10 +463,18 @@ async def run(
 
         await asyncio.gather(*tasks, return_exceptions=True)
 
+    stats.missing_images_excluded = queries.auto_exclude_missing_images(db)
+    if stats.missing_images_excluded:
+        console.print(
+            f"  Auto-excluded {stats.missing_images_excluded} consensus memes "
+            "with missing images"
+        )
+
     console.print("\n[bold green]Ingest complete[/bold green]")
     console.print(
         f"  New memes: {stats.new_memes}\n"
         f"  Consensus found: {stats.consensus_found}\n"
+        f"  Missing images:  {stats.missing_images_excluded}\n"
         f"  No consensus:    {stats.consensus_failed}"
     )
     return stats

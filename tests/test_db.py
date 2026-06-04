@@ -766,6 +766,21 @@ def test_auto_exclude_missing_images_idempotent(db: Database):
     assert second == 0  # already excluded
 
 
+def test_auto_exclude_missing_images_scoped(db: Database):
+    """Scoped cleanup leaves unrelated missing-image backlog alone."""
+    _setup_validated_meme(db, "in_scope")
+    _setup_validated_meme(db, "out_of_scope")
+    db.conn.execute("DELETE FROM reviews")
+
+    n = q.auto_exclude_missing_images(db, ["in_scope"])
+    assert n == 1
+
+    reviews = db.conn.execute(
+        "SELECT post_id, status, reason FROM reviews ORDER BY post_id"
+    ).fetchall()
+    assert reviews == [("in_scope", "excluded", "image_missing")]
+
+
 def test_consensus_quality_stats_empty(db: Database):
     stats = q.consensus_quality_stats(db)
     assert stats.n_grounded == 0
