@@ -3,7 +3,7 @@
 **Date:** 2026-06-01
 **Repo:** https://github.com/montagovian/basedBench (private)
 **Branch:** main (check `git status -sb` for working tree and push state)
-**Tests:** 172 passing (`uv run pytest`)
+**Tests:** 173 passing (`uv run pytest`)
 
 ## What this is
 
@@ -150,7 +150,8 @@ Misfires all refresh via `tab.select(...)`.
 
 ## Open Issues From Deep Review (2026-06-03)
 
-These were found in a repo-wide review and have **not** been fixed yet.
+These were found in repo-wide or data-quality review. Items marked fixed are
+implemented; the rest have **not** been fixed yet.
 
 1. **Quick start blocks OpenAI-only users.** README tells users to fill only
    Reddit + `OPENAI_API_KEY`, but default `judge_models` includes
@@ -188,6 +189,21 @@ These were found in a repo-wide review and have **not** been fixed yet.
    `predictions.prediction_prompt_version`, store `predictor.prompt_id` on
    insert, and consider human-readable labels such as `prediction_baseline_v1`
    / `prediction_structured_v2` alongside the immutable hash.
+8. **Duplicate meme images enter the review queue under different Reddit posts.**
+   The DB dedupes by `post_id`; exact `image_url` duplicates are rare, but
+   reposted/re-encoded copies are common enough to matter. On 2026-06-04,
+   `1jatm4v` ("I No Understand") and `1jiipla` ("What does it mean?") were
+   confirmed as the same blind/blind wordplay meme: different post IDs,
+   different `i.redd.it` URLs, different dimensions (`1080x1465` vs `720x960`),
+   but identical 64-bit dHash. A local scan found 74 duplicate image-hash groups
+   across 4,524 images; 24 groups touched the review queue, and 21 had an
+   already-reviewed sibling. Proposed fix: add a migration for an image
+   fingerprint table/column (e.g. dHash or pHash), compute it after image
+   download, and auto-exclude later same-fingerprint consensus rows as
+   `duplicate_of:<post_id>` before review/prediction. Prefer linking to an
+   already validated row when one exists, otherwise the earliest reviewed row,
+   otherwise the earliest queued row. UI follow-up: Browse/Inspect should show
+   duplicate groups and the canonical post so duplicate decisions are auditable.
 
 ## Tracer Follow-ups From 50-Row Run (2026-06-03)
 
@@ -247,7 +263,7 @@ uv run basedbench export v0.1 --output ./export
 uv run basedbench push v0.1 --repo USER/basedbench   # untested!
 
 # dev
-uv run pytest                                        # 162 tests
+uv run pytest                                        # 173 tests
 uv sync
 
 # data
