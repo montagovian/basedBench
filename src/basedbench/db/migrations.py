@@ -282,6 +282,62 @@ FROM (
 WHERE status IS NOT NULL;
 """
 
+MIGRATION_009 = """\
+CREATE TABLE IF NOT EXISTS consensus_eval_items (
+    post_id TEXT PRIMARY KEY REFERENCES memes(post_id),
+    category TEXT NOT NULL CHECK(category IN (
+        'false_positive_consensus',
+        'bad_gloss',
+        'true_no_consensus',
+        'easy_yes_consensus',
+        'hard_yes_consensus',
+        'source_comment_mismatch'
+    )),
+    expected_has_consensus INTEGER NOT NULL CHECK(expected_has_consensus IN (0, 1)),
+    expected_explanation TEXT,
+    source TEXT NOT NULL,
+    notes TEXT,
+    active INTEGER NOT NULL DEFAULT 1 CHECK(active IN (0, 1)),
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_consensus_eval_items_category
+    ON consensus_eval_items(category, active);
+
+CREATE TABLE IF NOT EXISTS consensus_eval_runs (
+    run_id TEXT PRIMARY KEY,
+    created_at TEXT NOT NULL,
+    model TEXT NOT NULL,
+    prompt_version TEXT NOT NULL,
+    prompt_label TEXT NOT NULL,
+    system_prompt TEXT NOT NULL,
+    user_prompt_template TEXT NOT NULL,
+    item_count INTEGER NOT NULL,
+    notes TEXT
+);
+
+CREATE TABLE IF NOT EXISTS consensus_eval_results (
+    run_id TEXT NOT NULL REFERENCES consensus_eval_runs(run_id),
+    post_id TEXT NOT NULL REFERENCES memes(post_id),
+    category TEXT NOT NULL,
+    expected_has_consensus INTEGER NOT NULL CHECK(expected_has_consensus IN (0, 1)),
+    expected_explanation TEXT,
+    actual_has_consensus INTEGER NOT NULL CHECK(actual_has_consensus IN (0, 1)),
+    actual_explanation TEXT,
+    confidence REAL,
+    agreeing_comment_ids TEXT,
+    reasoning TEXT,
+    passed INTEGER NOT NULL CHECK(passed IN (0, 1)),
+    error TEXT,
+    latency_ms INTEGER,
+    llm_call_id INTEGER REFERENCES llm_calls(id),
+    created_at TEXT NOT NULL,
+    PRIMARY KEY (run_id, post_id)
+);
+CREATE INDEX IF NOT EXISTS idx_consensus_eval_results_run
+    ON consensus_eval_results(run_id, passed, category);
+"""
+
 
 def _column_exists(conn: sqlite3.Connection, table: str, column: str) -> bool:
     cursor = conn.execute(
@@ -327,3 +383,7 @@ def run_migrations(conn: sqlite3.Connection) -> None:
     if version < 8:
         conn.executescript(MIGRATION_008)
         conn.execute("PRAGMA user_version = 8")
+
+    if version < 9:
+        conn.executescript(MIGRATION_009)
+        conn.execute("PRAGMA user_version = 9")

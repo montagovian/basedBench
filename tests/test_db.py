@@ -65,7 +65,20 @@ def test_migrate_creates_processing_state_table(db: Database):
     ).fetchone()[0]
     version = db.conn.execute("PRAGMA user_version").fetchone()[0]
     assert count == 1
-    assert version == 8
+    assert version == 9
+
+
+def test_migrate_creates_consensus_eval_tables(db: Database):
+    tables = db.conn.execute(
+        """SELECT name FROM sqlite_master
+           WHERE type='table' AND name LIKE 'consensus_eval_%'
+           ORDER BY name"""
+    ).fetchall()
+    assert [r[0] for r in tables] == [
+        "consensus_eval_items",
+        "consensus_eval_results",
+        "consensus_eval_runs",
+    ]
 
 
 # ═══════════════════════════════════════════════════════
@@ -436,6 +449,140 @@ def test_batch_helpers_track_order_and_status(db: Database):
     found = q.find_batch(db, "batch1")
     assert found is not None
     assert found.kind == "tracer"
+
+
+# ═══════════════════════════════════════════════════════
+# Consensus eval harness
+# ═══════════════════════════════════════════════════════
+
+
+def test_consensus_eval_item_upsert_and_list(db: Database):
+    _setup_validated_meme(db, "p1")
+
+    q.upsert_consensus_eval_item(
+        db,
+        "p1",
+        "bad_gloss",
+        True,
+        expected_explanation="The better explanation.",
+        source="manual",
+        notes="top comments support a different gloss",
+    )
+    q.upsert_consensus_eval_item(
+        db,
+        "p1",
+        "source_comment_mismatch",
+        True,
+        expected_explanation="Updated expectation.",
+        source="manual_review",
+    )
+
+    items = q.list_consensus_eval_items(db)
+    assert len(items) == 1
+    assert items[0].post_id == "p1"
+    assert items[0].category == "source_comment_mismatch"
+    assert items[0].expected_has_consensus is True
+    assert items[0].expected_explanation == "Updated expectation."
+    assert items[0].source == "manual_review"
+    assert q.consensus_eval_category_counts(db) == {"source_comment_mismatch": 1}
+
+
+def test_consensus_eval_seeding_from_flags_and_controls(db: Database):
+    _setup_validated_meme(db, "flagged_bad")
+    _setup_validated_meme(db, "flagged_gate")
+    _setup_validated_meme(db, "yes_control")
+    no_post = sample_post("no_control")
+    q.insert_meme(db, no_post)
+    for comment in no_post.comments:
+        q.insert_comment(db, "no_control", comment)
+    q.record_meme_processing_state(
+        db,
+        "no_control",
+        "consensus",
+        "model",
+        "prompt",
+        "no_consensus",
+    )
+
+    q.flag_consensus_regression(
+        db,
+        "flagged_bad",
+        "wrong",
+        consensus_at_annotation="Old wrong explanation.",
+        canonical_explanation="Corrected explanation.",
+        failure_modes="vote_bias",
+    )
+    q.flag_gate_feedback(
+        db,
+        "flagged_gate",
+        "consensus",
+        gate_decision="no_consensus",
+        correct_decision="consensus",
+        notes="humans agreed but gate missed it",
+    )
+
+    assert q.seed_consensus_eval_from_regressions(db) == 2
+    assert q.seed_consensus_eval_yes_controls(db, 10) == 1
+    assert q.seed_consensus_eval_no_controls(db, 10) == 1
+
+    counts = q.consensus_eval_category_counts(db)
+    assert counts == {
+        "bad_gloss": 1,
+        "easy_yes_consensus": 1,
+        "hard_yes_consensus": 1,
+        "true_no_consensus": 1,
+    }
+
+
+def test_consensus_eval_run_and_result_round_trip(db: Database):
+    _setup_validated_meme(db, "p1")
+    q.upsert_consensus_eval_item(
+        db,
+        "p1",
+        "easy_yes_consensus",
+        True,
+        expected_explanation="Expected explanation.",
+        source="validated_control",
+    )
+    item = q.list_consensus_eval_items(db)[0]
+
+    q.create_consensus_eval_run(
+        db,
+        run_id="run1",
+        model="gpt-test",
+        prompt_version="prompt-v1",
+        prompt_label="baseline",
+        system_prompt="system",
+        user_prompt_template="user",
+        item_count=1,
+        notes="smoke",
+    )
+    q.insert_consensus_eval_result(
+        db,
+        "run1",
+        item,
+        actual_has_consensus=True,
+        actual_explanation="Actual explanation.",
+        confidence=0.91,
+        agreeing_comment_ids=["p1_c1", "p1_c2"],
+        reasoning="comments agree",
+        passed=True,
+        latency_ms=123,
+        llm_call_id=None,
+    )
+
+    runs = q.list_consensus_eval_runs(db)
+    assert len(runs) == 1
+    assert runs[0].run_id == "run1"
+    assert runs[0].prompt_label == "baseline"
+    assert q.latest_consensus_eval_run_id(db) == "run1"
+
+    results = q.list_consensus_eval_results(db, "run1")
+    assert len(results) == 1
+    assert results[0].post_id == "p1"
+    assert results[0].passed is True
+    assert results[0].actual_has_consensus is True
+    assert results[0].agreeing_comment_ids == '["p1_c1", "p1_c2"]'
 
 
 # ═══════════════════════════════════════════════════════

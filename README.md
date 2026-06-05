@@ -104,6 +104,25 @@ dropped a good meme, kept a bad one, or consensus missed a real agreement:
    the evidence base for the next prompt revision. Historical quality-gate
    feedback remains visible there, but new ingests fold that rule into consensus.
 
+### 3. Consensus prompt evals
+
+Use `consensus-eval` when you want to compare consensus prompt changes against a
+persistent eval set instead of eyeballing one-off reruns:
+
+```bash
+uv run basedbench consensus-eval seed --yes-controls 20 --no-controls 20
+uv run basedbench consensus-eval run --label current-baseline
+uv run basedbench consensus-eval run --prompt-file ./candidate-prompt.txt --label candidate-v1
+uv run basedbench consensus-eval runs
+uv run basedbench consensus-eval report --failed-only
+```
+
+The seed command imports AI Gloss Failures and consensus Filter Misfires, then
+adds validated yes-controls and sampled no-consensus controls. Treat sampled
+no-consensus controls as provisional until a human reviews them; they are useful
+for pressure-testing false positives, but they are less reliable than flagged or
+validated rows.
+
 ## Snapshot and publish
 
 ```bash
@@ -126,6 +145,7 @@ uv run basedbench push v0.1 --repo your-username/basedbench
 | `run <model>` | ingest → predict → judge → status (one shot) |
 | `cleanup` | Maintenance (e.g. `--missing-images` excludes memes whose image never downloaded) |
 | `regression-eval` | Replay current consensus over the flagged "AI Gloss Failures" set (read-only) |
+| `consensus-eval seed/list/runs/run/report` | Build and run persistent consensus prompt evals |
 | `snapshot create/list` | Freeze and inspect validated sets |
 | `export <snapshot>` | Write JSONL + images + dataset card to disk |
 | `push <snapshot>` | Publish to HuggingFace Hub as a multi-config dataset |

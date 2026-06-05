@@ -12,6 +12,7 @@ from rich.console import Console
 from basedbench.config import Config
 from basedbench.db import queries
 from basedbench.db.connection import Database
+from basedbench.pipeline import consensus_eval as consensus_eval_pipe
 from basedbench.pipeline import export as export_pipe
 from basedbench.pipeline import hf_push as hf_push_pipe
 from basedbench.pipeline import ingest as ingest_pipe
@@ -27,7 +28,12 @@ app = typer.Typer(
     add_completion=False,
 )
 snapshot_app = typer.Typer(help="Manage snapshots.", no_args_is_help=True)
+consensus_eval_app = typer.Typer(
+    help="Seed and run a persistent consensus-gate eval set.",
+    no_args_is_help=True,
+)
 app.add_typer(snapshot_app, name="snapshot")
+app.add_typer(consensus_eval_app, name="consensus-eval")
 
 
 def _load() -> tuple[Database, Config]:
@@ -549,6 +555,111 @@ def regression_eval(
         f"\n[bold]Summary:[/bold] {changed} changed, {unchanged} unchanged "
         f"(of {len(entries)} tested)"
     )
+
+
+# ───────────────────────── consensus-eval ─────────────────────────
+
+
+@consensus_eval_app.command("seed")
+def consensus_eval_seed(
+    yes_controls: int = typer.Option(
+        20,
+        "--yes-controls",
+        min=0,
+        help="Validated consensus rows to add as easy yes controls.",
+    ),
+    no_controls: int = typer.Option(
+        20,
+        "--no-controls",
+        min=0,
+        help="No-consensus rows to add as true no controls.",
+    ),
+    include_flagged: bool = typer.Option(
+        True,
+        "--include-flagged/--skip-flagged",
+        help="Include manually flagged regressions and consensus misfires.",
+    ),
+) -> None:
+    """Seed the persistent consensus eval set from flags plus controls."""
+    db, _ = _load()
+    consensus_eval_pipe.seed(
+        db,
+        yes_controls=yes_controls,
+        no_controls=no_controls,
+        include_flagged=include_flagged,
+    )
+
+
+@consensus_eval_app.command("list")
+def consensus_eval_list() -> None:
+    """Show active eval item counts by category."""
+    db, _ = _load()
+    consensus_eval_pipe.list_items(db)
+
+
+@consensus_eval_app.command("runs")
+def consensus_eval_runs(
+    limit: int = typer.Option(10, "--limit", min=1, help="Max runs to show."),
+) -> None:
+    """List recent consensus eval runs."""
+    db, _ = _load()
+    consensus_eval_pipe.list_runs(db, limit=limit)
+
+
+@consensus_eval_app.command("run")
+def consensus_eval_run(
+    prompt_file: Path | None = typer.Option(
+        None,
+        "--prompt-file",
+        help="Optional file containing a replacement consensus system prompt.",
+    ),
+    label: str | None = typer.Option(
+        None,
+        "--label",
+        help="Human-readable prompt/run label. Defaults to prompt file stem or current.",
+    ),
+    category: str | None = typer.Option(
+        None,
+        "--category",
+        help="Run only one eval category.",
+    ),
+    limit: int | None = typer.Option(
+        None,
+        "--limit",
+        min=1,
+        help="Run at most N active eval items.",
+    ),
+    notes: str | None = typer.Option(None, "--notes", help="Free-text run notes."),
+) -> None:
+    """Run consensus on active eval items and persist the result table."""
+    _configure_logging()
+    db, config = _load()
+    consensus_eval_pipe.run_sync(
+        db,
+        config,
+        prompt_file=prompt_file,
+        label=label,
+        category=category,
+        limit=limit,
+        notes=notes,
+    )
+
+
+@consensus_eval_app.command("report")
+def consensus_eval_report(
+    run_id: str | None = typer.Argument(
+        None,
+        help="Run id to report. Defaults to the latest run.",
+    ),
+    failed_only: bool = typer.Option(
+        False,
+        "--failed-only",
+        help="Only include failed rows in the detailed result list.",
+    ),
+) -> None:
+    """Report aggregate and failure stats for a consensus eval run."""
+    db, _ = _load()
+    consensus_eval_pipe.report(db, run_id=run_id, failed_only=failed_only)
 
 
 # ───────────────────────── review / view (Phase 6 — Gradio) ─────────────────────────

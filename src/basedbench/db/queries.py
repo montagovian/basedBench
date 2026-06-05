@@ -166,6 +166,49 @@ class GateFeedback:
 
 
 @dataclass
+class ConsensusEvalItem:
+    post_id: str
+    category: str
+    expected_has_consensus: bool
+    expected_explanation: str | None
+    source: str
+    notes: str | None
+    active: bool
+    created_at: str
+    updated_at: str
+
+
+@dataclass
+class ConsensusEvalRun:
+    run_id: str
+    created_at: str
+    model: str
+    prompt_version: str
+    prompt_label: str
+    item_count: int
+    notes: str | None
+
+
+@dataclass
+class ConsensusEvalResult:
+    run_id: str
+    post_id: str
+    category: str
+    expected_has_consensus: bool
+    expected_explanation: str | None
+    actual_has_consensus: bool
+    actual_explanation: str | None
+    confidence: float | None
+    agreeing_comment_ids: str | None
+    reasoning: str | None
+    passed: bool
+    error: str | None
+    latency_ms: int | None
+    llm_call_id: int | None
+    created_at: str
+
+
+@dataclass
 class LlmCallDetail:
     id: int
     created_at: str
@@ -1637,3 +1680,349 @@ def unflag_gate_feedback(db: Database, post_id: str, gate: str) -> bool:
         "DELETE FROM gate_feedback WHERE post_id = ? AND gate = ?", (post_id, gate)
     )
     return cursor.rowcount > 0
+
+
+# ═══════════════════════════════════════════════════════
+# Consensus eval harness
+# ═══════════════════════════════════════════════════════
+
+
+CONSENSUS_EVAL_CATEGORIES = {
+    "false_positive_consensus",
+    "bad_gloss",
+    "true_no_consensus",
+    "easy_yes_consensus",
+    "hard_yes_consensus",
+    "source_comment_mismatch",
+}
+
+
+def upsert_consensus_eval_item(
+    db: Database,
+    post_id: str,
+    category: str,
+    expected_has_consensus: bool,
+    expected_explanation: str | None = None,
+    source: str = "manual",
+    notes: str | None = None,
+) -> None:
+    if category not in CONSENSUS_EVAL_CATEGORIES:
+        raise ValueError(f"invalid consensus eval category: {category!r}")
+    now = _now()
+    db.conn.execute(
+        """INSERT INTO consensus_eval_items
+           (post_id, category, expected_has_consensus, expected_explanation,
+            source, notes, active, created_at, updated_at)
+           VALUES (?, ?, ?, ?, ?, ?, 1, ?, ?)
+           ON CONFLICT(post_id) DO UPDATE SET
+             category = excluded.category,
+             expected_has_consensus = excluded.expected_has_consensus,
+             expected_explanation = excluded.expected_explanation,
+             source = excluded.source,
+             notes = excluded.notes,
+             active = 1,
+             updated_at = excluded.updated_at""",
+        (
+            post_id,
+            category,
+            1 if expected_has_consensus else 0,
+            expected_explanation,
+            source,
+            notes,
+            now,
+            now,
+        ),
+    )
+
+
+def list_consensus_eval_items(
+    db: Database,
+    active_only: bool = True,
+    category: str | None = None,
+    limit: int | None = None,
+) -> list[ConsensusEvalItem]:
+    clauses = []
+    params: list[object] = []
+    if active_only:
+        clauses.append("active = 1")
+    if category is not None:
+        clauses.append("category = ?")
+        params.append(category)
+    where = "WHERE " + " AND ".join(clauses) if clauses else ""
+    limit_sql = "LIMIT ?" if limit is not None else ""
+    if limit is not None:
+        params.append(limit)
+    rows = db.conn.execute(
+        f"""SELECT post_id, category, expected_has_consensus, expected_explanation,
+                  source, notes, active, created_at, updated_at
+           FROM consensus_eval_items
+           {where}
+           ORDER BY category, created_at DESC
+           {limit_sql}""",
+        tuple(params),
+    ).fetchall()
+    return [
+        ConsensusEvalItem(
+            post_id=r[0],
+            category=r[1],
+            expected_has_consensus=bool(r[2]),
+            expected_explanation=r[3],
+            source=r[4],
+            notes=r[5],
+            active=bool(r[6]),
+            created_at=r[7],
+            updated_at=r[8],
+        )
+        for r in rows
+    ]
+
+
+def consensus_eval_category_counts(db: Database) -> dict[str, int]:
+    rows = db.conn.execute(
+        """SELECT category, COUNT(*) FROM consensus_eval_items
+           WHERE active = 1
+           GROUP BY category
+           ORDER BY category"""
+    ).fetchall()
+    return {r[0]: r[1] for r in rows}
+
+
+def seed_consensus_eval_from_regressions(db: Database) -> int:
+    count = 0
+    for entry in list_consensus_regressions(db):
+        category = (
+            "bad_gloss"
+            if entry.status in ("wrong", "partial")
+            else "hard_yes_consensus"
+        )
+        upsert_consensus_eval_item(
+            db,
+            entry.post_id,
+            category,
+            True,
+            entry.canonical_explanation or entry.consensus_at_annotation,
+            source="consensus_regression",
+            notes=entry.failure_modes or entry.reviewer_notes,
+        )
+        count += 1
+
+    for entry in list_gate_feedback(db, gate="consensus"):
+        decision = (entry.correct_decision or "").lower()
+        gate_decision = (entry.gate_decision or "").lower()
+        if "no" in decision and "consensus" in decision:
+            category = "false_positive_consensus"
+            expected = False
+        elif "consensus" in decision or "no_consensus" in gate_decision:
+            category = "hard_yes_consensus"
+            expected = True
+        else:
+            category = "bad_gloss"
+            expected = True
+        upsert_consensus_eval_item(
+            db,
+            entry.post_id,
+            category,
+            expected,
+            source="gate_feedback",
+            notes=entry.notes,
+        )
+        count += 1
+    return count
+
+
+def seed_consensus_eval_yes_controls(
+    db: Database,
+    limit: int,
+    category: str = "easy_yes_consensus",
+) -> int:
+    rows = db.conn.execute(
+        """SELECT gt.post_id, gt.explanation
+           FROM ground_truths gt
+           JOIN reviews r ON r.post_id = gt.post_id AND r.status = 'validated'
+           LEFT JOIN consensus_eval_items cei ON cei.post_id = gt.post_id
+           WHERE cei.post_id IS NULL
+           ORDER BY RANDOM()
+           LIMIT ?""",
+        (limit,),
+    ).fetchall()
+    for post_id, explanation in rows:
+        upsert_consensus_eval_item(
+            db,
+            post_id,
+            category,
+            True,
+            explanation,
+            source="validated_control",
+        )
+    return len(rows)
+
+
+def seed_consensus_eval_no_controls(db: Database, limit: int) -> int:
+    rows = db.conn.execute(
+        """SELECT m.post_id
+           FROM memes m
+           JOIN meme_processing_state ps ON ps.post_id = m.post_id
+           LEFT JOIN ground_truths gt ON gt.post_id = m.post_id
+           LEFT JOIN reviews r ON r.post_id = m.post_id
+           LEFT JOIN consensus_eval_items cei ON cei.post_id = m.post_id
+           WHERE ps.stage = 'consensus'
+             AND ps.status = 'no_consensus'
+             AND gt.post_id IS NULL
+             AND (r.post_id IS NULL OR r.status != 'excluded')
+             AND cei.post_id IS NULL
+           GROUP BY m.post_id
+           ORDER BY RANDOM()
+           LIMIT ?""",
+        (limit,),
+    ).fetchall()
+    for (post_id,) in rows:
+        upsert_consensus_eval_item(
+            db,
+            post_id,
+            "true_no_consensus",
+            False,
+            source="no_consensus_control",
+        )
+    return len(rows)
+
+
+def create_consensus_eval_run(
+    db: Database,
+    run_id: str,
+    model: str,
+    prompt_version: str,
+    prompt_label: str,
+    system_prompt: str,
+    user_prompt_template: str,
+    item_count: int,
+    notes: str | None = None,
+) -> None:
+    db.conn.execute(
+        """INSERT INTO consensus_eval_runs
+           (run_id, created_at, model, prompt_version, prompt_label,
+            system_prompt, user_prompt_template, item_count, notes)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+        (
+            run_id,
+            _now(),
+            model,
+            prompt_version,
+            prompt_label,
+            system_prompt,
+            user_prompt_template,
+            item_count,
+            notes,
+        ),
+    )
+
+
+def insert_consensus_eval_result(
+    db: Database,
+    run_id: str,
+    item: ConsensusEvalItem,
+    actual_has_consensus: bool,
+    actual_explanation: str | None,
+    confidence: float | None,
+    agreeing_comment_ids: list[str] | None,
+    reasoning: str | None,
+    passed: bool,
+    error: str | None = None,
+    latency_ms: int | None = None,
+    llm_call_id: int | None = None,
+) -> None:
+    db.conn.execute(
+        """INSERT OR REPLACE INTO consensus_eval_results
+           (run_id, post_id, category, expected_has_consensus, expected_explanation,
+            actual_has_consensus, actual_explanation, confidence,
+            agreeing_comment_ids, reasoning, passed, error, latency_ms,
+            llm_call_id, created_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+        (
+            run_id,
+            item.post_id,
+            item.category,
+            1 if item.expected_has_consensus else 0,
+            item.expected_explanation,
+            1 if actual_has_consensus else 0,
+            actual_explanation,
+            confidence,
+            json.dumps(agreeing_comment_ids or []),
+            reasoning,
+            1 if passed else 0,
+            error,
+            latency_ms,
+            llm_call_id,
+            _now(),
+        ),
+    )
+
+
+def list_consensus_eval_runs(db: Database, limit: int = 10) -> list[ConsensusEvalRun]:
+    rows = db.conn.execute(
+        """SELECT run_id, created_at, model, prompt_version, prompt_label,
+                  item_count, notes
+           FROM consensus_eval_runs
+           ORDER BY created_at DESC
+           LIMIT ?""",
+        (limit,),
+    ).fetchall()
+    return [
+        ConsensusEvalRun(
+            run_id=r[0],
+            created_at=r[1],
+            model=r[2],
+            prompt_version=r[3],
+            prompt_label=r[4],
+            item_count=r[5],
+            notes=r[6],
+        )
+        for r in rows
+    ]
+
+
+def latest_consensus_eval_run_id(db: Database) -> str | None:
+    row = db.conn.execute(
+        "SELECT run_id FROM consensus_eval_runs ORDER BY created_at DESC LIMIT 1"
+    ).fetchone()
+    return row[0] if row else None
+
+
+def list_consensus_eval_results(
+    db: Database,
+    run_id: str,
+    failed_only: bool = False,
+) -> list[ConsensusEvalResult]:
+    where = "WHERE run_id = ?"
+    params: list[object] = [run_id]
+    if failed_only:
+        where += " AND passed = 0"
+    rows = db.conn.execute(
+        f"""SELECT run_id, post_id, category, expected_has_consensus,
+                  expected_explanation, actual_has_consensus, actual_explanation,
+                  confidence, agreeing_comment_ids, reasoning, passed, error,
+                  latency_ms, llm_call_id, created_at
+           FROM consensus_eval_results
+           {where}
+           ORDER BY passed ASC, category, post_id""",
+        tuple(params),
+    ).fetchall()
+    return [
+        ConsensusEvalResult(
+            run_id=r[0],
+            post_id=r[1],
+            category=r[2],
+            expected_has_consensus=bool(r[3]),
+            expected_explanation=r[4],
+            actual_has_consensus=bool(r[5]),
+            actual_explanation=r[6],
+            confidence=r[7],
+            agreeing_comment_ids=r[8],
+            reasoning=r[9],
+            passed=bool(r[10]),
+            error=r[11],
+            latency_ms=r[12],
+            llm_call_id=r[13],
+            created_at=r[14],
+        )
+        for r in rows
+    ]

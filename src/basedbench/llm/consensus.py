@@ -39,15 +39,22 @@ class _ConsensusResponse(BaseModel):
 class ConsensusDetector:
     """Detects consensus among a post's comments using the configured consensus model (default gpt-5.4-mini)."""
 
-    def __init__(self, config: Config) -> None:
+    def __init__(
+        self,
+        config: Config,
+        system_prompt: str = CONSENSUS_SYSTEM_PROMPT,
+        user_template: str = CONSENSUS_USER_TEMPLATE,
+    ) -> None:
         self._client = AsyncOpenAI(api_key=config.openai_api_key)
         self._model = config.consensus_model
         self._min_agreeing = config.min_agreeing_comments
         self._min_avg_score = config.min_avg_comment_score
         self._min_comment_score = config.min_comment_score
         self._max_comments = config.max_comments_for_consensus
+        self.system_prompt = system_prompt
+        self.user_template = user_template
         self.prompt_id = prompts.prompt_id(
-            "consensus", CONSENSUS_SYSTEM_PROMPT, CONSENSUS_USER_TEMPLATE
+            "consensus", self.system_prompt, self.user_template
         )
 
     async def detect_consensus(
@@ -83,16 +90,17 @@ class ConsensusDetector:
             f"ID: {c.comment_id} | Score: {c.score} | Author: {c.author}\n{c.body}\n---"
             for c in qualifying
         )
-        user_prompt = (
-            f"Subreddit: r/{post.subreddit}\n\n"
-            f"Comments ({len(qualifying)} total):\n{formatted}"
+        user_prompt = self.user_template.format(
+            subreddit=post.subreddit,
+            count=len(qualifying),
+            comments=formatted,
         )
 
         record = LlmCallRecord(
             role="consensus",
             post_id=post.post_id,
             model=self._model,
-            system_prompt=CONSENSUS_SYSTEM_PROMPT,
+            system_prompt=self.system_prompt,
             user_prompt=user_prompt,
             prompt_version=self.prompt_id,
             session_id=basedbench.SESSION_ID,
@@ -106,7 +114,7 @@ class ConsensusDetector:
                     response = await self._client.chat.completions.create(
                         model=self._model,
                         messages=[
-                            {"role": "system", "content": CONSENSUS_SYSTEM_PROMPT},
+                            {"role": "system", "content": self.system_prompt},
                             {"role": "user", "content": user_prompt},
                         ],
                         temperature=0.0,
