@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from basedbench.app import (
     _classify_state,
+    _eval_expected_label,
+    _eval_where,
     _inline_image_urls,
     _inspect_where,
     _position_text,
@@ -83,6 +85,28 @@ def test_position_text():
     assert _position_text(2, ["a", "b", "c"], 3) == "3 / 3"
     # capped result notes the true total
     assert _position_text(0, ["a"], 50) == "1 / 1 (capped from 50)"
+
+
+def test_eval_expected_label():
+    assert _eval_expected_label(1) == "consensus"
+    assert _eval_expected_label(True) == "consensus"
+    assert _eval_expected_label(0) == "no_consensus"
+    assert _eval_expected_label(False) == "no_consensus"
+
+
+def test_eval_where_filters_category_and_search():
+    where, params = _eval_where("true_no_consensus", "cat")
+    assert "cei.active = 1" in where
+    assert "cei.category = ?" in where
+    assert "m.title LIKE ?" in where
+    assert "m.post_id LIKE ?" in where
+    assert params == ["true_no_consensus", "%cat%", "%cat%"]
+
+
+def test_eval_where_all_category_only_filters_active():
+    where, params = _eval_where("all", "")
+    assert where == "cei.active = 1"
+    assert params == []
 
 
 def test_preview_redd_it_url_becomes_clickable_image():

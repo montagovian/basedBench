@@ -8,11 +8,13 @@ Tabs:
 - Stats & Leaderboard: corpus/prediction/judge stats
 - AI Gloss Failures: consensus-gloss regression set
 - Filter Misfires: flagged safety/consensus misfires, plus legacy quality-gate rows
+- Consensus Eval: review and correct persistent consensus eval labels
 """
 
 from __future__ import annotations
 
 import argparse
+import json
 import re
 import sqlite3
 from datetime import datetime, timezone
@@ -73,6 +75,86 @@ def _resolve_image(local_image_path: str | None) -> str | None:
     return str(abs_path) if abs_path.exists() else None
 
 
+def _source_comment_ids(raw_ids: str | None) -> list[str]:
+    if not raw_ids:
+        return []
+    try:
+        parsed = json.loads(raw_ids)
+    except (TypeError, json.JSONDecodeError):
+        return []
+    if not isinstance(parsed, list):
+        return []
+    return [str(comment_id) for comment_id in parsed if comment_id]
+
+
+def _comment_md(comment: sqlite3.Row, label: str | None = None) -> str:
+    author = comment["author"] or "[deleted]"
+    prefix = f"**{label}** - " if label else ""
+    return (
+        f"{prefix}**{author}** (score: {comment['score']})\n"
+        f"> {_inline_image_urls(comment['body'])}"
+    )
+
+
+def _comments_for_review(
+    conn: sqlite3.Connection,
+    post_id: str,
+    raw_source_comment_ids: str | None,
+    other_limit: int = 5,
+) -> str:
+    """Render consensus source comments first, then other top comments."""
+    source_ids = _source_comment_ids(raw_source_comment_ids)
+    source_comments: list[sqlite3.Row] = []
+    if source_ids:
+        placeholders = ",".join("?" * len(source_ids))
+        source_comments = conn.execute(
+            f"""SELECT comment_id, body, score, author
+                FROM comments
+                WHERE post_id = ?
+                  AND comment_id IN ({placeholders})
+                ORDER BY score DESC""",
+            (post_id, *source_ids),
+        ).fetchall()
+
+    source_seen = {comment["comment_id"] for comment in source_comments}
+    if source_seen:
+        placeholders = ",".join("?" * len(source_seen))
+        other_comments = conn.execute(
+            f"""SELECT comment_id, body, score, author
+                FROM comments
+                WHERE post_id = ?
+                  AND comment_id NOT IN ({placeholders})
+                ORDER BY score DESC
+                LIMIT ?""",
+            (post_id, *source_seen, other_limit),
+        ).fetchall()
+    else:
+        other_comments = conn.execute(
+            """SELECT comment_id, body, score, author
+               FROM comments
+               WHERE post_id = ?
+               ORDER BY score DESC
+               LIMIT ?""",
+            (post_id, other_limit),
+        ).fetchall()
+
+    sections: list[str] = []
+    if source_comments:
+        sections.append(
+            "### Consensus source comments\n\n"
+            + "\n\n".join(
+                _comment_md(comment, "Consensus source")
+                for comment in source_comments
+            )
+        )
+    if other_comments:
+        heading = "### Other top comments" if source_comments else "### Top comments"
+        sections.append(
+            heading + "\n\n" + "\n\n".join(_comment_md(c) for c in other_comments)
+        )
+    return "\n\n---\n\n".join(sections)
+
+
 # ── Tab 1: Review Queue ──────────────────────────────────────────────
 
 
@@ -92,7 +174,8 @@ def load_next_unreviewed():
     conn = _get_conn()
     row = conn.execute(
         """SELECT m.post_id, m.title, m.subreddit, m.local_image_path,
-                  gt.explanation, gt.consensus_confidence, gt.num_agreeing_comments
+                  gt.explanation, gt.consensus_confidence, gt.num_agreeing_comments,
+                  gt.source_comment_ids
            FROM memes m
            JOIN ground_truths gt ON m.post_id = gt.post_id
            LEFT JOIN reviews r ON m.post_id = r.post_id
@@ -129,16 +212,8 @@ def load_next_unreviewed():
         )
 
     post_id = row["post_id"]
-    comments = conn.execute(
-        "SELECT body, score, author FROM comments WHERE post_id = ? ORDER BY score DESC LIMIT 5",
-        (post_id,),
-    ).fetchall()
+    comments_text = _comments_for_review(conn, post_id, row["source_comment_ids"])
     conn.close()
-
-    comments_text = "\n\n".join(
-        f"**{c['author']}** (score: {c['score']})\n> {_inline_image_urls(c['body'])}"
-        for c in comments
-    )
 
     return (
         gr.update(value=_resolve_image(row["local_image_path"]), visible=True),
@@ -564,6 +639,7 @@ def _inspect_detail(post_id: str) -> dict | None:
     row = conn.execute(
         f"""SELECT m.post_id, m.title, m.subreddit, m.local_image_path,
                    gt.explanation, gt.consensus_confidence, gt.num_agreeing_comments,
+                   gt.source_comment_ids,
                    r.status AS review_status, r.reason AS review_reason,
                    (cc.post_id IS NOT NULL) AS consensus_ran
             {_INSPECT_FROM}
@@ -581,11 +657,7 @@ def _inspect_detail(post_id: str) -> dict | None:
            ORDER BY id DESC""",
         (post_id,),
     ).fetchall()
-    comments = conn.execute(
-        "SELECT body, score, author FROM comments WHERE post_id = ? "
-        "ORDER BY score DESC LIMIT 5",
-        (post_id,),
-    ).fetchall()
+    comments_text = _comments_for_review(conn, post_id, row["source_comment_ids"])
     conn.close()
 
     latest_by_role: dict[str, sqlite3.Row] = {}
@@ -596,7 +668,7 @@ def _inspect_detail(post_id: str) -> dict | None:
         "row": row,
         "state": _classify_state(row),
         "calls": latest_by_role,
-        "comments": comments,
+        "comments_text": comments_text,
     }
 
 
@@ -678,17 +750,12 @@ def _render_inspect(post_id: str | None):
         )
         meta_update = gr.update(value="", visible=False)
 
-    comments_text = "\n\n".join(
-        f"**{c['author']}** (score: {c['score']})\n> {_inline_image_urls(c['body'])}"
-        for c in detail["comments"]
-    )
-
     return (
         gr.update(value=_resolve_image(row["local_image_path"]), visible=True),
         gr.update(value=info_md, visible=True),
         gt_update,
         meta_update,
-        gr.update(value=comments_text or "_no comments_", visible=True),
+        gr.update(value=detail["comments_text"] or "_no comments_", visible=True),
         post_id,
         gr.update(value=_STATE_TO_GATE.get(state, "consensus")),
     )
@@ -1031,6 +1098,271 @@ def _load_gate_feedback() -> str:
         "|---|---|---|---|---|---|\n"
         + "\n".join(rows)
     )
+
+
+# ── Tab 8: Consensus Eval (label review) ─────────────────────────────
+
+
+_EVAL_CATEGORIES: list[tuple[str, str]] = [
+    ("All active eval items", "all"),
+    ("Bad gloss", "bad_gloss"),
+    ("Easy yes consensus", "easy_yes_consensus"),
+    ("Hard yes consensus", "hard_yes_consensus"),
+    ("True no consensus", "true_no_consensus"),
+    ("False positive consensus", "false_positive_consensus"),
+    ("Source comment mismatch", "source_comment_mismatch"),
+]
+
+
+def _eval_where(category: str, search: str) -> tuple[str, list[object]]:
+    conds = ["cei.active = 1"]
+    params: list[object] = []
+    if category and category != "all":
+        conds.append("cei.category = ?")
+        params.append(category)
+    if search:
+        conds.append("(m.title LIKE ? OR m.post_id LIKE ?)")
+        params.extend([f"%{search}%", f"%{search}%"])
+    return " AND ".join(conds), params
+
+
+def _eval_ids(category: str, search: str) -> tuple[list[str], int]:
+    where, params = _eval_where(category, search)
+    conn = _get_conn()
+    total = conn.execute(
+        f"""SELECT COUNT(*) AS cnt
+            FROM consensus_eval_items cei
+            JOIN memes m ON m.post_id = cei.post_id
+            WHERE {where}""",
+        params,
+    ).fetchone()["cnt"]
+    rows = conn.execute(
+        f"""SELECT cei.post_id
+            FROM consensus_eval_items cei
+            JOIN memes m ON m.post_id = cei.post_id
+            WHERE {where}
+            ORDER BY cei.category, cei.updated_at DESC, cei.post_id
+            LIMIT ?""",
+        [*params, _INSPECT_CAP],
+    ).fetchall()
+    conn.close()
+    return [r["post_id"] for r in rows], total
+
+
+def _eval_expected_label(expected_has_consensus: int | bool) -> str:
+    return "consensus" if bool(expected_has_consensus) else "no_consensus"
+
+
+def _eval_detail(post_id: str) -> dict | None:
+    conn = _get_conn()
+    row = conn.execute(
+        """SELECT cei.post_id, cei.category, cei.expected_has_consensus,
+                  cei.expected_explanation, cei.source, cei.notes, cei.updated_at,
+                  m.title, m.subreddit, m.local_image_path,
+                  gt.explanation AS ground_truth,
+                  gt.source_comment_ids
+           FROM consensus_eval_items cei
+           JOIN memes m ON m.post_id = cei.post_id
+           LEFT JOIN ground_truths gt ON gt.post_id = cei.post_id
+           WHERE cei.post_id = ?""",
+        (post_id,),
+    ).fetchone()
+    if row is None:
+        conn.close()
+        return None
+
+    results = conn.execute(
+        """SELECT r.run_id, run.prompt_label, r.actual_has_consensus,
+                  r.actual_explanation, r.confidence, r.passed, r.error, r.created_at
+           FROM consensus_eval_results r
+           JOIN consensus_eval_runs run ON run.run_id = r.run_id
+           WHERE r.post_id = ?
+           ORDER BY r.created_at DESC
+           LIMIT 5""",
+        (post_id,),
+    ).fetchall()
+    comments_text = _comments_for_review(conn, post_id, row["source_comment_ids"])
+    conn.close()
+    return {"row": row, "results": results, "comments_text": comments_text}
+
+
+def _render_eval_item(post_id: str | None):
+    blank_image = gr.update(value=None, visible=False)
+    if not post_id:
+        return (
+            blank_image,
+            gr.update(value="_No eval item matches this filter._", visible=True),
+            gr.update(value="", visible=False),
+            gr.update(value="", visible=False),
+            gr.update(value="", visible=False),
+            "",
+            gr.update(value=""),
+        )
+
+    detail = _eval_detail(post_id)
+    if detail is None:
+        return (
+            blank_image,
+            gr.update(value=f"_Eval item `{post_id}` not found._", visible=True),
+            gr.update(value="", visible=False),
+            gr.update(value="", visible=False),
+            gr.update(value="", visible=False),
+            "",
+            gr.update(value=""),
+        )
+
+    row = detail["row"]
+    expected = _eval_expected_label(row["expected_has_consensus"])
+    info = [
+        f"**{row['title']}**",
+        f"r/{row['subreddit']}",
+        f"ID: `{row['post_id']}`",
+        f"**Category:** `{row['category']}`",
+        f"**Expected:** `{expected}`",
+        f"**Source:** `{row['source']}`",
+    ]
+    if row["notes"]:
+        info.append(f"**Notes:** {row['notes']}")
+
+    expected_text = row["expected_explanation"] or ""
+    if row["ground_truth"] and row["ground_truth"] != expected_text:
+        expected_text = (
+            (expected_text + "\n\n" if expected_text else "")
+            + f"Current ground truth:\n{row['ground_truth']}"
+        )
+
+    result_rows = []
+    for result in detail["results"]:
+        actual = _eval_expected_label(result["actual_has_consensus"])
+        verdict = "pass" if result["passed"] else "fail"
+        conf = (
+            f"{result['confidence']:.2f}"
+            if result["confidence"] is not None
+            else "—"
+        )
+        snippet = (result["actual_explanation"] or result["error"] or "—").replace(
+            "\n", " "
+        )
+        if len(snippet) > 180:
+            snippet = snippet[:180] + "…"
+        result_rows.append(
+            f"| `{result['prompt_label']}` | **{verdict}** | `{actual}` | "
+            f"{conf} | {snippet} |"
+        )
+    if result_rows:
+        results_md = (
+            "| run | result | actual | conf | explanation/error |\n"
+            "|---|---|---|---|---|\n"
+            + "\n".join(result_rows)
+        )
+    else:
+        results_md = "_No eval runs for this item yet._"
+
+    return (
+        gr.update(value=_resolve_image(row["local_image_path"]), visible=True),
+        gr.update(value="\n\n".join(info), visible=True),
+        gr.update(value=expected_text or "— no expected explanation —", visible=True),
+        gr.update(value=results_md, visible=True),
+        gr.update(value=detail["comments_text"] or "_no comments_", visible=True),
+        post_id,
+        gr.update(value=row["expected_explanation"] or ""),
+    )
+
+
+def eval_apply(category: str, search: str):
+    ids, total = _eval_ids(category, search)
+    first = ids[0] if ids else None
+    return (ids, 0, *_render_eval_item(first), _position_text(0, ids, total))
+
+
+def eval_step(ids: list[str], idx: int, delta: int):
+    if not ids:
+        return (idx, *_render_eval_item(None), _position_text(idx, ids, len(ids)))
+    new_idx = max(0, min(int(idx) + delta, len(ids) - 1))
+    return (
+        new_idx,
+        *_render_eval_item(ids[new_idx]),
+        _position_text(new_idx, ids, len(ids)),
+    )
+
+
+def _append_eval_note(existing: str | None, action: str, reviewer_notes: str) -> str:
+    now = datetime.now(timezone.utc).isoformat(timespec="seconds")
+    note = f"{now} eval_review: {action}"
+    if reviewer_notes.strip():
+        note += f" - {reviewer_notes.strip()}"
+    return "\n".join(part for part in ((existing or "").strip(), note) if part)
+
+
+def update_eval_item(
+    post_id: str,
+    category_filter: str,
+    search: str,
+    action: str,
+    expected_explanation: str,
+    reviewer_notes: str,
+):
+    if not post_id:
+        return (*eval_apply(category_filter, search), "_No eval item loaded._")
+
+    conn = _get_conn()
+    row = conn.execute(
+        """SELECT category, expected_has_consensus, expected_explanation, notes
+           FROM consensus_eval_items WHERE post_id = ?""",
+        (post_id,),
+    ).fetchone()
+    if row is None:
+        conn.close()
+        return (*eval_apply(category_filter, search), f"_Eval item `{post_id}` not found._")
+
+    explanation = expected_explanation.strip() or row["expected_explanation"]
+    notes = _append_eval_note(row["notes"], action, reviewer_notes)
+    if action == "Confirm expected label":
+        conn.execute(
+            """UPDATE consensus_eval_items
+               SET expected_explanation = ?, notes = ?, updated_at = ?
+               WHERE post_id = ?""",
+            (explanation, notes, datetime.now(timezone.utc).isoformat(), post_id),
+        )
+    elif action == "Reclassify as consensus":
+        conn.execute(
+            """UPDATE consensus_eval_items
+               SET category = 'hard_yes_consensus',
+                   expected_has_consensus = 1,
+                   expected_explanation = ?,
+                   notes = ?,
+                   active = 1,
+                   updated_at = ?
+               WHERE post_id = ?""",
+            (explanation, notes, datetime.now(timezone.utc).isoformat(), post_id),
+        )
+    elif action == "Reclassify as no consensus":
+        conn.execute(
+            """UPDATE consensus_eval_items
+               SET category = 'true_no_consensus',
+                   expected_has_consensus = 0,
+                   expected_explanation = NULL,
+                   notes = ?,
+                   active = 1,
+                   updated_at = ?
+               WHERE post_id = ?""",
+            (notes, datetime.now(timezone.utc).isoformat(), post_id),
+        )
+    elif action == "Deactivate from eval":
+        conn.execute(
+            """UPDATE consensus_eval_items
+               SET active = 0, notes = ?, updated_at = ?
+               WHERE post_id = ?""",
+            (notes, datetime.now(timezone.utc).isoformat(), post_id),
+        )
+    else:
+        conn.close()
+        return (*eval_apply(category_filter, search), f"_Unknown action: {action}_")
+
+    conn.commit()
+    conn.close()
+    feedback = f"✅ `{post_id}` updated: **{action}**"
+    return (*eval_apply(category_filter, search), feedback)
 
 
 # ── Build Gradio App ─────────────────────────────────────────────────
@@ -1378,13 +1710,170 @@ def build_app() -> gr.Blocks:
             misfires_tab.select(_load_gate_feedback, outputs=[misfires_md])
             app.load(_load_gate_feedback, outputs=[misfires_md])
 
+        with gr.Tab("Consensus Eval") as eval_tab:
+            gr.Markdown(
+                "_Review the persistent consensus eval labels before tuning "
+                "prompts. Sampled no-consensus controls are especially worth "
+                "checking: reclassify any that actually have comment consensus, "
+                "or deactivate ambiguous rows._"
+            )
+            eval_ids_state = gr.State([])
+            eval_idx_state = gr.State(0)
+
+            with gr.Row():
+                eval_category = gr.Dropdown(
+                    choices=[(label, key) for label, key in _EVAL_CATEGORIES],
+                    value="true_no_consensus",
+                    label="Category",
+                )
+                eval_search = gr.Textbox(
+                    label="Search title or post id", placeholder="Optional search..."
+                )
+                btn_eval_apply = gr.Button("Apply filters", variant="primary")
+
+            with gr.Row():
+                btn_eval_prev = gr.Button("← Prev")
+                eval_position = gr.Markdown("0 / 0")
+                btn_eval_next = gr.Button("Next →")
+
+            with gr.Row():
+                with gr.Column(scale=1):
+                    eval_image = gr.Image(
+                        label="Meme",
+                        type="filepath",
+                        elem_classes="constrained-meme",
+                        visible=False,
+                    )
+                with gr.Column(scale=1):
+                    eval_info = gr.Markdown()
+                    eval_expected = gr.Textbox(
+                        label="Expected / current ground truth",
+                        lines=5,
+                        interactive=False,
+                        visible=False,
+                    )
+                    eval_results = gr.Markdown(visible=False)
+                    eval_comments = gr.Markdown(visible=False)
+
+            eval_post_id = gr.Textbox(visible=False)
+
+            with gr.Row():
+                eval_action = gr.Radio(
+                    choices=[
+                        "Confirm expected label",
+                        "Reclassify as consensus",
+                        "Reclassify as no consensus",
+                        "Deactivate from eval",
+                    ],
+                    value="Confirm expected label",
+                    label="Action",
+                )
+            eval_expected_edit = gr.Textbox(
+                label="Expected explanation override (optional)",
+                lines=3,
+                placeholder="Use when reclassifying a no-consensus control as consensus.",
+            )
+            eval_notes = gr.Textbox(
+                label="Reviewer notes",
+                lines=2,
+                placeholder="Why this label is right/wrong, or why the item is ambiguous.",
+            )
+            btn_eval_update = gr.Button("Save eval label", variant="secondary")
+            eval_feedback = gr.Markdown()
+
+            eval_render_outputs = [
+                eval_image,
+                eval_info,
+                eval_expected,
+                eval_results,
+                eval_comments,
+                eval_post_id,
+                eval_expected_edit,
+            ]
+            btn_eval_apply.click(
+                eval_apply,
+                inputs=[eval_category, eval_search],
+                outputs=[
+                    eval_ids_state,
+                    eval_idx_state,
+                    *eval_render_outputs,
+                    eval_position,
+                ],
+            )
+            btn_eval_prev.click(
+                lambda ids, idx: eval_step(ids, idx, -1),
+                inputs=[eval_ids_state, eval_idx_state],
+                outputs=[eval_idx_state, *eval_render_outputs, eval_position],
+            )
+            btn_eval_next.click(
+                lambda ids, idx: eval_step(ids, idx, 1),
+                inputs=[eval_ids_state, eval_idx_state],
+                outputs=[eval_idx_state, *eval_render_outputs, eval_position],
+            )
+            btn_eval_update.click(
+                update_eval_item,
+                inputs=[
+                    eval_post_id,
+                    eval_category,
+                    eval_search,
+                    eval_action,
+                    eval_expected_edit,
+                    eval_notes,
+                ],
+                outputs=[
+                    eval_ids_state,
+                    eval_idx_state,
+                    *eval_render_outputs,
+                    eval_position,
+                    eval_feedback,
+                ],
+            )
+            eval_tab.select(
+                eval_apply,
+                inputs=[eval_category, eval_search],
+                outputs=[
+                    eval_ids_state,
+                    eval_idx_state,
+                    *eval_render_outputs,
+                    eval_position,
+                ],
+            )
+            app.load(
+                eval_apply,
+                inputs=[eval_category, eval_search],
+                outputs=[
+                    eval_ids_state,
+                    eval_idx_state,
+                    *eval_render_outputs,
+                    eval_position,
+                ],
+            )
+
     return app
 
 
 CSS = """
+.constrained-meme,
+.constrained-meme > div {
+    width: 100% !important;
+}
+
 .constrained-meme img {
-    max-height: 60vh !important;
+    display: block !important;
+    width: min(100%, 640px) !important;
+    min-width: min(100%, 420px) !important;
+    height: auto !important;
+    max-height: none !important;
     object-fit: contain !important;
+    object-position: center !important;
+    margin-inline: auto !important;
+}
+
+@media (max-width: 640px) {
+    .constrained-meme img {
+        width: 100% !important;
+        min-width: 100% !important;
+    }
 }
 """
 
