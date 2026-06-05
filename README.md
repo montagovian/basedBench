@@ -28,9 +28,9 @@ the HuggingFace ecosystem (Datasets + Spaces).
 Reddit → safety gate → consensus → human review → prediction → judge → snapshot → HF Hub
 ```
 
-- **Reddit fetch** (`r/ExplainTheJoke`, `r/PeterExplainsTheJoke` by default; recent
-  posts via `--time-filter`, historical date ranges via `--after-date/--before-date`
-  over pullpush.io)
+- **Reddit fetch** (`r/ExplainTheJoke`, `r/PeterExplainsTheJoke`, and
+  `r/explainitpeter` by default; recent posts via `--time-filter`, historical
+  date ranges via `--after-date/--before-date` over pullpush.io)
 - **Safety gate**: text-only LLM pre-filter that drops content unfit for a public
   dataset (explicit sexual content, slurs, hate, doxx). Keeps edgy/dark/political humor.
 - **Consensus**: `gpt-5.4-mini` analyzes top comments, must agree on a specific

@@ -48,7 +48,7 @@ from basedbench.schemas import RawPost
 
 log = logging.getLogger(__name__)
 
-DEFAULT_SUBREDDITS = ("ExplainTheJoke", "PeterExplainsTheJoke")
+DEFAULT_SUBREDDITS = ("ExplainTheJoke", "PeterExplainsTheJoke", "explainitpeter")
 MAX_INFLIGHT = 10
 
 
