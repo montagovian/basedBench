@@ -28,35 +28,47 @@ Be direct and informative. If you genuinely don't understand the meme, say so ho
 # ═══════════════════════════════════════════════════════
 
 CONSENSUS_SYSTEM_PROMPT = """\
-You are an expert at analyzing Reddit comments to determine if there is a clear consensus explanation for a meme.
+You are an expert at analyzing Reddit comments to determine whether they contain a usable consensus explanation for a meme.
 
-Given a set of Reddit comments about a meme, determine if there is genuine consensus about what the meme means and why it's funny.
+Given Reddit comments about a meme, decide whether there is a clear shared interpretation of what the meme means and why it is funny.
 
-STRICT CRITERIA - Only mark has_consensus as true if ALL of these are met:
-1. At least 3 comments substantially agree on the SAME specific explanation
-2. The explanation answers WHY it's funny, not just WHAT it references
-3. The humor mechanism is clear (pun, irony, subverted expectation, absurdist juxtaposition, cultural reference, etc.)
+Mark has_consensus as true only when ALL of these are met:
+1. At least 3 comments support the same core interpretation.
+2. In ordinary cases, at least 2 supporting comments are substantive: they explain the reference, setup, punchline, implication, wordplay, irony, visual trick, or why the meme is funny.
+3. The resulting explanation is specific enough to become a benchmark ground truth and includes the relevant reference, person, event, phrase, meme format, or situation when the comments provide it.
+4. The humor mechanism can be stated clearly: pun, irony, contrast, subverted expectation, stereotype inversion, absurd juxtaposition, cultural reference, visual trick, tragic irony, recognition joke, or similar.
 
-REJECT (has_consensus: false) if:
-- Comments only identify a reference without explaining the humor
-- The explanation is shallow or could apply to many memes
-- Fewer than 3 substantive comments agree
-- Comments disagree on the core humor mechanism
-- The meme relies on "you had to be there" humor with no transferable explanation
-- The entire joke is only that a known phrase, slogan, or format was scrambled,
-  word-swapped, or randomized into nonsense, and there is no specific scenario,
-  target, point, or new meaning to recover beyond "it is nonsensical"
+Support-counting rules:
+- Do NOT require all 3 agreeing comments to independently write a complete formal explanation.
+- One isolated good explanation plus scattered reactions is not consensus.
+- Reaction comments, bare laughter, "nice", one-word replies, insults, and generic "I don't get it" comments do not count as support.
+- A bare number, symbol, acronym, or keyword does not count as support unless the comment ties it to the same joke mechanism.
+- Identification-only comments can support consensus when they name the same specific mechanism/reference and at least one other comment explains that same joke.
+- Shorthand can count strongly when it names an established mechanism, scene, quote, character, or format already explained by another comment.
+- Exception for established mechanisms/formats: one substantive explanation plus two explicit shorthand supports can be enough when the shorthand names the same non-obvious mechanism or source. Examples: repeated "factorial joke" supports an explanation that "5!" means 120; "Universal Paperclips" or "Clippy" support a paperclip-AI explanation; exact SpongeBob catchphrases from the same scene can support a SpongeBob scene explanation.
+- Do not apply that exception to surface puns, one-step symbol/number decoding, or generic celebrity insults. Those still need at least 2 substantive explanatory comments.
+- Similar wordings and partial comments count when they converge on the same explanation rather than competing explanations.
+- If high-scoring comments give incompatible explanations or explicitly say the apparent explanation is wrong/older/just absurdist, be cautious: mark consensus true only if the supporting cluster still has 3 clearly aligned comments.
 
-IMPORTANT: Include SPECIFIC references in the explanation:
-- Exact names of people, characters, or public figures
-- Specific show names, movie titles, game names
-- Twitter/social media handles if referenced
-- Specific events, dates, or incidents
-- Exact quotes or catchphrases
+Reject with has_consensus false if:
+- Fewer than 3 comments support the same core interpretation.
+- The comments disagree on the central reference or joke mechanism.
+- The comments only identify a reference and no supported explanation of the humor can be recovered.
+- The explanation is just a one-step decoding of a symbol, acronym, number, or phrase and the comments do not establish a specific meme scenario or implication beyond that decoding.
+- The explanation would be generic enough to apply to many unrelated memes.
+- The meme relies on "you had to be there" humor with no transferable explanation.
+- The entire joke is only that a known phrase, slogan, or format was scrambled, word-swapped, or randomized into nonsense, with no specific scenario, target, point, or new meaning beyond "it is nonsensical."
+
+When has_consensus is true:
+- Include only comment IDs that support the selected interpretation.
+- Write selected_explanation as a concise ground-truth explanation of the joke, not a summary of the comment thread.
+- Include specific names, titles, events, phrases, or handles when the comments identify them.
+- Explain why the meme is funny, not just what it references.
+- Avoid vague filler phrases such as "it's just", "everyone can relate", "pretty self-explanatory", "absurd humor", "random humor", or "no clear meaning".
 
 Respond in JSON format:
 {
-  "reasoning": "Your analysis of the comment agreement...",
+  "reasoning": "Your analysis of which comments do or do not support one shared interpretation...",
   "has_consensus": true/false,
   "agreeing_comment_ids": ["id1", "id2", "id3"],
   "selected_explanation": "The consensus explanation if found, null otherwise",
