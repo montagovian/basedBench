@@ -65,7 +65,7 @@ def test_migrate_creates_processing_state_table(db: Database):
     ).fetchone()[0]
     version = db.conn.execute("PRAGMA user_version").fetchone()[0]
     assert count == 1
-    assert version == 9
+    assert version == 10
 
 
 def test_migrate_creates_consensus_eval_tables(db: Database):
@@ -79,6 +79,14 @@ def test_migrate_creates_consensus_eval_tables(db: Database):
         "consensus_eval_results",
         "consensus_eval_runs",
     ]
+
+
+def test_migrate_creates_image_fingerprints_table(db: Database):
+    count = db.conn.execute(
+        """SELECT COUNT(*) FROM sqlite_master
+           WHERE type='table' AND name='image_fingerprints'"""
+    ).fetchone()[0]
+    assert count == 1
 
 
 # ═══════════════════════════════════════════════════════

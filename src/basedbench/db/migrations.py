@@ -338,6 +338,20 @@ CREATE INDEX IF NOT EXISTS idx_consensus_eval_results_run
     ON consensus_eval_results(run_id, passed, category);
 """
 
+MIGRATION_010 = """\
+CREATE TABLE IF NOT EXISTS image_fingerprints (
+    post_id TEXT PRIMARY KEY REFERENCES memes(post_id),
+    exact_hash TEXT NOT NULL,
+    dhash TEXT NOT NULL,
+    ahash TEXT NOT NULL,
+    width INTEGER NOT NULL,
+    height INTEGER NOT NULL,
+    updated_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_image_fingerprints_exact_hash
+    ON image_fingerprints(exact_hash);
+"""
+
 
 def _column_exists(conn: sqlite3.Connection, table: str, column: str) -> bool:
     cursor = conn.execute(
@@ -387,3 +401,7 @@ def run_migrations(conn: sqlite3.Connection) -> None:
     if version < 9:
         conn.executescript(MIGRATION_009)
         conn.execute("PRAGMA user_version = 9")
+
+    if version < 10:
+        conn.executescript(MIGRATION_010)
+        conn.execute("PRAGMA user_version = 10")

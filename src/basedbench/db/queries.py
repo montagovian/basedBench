@@ -166,6 +166,18 @@ class GateFeedback:
 
 
 @dataclass
+class ImageFingerprintRow:
+    post_id: str
+    local_image_path: str
+    exact_hash: str
+    dhash: str
+    ahash: str
+    width: int
+    height: int
+    review_status: str | None = None
+
+
+@dataclass
 class ConsensusEvalItem:
     post_id: str
     category: str
@@ -273,6 +285,115 @@ def meme_exists(db: Database, post_id: str) -> bool:
         "SELECT COUNT(*) FROM memes WHERE post_id = ?", (post_id,)
     ).fetchone()
     return row[0] > 0
+
+
+def list_memes_with_images(
+    db: Database, post_ids: list[str] | None = None
+) -> list[tuple[str, str]]:
+    """List memes with a non-empty local image path."""
+    params: tuple[str, ...] = ()
+    scope_filter = ""
+    if post_ids is not None:
+        if not post_ids:
+            return []
+        scope_filter = f" AND post_id IN ({','.join('?' * len(post_ids))})"
+        params = tuple(post_ids)
+    rows = db.conn.execute(
+        f"""SELECT post_id, local_image_path
+            FROM memes
+            WHERE local_image_path IS NOT NULL
+              AND local_image_path != ''
+              {scope_filter}""",
+        params,
+    ).fetchall()
+    return [(r[0], r[1]) for r in rows]
+
+
+def list_memes_missing_image_fingerprints(db: Database) -> list[tuple[str, str]]:
+    """List memes with local images but no stored image fingerprint."""
+    rows = db.conn.execute(
+        """SELECT m.post_id, m.local_image_path
+           FROM memes m
+           LEFT JOIN image_fingerprints f ON m.post_id = f.post_id
+           WHERE m.local_image_path IS NOT NULL
+             AND m.local_image_path != ''
+             AND f.post_id IS NULL"""
+    ).fetchall()
+    return [(r[0], r[1]) for r in rows]
+
+
+def upsert_image_fingerprint(db: Database, fingerprint: object) -> None:
+    """Insert or replace an image fingerprint row."""
+    db.conn.execute(
+        """INSERT OR REPLACE INTO image_fingerprints
+           (post_id, exact_hash, dhash, ahash, width, height, updated_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?)""",
+        (
+            getattr(fingerprint, "post_id"),
+            getattr(fingerprint, "exact_hash"),
+            getattr(fingerprint, "dhash"),
+            getattr(fingerprint, "ahash"),
+            getattr(fingerprint, "width"),
+            getattr(fingerprint, "height"),
+            _now(),
+        ),
+    )
+
+
+def list_unreviewed_fingerprinted_consensus_memes(
+    db: Database,
+) -> list[ImageFingerprintRow]:
+    """List fingerprinted consensus rows still awaiting human review."""
+    rows = db.conn.execute(
+        """SELECT f.post_id, m.local_image_path, f.exact_hash, f.dhash, f.ahash,
+                  f.width, f.height
+           FROM image_fingerprints f
+           JOIN memes m ON f.post_id = m.post_id
+           JOIN ground_truths gt ON f.post_id = gt.post_id
+           LEFT JOIN reviews r ON f.post_id = r.post_id
+           WHERE r.post_id IS NULL
+             AND m.local_image_path IS NOT NULL
+             AND m.local_image_path != ''"""
+    ).fetchall()
+    return [
+        ImageFingerprintRow(
+            post_id=r[0],
+            local_image_path=r[1],
+            exact_hash=r[2],
+            dhash=r[3],
+            ahash=r[4],
+            width=r[5],
+            height=r[6],
+        )
+        for r in rows
+    ]
+
+
+def list_reviewed_fingerprinted_memes(db: Database) -> list[ImageFingerprintRow]:
+    """List fingerprinted memes that already have a human or auto review."""
+    rows = db.conn.execute(
+        """SELECT f.post_id, m.local_image_path, f.exact_hash, f.dhash, f.ahash,
+                  f.width, f.height, r.status
+           FROM image_fingerprints f
+           JOIN memes m ON f.post_id = m.post_id
+           JOIN reviews r ON f.post_id = r.post_id
+           WHERE r.status IN ('validated', 'excluded')
+             AND m.local_image_path IS NOT NULL
+             AND m.local_image_path != ''"""
+    ).fetchall()
+    return [
+        ImageFingerprintRow(
+            post_id=r[0],
+            local_image_path=r[1],
+            exact_hash=r[2],
+            dhash=r[3],
+            ahash=r[4],
+            width=r[5],
+            height=r[6],
+            review_status=r[7],
+        )
+        for r in rows
+    ]
 
 
 # ═══════════════════════════════════════════════════════

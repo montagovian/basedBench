@@ -13,6 +13,7 @@ from basedbench.config import Config
 from basedbench.db import queries
 from basedbench.db.connection import Database
 from basedbench.pipeline import consensus_eval as consensus_eval_pipe
+from basedbench.pipeline import duplicates as duplicates_pipe
 from basedbench.pipeline import export as export_pipe
 from basedbench.pipeline import hf_push as hf_push_pipe
 from basedbench.pipeline import ingest as ingest_pipe
@@ -456,15 +457,25 @@ def cleanup(
         "--missing-images",
         help="Auto-exclude consensus-passed memes that have no local image file.",
     ),
+    duplicate_images: bool = typer.Option(
+        False,
+        "--duplicate-images",
+        help="Auto-exclude unreviewed memes duplicating already-reviewed images.",
+    ),
+    dry_run: bool = typer.Option(
+        False,
+        "--dry-run",
+        help="Report duplicate-image matches without writing review rows.",
+    ),
 ) -> None:
     """Maintenance tasks for stale or unusable rows. At least one flag required."""
     _configure_logging()
-    if not missing_images:
+    if not missing_images and not duplicate_images:
         raise typer.BadParameter(
-            "No cleanup target selected. Pass --missing-images (or another flag)."
+            "No cleanup target selected. Pass --missing-images or --duplicate-images."
         )
 
-    db, _ = _load()
+    db, config = _load()
     console = Console()
     if missing_images:
         n = queries.auto_exclude_missing_images(db)
@@ -472,6 +483,33 @@ def cleanup(
             f"Auto-excluded {n} memes with missing images "
             "(reason='image_missing')."
         )
+    if duplicate_images:
+        result = duplicates_pipe.auto_exclude_duplicate_images(
+            db,
+            config.project_root,
+            dry_run=dry_run,
+        )
+        action = "Would auto-exclude" if dry_run else "Auto-excluded"
+        console.print(
+            f"Fingerprint rows written: {result.fingerprints_written}. "
+            f"{action} {result.excluded if not dry_run else len(result.candidates)} "
+            "duplicate-image meme(s)."
+        )
+        for candidate in result.candidates[:25]:
+            match_type = "exact" if candidate.exact_match else "near"
+            pixel = (
+                "n/a"
+                if candidate.pixel_difference is None
+                else f"{candidate.pixel_difference:.2f}"
+            )
+            console.print(
+                f"  {candidate.post_id} -> {candidate.matched_post_id} "
+                f"({match_type}, reviewed={candidate.matched_status}, "
+                f"dhash={candidate.dhash_distance}, "
+                f"ahash={candidate.ahash_distance}, pixel={pixel})"
+            )
+        if len(result.candidates) > 25:
+            console.print(f"  ... {len(result.candidates) - 25} more")
 
 
 # ───────────────────────── regression-eval ─────────────────────────
