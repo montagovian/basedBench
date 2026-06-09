@@ -17,6 +17,9 @@ from basedbench.llm.record import LlmCallRecord
 from basedbench.schemas import CuratedMeme, ModelPrediction
 
 USER_PROMPT = "Please explain this meme."
+# Anthropic enforces the 10 MB limit against the base64 payload, not just the
+# raw image file. Keep raw bytes below the post-encoding expansion threshold.
+ANTHROPIC_MAX_IMAGE_BYTES = 7 * 1024 * 1024
 
 
 class AnthropicPredictor:
@@ -39,7 +42,10 @@ class AnthropicPredictor:
         if not meme.local_image_path:
             raise ImageNotFoundError(meme.post_id)
         image_path = Path(meme.local_image_path)
-        b64, mime = prompts.load_image_base64(image_path)
+        b64, mime = prompts.load_image_base64_under_limit(
+            image_path,
+            ANTHROPIC_MAX_IMAGE_BYTES,
+        )
 
         record = LlmCallRecord(
             role="prediction",

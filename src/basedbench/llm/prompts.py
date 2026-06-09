@@ -6,8 +6,11 @@ All prompt text is copied verbatim from v4 to ensure identical behavior.
 from __future__ import annotations
 
 import base64
+import io
 import hashlib
 from pathlib import Path
+
+from PIL import Image, ImageOps
 
 # ═══════════════════════════════════════════════════════
 # Prediction prompt — sent to VLMs when explaining memes
@@ -239,3 +242,43 @@ def load_image_base64(path: Path) -> tuple[str, str]:
     ext = path.suffix.lstrip(".").lower()
     mime = _MIME_BY_EXT.get(ext, "image/jpeg")
     return b64, mime
+
+
+def load_image_base64_under_limit(
+    path: Path,
+    max_bytes: int,
+    *,
+    max_dimension: int = 2048,
+) -> tuple[str, str]:
+    """Read an image and compress to JPEG if needed to fit a provider byte limit."""
+    data = path.read_bytes()
+    if len(data) <= max_bytes:
+        b64 = base64.standard_b64encode(data).decode("ascii")
+        ext = path.suffix.lstrip(".").lower()
+        return b64, _MIME_BY_EXT.get(ext, "image/jpeg")
+
+    with Image.open(path) as raw_image:
+        image = ImageOps.exif_transpose(raw_image).convert("RGB")
+        image.thumbnail((max_dimension, max_dimension), Image.Resampling.LANCZOS)
+
+        for quality in (90, 85, 80, 75, 70, 65, 60, 55, 50):
+            out = io.BytesIO()
+            image.save(out, format="JPEG", quality=quality, optimize=True)
+            compressed = out.getvalue()
+            if len(compressed) <= max_bytes:
+                b64 = base64.standard_b64encode(compressed).decode("ascii")
+                return b64, "image/jpeg"
+
+        while image.width > 128 or image.height > 128:
+            image.thumbnail(
+                (max(128, image.width // 2), max(128, image.height // 2)),
+                Image.Resampling.LANCZOS,
+            )
+            out = io.BytesIO()
+            image.save(out, format="JPEG", quality=60, optimize=True)
+            compressed = out.getvalue()
+            if len(compressed) <= max_bytes:
+                b64 = base64.standard_b64encode(compressed).decode("ascii")
+                return b64, "image/jpeg"
+
+    raise ValueError(f"could not compress image under {max_bytes} bytes: {path}")
