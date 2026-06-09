@@ -1545,10 +1545,12 @@ def get_prediction_counts(db: Database) -> list[ModelPredictionCount]:
 
     rows = db.conn.execute(
         """SELECT model_id, COUNT(*) as predicted
-           FROM predictions
-           WHERE error IS NULL
-           GROUP BY model_id
-           ORDER BY model_id"""
+           FROM predictions p
+           JOIN reviews r ON p.post_id = r.post_id
+           WHERE p.error IS NULL
+             AND r.status = 'validated'
+           GROUP BY p.model_id
+           ORDER BY p.model_id"""
     ).fetchall()
     return [
         ModelPredictionCount(
@@ -1574,6 +1576,7 @@ def get_judgment_counts(db: Database) -> list[ModelJudgmentCount]:
            JOIN judgments j ON p.id = j.prediction_id
            JOIN reviews r ON p.post_id = r.post_id
            WHERE r.status = 'validated'
+             AND p.error IS NULL
              AND j.id = (
                SELECT MAX(j2.id) FROM judgments j2
                WHERE j2.prediction_id = p.id AND j2.judge_model = j.judge_model

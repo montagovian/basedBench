@@ -699,6 +699,62 @@ def test_status_counts(db: Database):
     assert status.unreviewed == 0
 
 
+def test_prediction_counts_only_include_currently_validated_memes(db: Database):
+    _setup_validated_meme(db, "validated")
+
+    post = sample_post("excluded")
+    q.insert_meme(db, post)
+    q.upsert_ground_truth(
+        db, "excluded", "explanation", 0.9, [], 3, 10.0, "model", "v1",
+    )
+    q.upsert_review(db, "excluded", "excluded", "bad")
+
+    q.insert_prediction(
+        db,
+        ModelPrediction.success("validated", "v1", "gpt-5.5", "ok", 1, 1),
+    )
+    q.insert_prediction(
+        db,
+        ModelPrediction.success("excluded", "v1", "gpt-5.5", "old", 1, 1),
+    )
+
+    counts = {c.model_id: c for c in q.get_prediction_counts(db)}
+    assert counts["gpt-5.5"].predicted == 1
+    assert counts["gpt-5.5"].total_available == 1
+
+
+def test_judgment_counts_ignore_non_validated_predictions(db: Database):
+    _setup_validated_meme(db, "validated")
+
+    post = sample_post("excluded")
+    q.insert_meme(db, post)
+    q.upsert_ground_truth(
+        db, "excluded", "explanation", 0.9, [], 3, 10.0, "model", "v1",
+    )
+    q.upsert_review(db, "excluded", "excluded", "bad")
+
+    q.insert_prediction(
+        db,
+        ModelPrediction.success("validated", "v1", "gpt-5.5", "ok", 1, 1),
+    )
+    q.insert_prediction(
+        db,
+        ModelPrediction.success("excluded", "v1", "gpt-5.5", "old", 1, 1),
+    )
+    q.register_prompt(db, "judge-v1", "judge", "s", "u", "1.0")
+    validated_pid = q.find_prediction_id(db, "validated", "gpt-5.5")
+    excluded_pid = q.find_prediction_id(db, "excluded", "gpt-5.5")
+
+    q.insert_judgment(db, validated_pid, "correct", "", "gpt-5.4-mini", "judge-v1")
+    q.insert_judgment(db, excluded_pid, "incorrect", "", "gpt-5.4-mini", "judge-v1")
+
+    counts = {(c.model_id, c.judge_model): c for c in q.get_judgment_counts(db)}
+    row = counts[("gpt-5.5", "gpt-5.4-mini")]
+    assert row.judged == 1
+    assert row.correct == 1
+    assert row.incorrect == 0
+
+
 # ═══════════════════════════════════════════════════════
 # LLM Call Logging
 # ═══════════════════════════════════════════════════════
