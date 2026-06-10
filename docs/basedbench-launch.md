@@ -1,8 +1,12 @@
 # BasedBench: evaluating meme and visual humor understanding in VLMs
 
-BasedBench is a benchmark for meme and visual humor understanding in vision-language models.
+**How based is your model?**
 
-The task is intentionally simple: given an internet meme or visual joke, the model must explain why it is funny. Its answer is then compared against a human explanation derived from Reddit explanation communities and validated through the benchmark pipeline.
+The task is simple: give a model a meme or visual joke, and ask it to explain what it means.
+
+The answer key is human, and we did not write it. BasedBench takes its cue from SWE-bench: instead of inventing tasks and paying annotators to label them, find a task people are already doing in the wild and harvest the answers they have already produced. Here the task is "explain the joke," carried out every day on the Reddit communities where people go to ask, and answer, what a confusing meme is actually about. The confusing meme is the question. The top explanation is the answer.
+
+Those found explanations are filtered and validated through the benchmark pipeline before they become ground truth, and the model's answer is scored against them. This release contains 500 human-validated memes. That is the floor, not the ceiling: the longer-term aim is a self-improving loop that draws fresh memes and fresh explanations continuously, generating new benchmark instances without human intervention.
 
 This is not a benchmark for generating jokes, ranking memes, or deciding whether a model has a sense of humor. It evaluates whether a model can understand a meme well enough to explain it.
 

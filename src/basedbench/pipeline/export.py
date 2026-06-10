@@ -119,7 +119,7 @@ def run(
         "description": f"BasedBench VLM Meme Understanding Benchmark - {snapshot.name}",
         "citation": "",
         "homepage": "",
-        "license": "",
+        "license": "other",
         "features": {
             "post_id": {"dtype": "string", "_type": "Value"},
             "title": {"dtype": "string", "_type": "Value"},
@@ -136,7 +136,7 @@ def run(
         for e in leaderboard
     )
     readme = f"""---
-license: mit
+license: other
 task_categories:
   - visual-question-answering
   - image-to-text
@@ -169,6 +169,14 @@ ds = load_dataset("path/to/export")
 Ground truth explanations are extracted from Reddit comments via LLM consensus
 detection (>=3 comments agreeing on the same specific explanation). Each model
 prediction is judged as correct/incorrect by an LLM judge using strict criteria.
+
+## Content and Privacy
+
+This dataset contains Reddit-derived meme post IDs, titles, subreddit names,
+ground-truth explanations, images, model predictions, and judge verdict
+summaries. Raw comments, authors, review metadata, local file paths, API request
+metadata, and internal LLM prompts/responses are intentionally omitted from the
+public artifact.
 
 Snapshot: {snapshot.snapshot_id}
 Created: {snapshot.created_at}

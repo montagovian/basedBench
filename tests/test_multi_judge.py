@@ -88,17 +88,19 @@ def test_make_judge_rejects_unknown_provider():
         make_judge("llama-99", cfg)
 
 
-def test_config_validator_blocks_claude_judge_without_key():
+def test_config_allows_claude_judge_config_without_key_until_construction():
     from basedbench.config import Config
 
+    cfg = Config(  # type: ignore[call-arg]
+        reddit_client_id="x",
+        reddit_client_secret="y",
+        openai_api_key="sk-xxx",
+        anthropic_api_key=None,
+        judge_models=["gpt-5.4-mini", "claude-sonnet-4-6"],
+    )
+
     with pytest.raises(ValueError, match="ANTHROPIC_API_KEY"):
-        Config(  # type: ignore[call-arg]
-            reddit_client_id="x",
-            reddit_client_secret="y",
-            openai_api_key="sk-xxx",
-            anthropic_api_key=None,
-            judge_models=["gpt-5.4-mini", "claude-sonnet-4-6"],
-        )
+        make_judge("claude-sonnet-4-6", cfg)
 
 
 # ───────── per-judge `predictions_needing_judgment` ─────────

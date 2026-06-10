@@ -1242,12 +1242,13 @@ def snapshot_meme_details(db: Database, snapshot_id: str) -> list[ExportMeme]:
 
 
 def snapshot_model_ids(db: Database, snapshot_id: str) -> list[str]:
-    """Get all distinct model IDs that have predictions for memes in a snapshot."""
+    """Get model IDs that have successful predictions for memes in a snapshot."""
     rows = db.conn.execute(
         """SELECT DISTINCT p.model_id
            FROM predictions p
            JOIN snapshot_memes sm ON p.post_id = sm.post_id
            WHERE sm.snapshot_id = ?
+             AND p.error IS NULL
            ORDER BY p.model_id""",
         (snapshot_id,),
     ).fetchall()
@@ -1266,7 +1267,9 @@ def snapshot_predictions_for_model(
         """SELECT p.id, p.post_id, p.prediction
            FROM predictions p
            JOIN snapshot_memes sm ON p.post_id = sm.post_id
-           WHERE sm.snapshot_id = ? AND p.model_id = ?
+           WHERE sm.snapshot_id = ?
+             AND p.model_id = ?
+             AND p.error IS NULL
            ORDER BY p.post_id""",
         (snapshot_id, model_id),
     ).fetchall()
@@ -1277,6 +1280,7 @@ def snapshot_predictions_for_model(
            JOIN predictions p ON p.id = j.prediction_id
            JOIN snapshot_memes sm ON p.post_id = sm.post_id
            WHERE sm.snapshot_id = ? AND p.model_id = ?
+             AND p.error IS NULL
              AND j.id = (
                SELECT MAX(j2.id) FROM judgments j2
                WHERE j2.prediction_id = j.prediction_id
@@ -1314,6 +1318,7 @@ def snapshot_leaderboard(db: Database, snapshot_id: str) -> list[LeaderboardEntr
            JOIN snapshot_memes sm ON p.post_id = sm.post_id
            JOIN judgments j ON p.id = j.prediction_id
            WHERE sm.snapshot_id = ?
+             AND p.error IS NULL
              AND j.id = (
                SELECT MAX(j2.id) FROM judgments j2
                WHERE j2.prediction_id = p.id AND j2.judge_model = j.judge_model

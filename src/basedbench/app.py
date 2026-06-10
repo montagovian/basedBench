@@ -14,6 +14,7 @@ Tabs:
 from __future__ import annotations
 
 import argparse
+import html
 import json
 import re
 import sqlite3
@@ -40,11 +41,15 @@ def _inline_image_urls(text: str) -> str:
     the original URL.
     """
 
-    def repl(match: re.Match[str]) -> str:
+    rendered: list[str] = []
+    last = 0
+    for match in _IMAGE_URL_RE.finditer(text):
+        rendered.append(_escape_md_text(text[last:match.start()]))
         url = match.group(0)
-        return f"[![]({url})]({url})"
-
-    return _IMAGE_URL_RE.sub(repl, text)
+        rendered.append(f"[![]({url})]({url})")
+        last = match.end()
+    rendered.append(_escape_md_text(text[last:]))
+    return "".join(rendered)
 
 _DB_PATH: Path = Path("data/basedbench.db")
 
@@ -68,11 +73,24 @@ def _project_root() -> Path:
     return _DB_PATH.resolve().parent.parent
 
 
+def _images_root() -> Path:
+    return (_project_root() / "data" / "images").resolve()
+
+
 def _resolve_image(local_image_path: str | None) -> str | None:
     if not local_image_path:
         return None
-    abs_path = _project_root() / local_image_path
-    return str(abs_path) if abs_path.exists() else None
+    path = Path(local_image_path)
+    candidate = path.resolve() if path.is_absolute() else (_project_root() / path).resolve()
+    images_root = _images_root()
+    if candidate == images_root or images_root not in candidate.parents:
+        return None
+    return str(candidate) if candidate.exists() else None
+
+
+def _escape_md_text(text: str | None) -> str:
+    escaped = html.escape(text or "", quote=False)
+    return re.sub(r"([\\`*_{}\[\]#!|])", r"\\\1", escaped)
 
 
 def _source_comment_ids(raw_ids: str | None) -> list[str]:
@@ -88,7 +106,7 @@ def _source_comment_ids(raw_ids: str | None) -> list[str]:
 
 
 def _comment_md(comment: sqlite3.Row, label: str | None = None) -> str:
-    author = comment["author"] or "[deleted]"
+    author = _escape_md_text(comment["author"] or "[deleted]")
     prefix = f"**{label}** - " if label else ""
     return (
         f"{prefix}**{author}** (score: {comment['score']})\n"
@@ -217,7 +235,12 @@ def load_next_unreviewed():
 
     return (
         gr.update(value=_resolve_image(row["local_image_path"]), visible=True),
-        gr.update(value=f"**{row['title']}**\n\nr/{row['subreddit']}"),
+        gr.update(
+            value=(
+                f"**{_escape_md_text(row['title'])}**\n\n"
+                f"r/{_escape_md_text(row['subreddit'])}"
+            )
+        ),
         gr.update(value=row["explanation"], visible=True),
         gr.update(
             value=f"Confidence: {row['consensus_confidence']:.2f} | "
@@ -260,6 +283,15 @@ def exclude_meme(post_id: str, reason: str):
 
 def skip_meme():
     return load_next_unreviewed()
+
+
+def _read_only_review_outputs():
+    outputs = list(load_next_unreviewed())
+    outputs[6] = gr.update(value="", visible=False)
+    outputs[8] = gr.update(visible=False, interactive=False)
+    outputs[9] = gr.update(visible=False, interactive=False)
+    outputs[10] = gr.update(visible=False, interactive=False)
+    return tuple(outputs)
 
 
 def flag_consensus_failure(
@@ -704,8 +736,8 @@ def _render_inspect(post_id: str | None):
 
     banner = _INSPECT_STATE_LABELS.get(state, state)
     info_lines = [
-        f"**{row['title']}**",
-        f"r/{row['subreddit']}",
+        f"**{_escape_md_text(row['title'])}**",
+        f"r/{_escape_md_text(row['subreddit'])}",
         f"**Status:** {banner}",
     ]
     if row["review_reason"]:
@@ -1214,15 +1246,15 @@ def _render_eval_item(post_id: str | None):
     row = detail["row"]
     expected = _eval_expected_label(row["expected_has_consensus"])
     info = [
-        f"**{row['title']}**",
-        f"r/{row['subreddit']}",
+        f"**{_escape_md_text(row['title'])}**",
+        f"r/{_escape_md_text(row['subreddit'])}",
         f"ID: `{row['post_id']}`",
         f"**Category:** `{row['category']}`",
         f"**Expected:** `{expected}`",
         f"**Source:** `{row['source']}`",
     ]
     if row["notes"]:
-        info.append(f"**Notes:** {row['notes']}")
+        info.append(f"**Notes:** {_escape_md_text(row['notes'])}")
 
     expected_text = row["expected_explanation"] or ""
     if row["ground_truth"] and row["ground_truth"] != expected_text:
@@ -1284,6 +1316,18 @@ def eval_step(ids: list[str], idx: int, delta: int):
         *_render_eval_item(ids[new_idx]),
         _position_text(new_idx, ids, len(ids)),
     )
+
+
+def _read_only_eval_apply(category: str, search: str):
+    outputs = list(eval_apply(category, search))
+    outputs[8] = gr.update(value="", visible=False)
+    return tuple(outputs)
+
+
+def _read_only_eval_step(ids: list[str], idx: int, delta: int):
+    outputs = list(eval_step(ids, idx, delta))
+    outputs[7] = gr.update(value="", visible=False)
+    return tuple(outputs)
 
 
 def _append_eval_note(existing: str | None, action: str, reviewer_notes: str) -> str:
@@ -1368,9 +1412,11 @@ def update_eval_item(
 # ── Build Gradio App ─────────────────────────────────────────────────
 
 
-def build_app() -> gr.Blocks:
+def build_app(read_only: bool = False) -> gr.Blocks:
     with gr.Blocks(title="basedBench Review UI") as app:
         gr.Markdown("# basedBench Review UI")
+        if read_only:
+            gr.Markdown("_Read-only mode: review and labeling controls are disabled._")
 
         with gr.Tab("Review Queue"):
             with gr.Row():
@@ -1388,7 +1434,9 @@ def build_app() -> gr.Blocks:
             review_remaining = gr.Number(label="Remaining to review", interactive=False)
 
             with gr.Row():
-                btn_validate = gr.Button("Validate", variant="primary")
+                btn_validate = gr.Button(
+                    "Validate", variant="primary", visible=not read_only
+                )
                 exclude_reason = gr.Dropdown(
                     choices=[
                         "bad image",
@@ -1400,9 +1448,12 @@ def build_app() -> gr.Blocks:
                     label="Exclude reason",
                     value="other",
                     allow_custom_value=True,
+                    visible=not read_only,
                 )
-                btn_exclude = gr.Button("Exclude", variant="stop")
-                btn_skip = gr.Button("Skip")
+                btn_exclude = gr.Button(
+                    "Exclude", variant="stop", visible=not read_only
+                )
+                btn_skip = gr.Button("Skip", visible=not read_only)
 
             review_outputs = [
                 review_image,
@@ -1417,16 +1468,26 @@ def build_app() -> gr.Blocks:
                 btn_exclude,
                 btn_skip,
             ]
-            btn_validate.click(validate_meme, inputs=[review_post_id], outputs=review_outputs)
-            btn_exclude.click(
-                exclude_meme, inputs=[review_post_id, exclude_reason], outputs=review_outputs
+            if not read_only:
+                btn_validate.click(
+                    validate_meme, inputs=[review_post_id], outputs=review_outputs
+                )
+                btn_exclude.click(
+                    exclude_meme,
+                    inputs=[review_post_id, exclude_reason],
+                    outputs=review_outputs,
+                )
+            if not read_only:
+                btn_skip.click(skip_meme, inputs=[], outputs=review_outputs)
+            app.load(
+                _read_only_review_outputs if read_only else load_next_unreviewed,
+                outputs=review_outputs,
             )
-            btn_skip.click(skip_meme, inputs=[], outputs=review_outputs)
-            app.load(load_next_unreviewed, outputs=review_outputs)
 
             with gr.Accordion(
                 "🚩 Flag this meme's ground-truth explanation (consensus failure)",
                 open=False,
+                visible=not read_only,
             ):
                 gr.Markdown(
                     "_Use this when the consensus model's gloss is wrong, "
@@ -1604,7 +1665,9 @@ def build_app() -> gr.Blocks:
 
             inspect_post_id = gr.Textbox(visible=False)
 
-            with gr.Accordion("🚩 A filter got this wrong", open=False):
+            with gr.Accordion(
+                "🚩 A filter got this wrong", open=False, visible=not read_only
+            ):
                 gr.Markdown(
                     "_Flag a meme the safety/consensus filter handled "
                     "incorrectly — e.g. excluded a good meme, kept a bad one, or "
@@ -1660,11 +1723,12 @@ def build_app() -> gr.Blocks:
                 inputs=[inspect_ids_state, inspect_idx_state],
                 outputs=[inspect_idx_state, *inspect_render_outputs, inspect_position],
             )
-            btn_misfire.click(
-                flag_gate_misfire,
-                inputs=[inspect_post_id, misfire_gate, misfire_correct, misfire_notes],
-                outputs=[misfire_feedback, misfire_correct, misfire_notes],
-            )
+            if not read_only:
+                btn_misfire.click(
+                    flag_gate_misfire,
+                    inputs=[inspect_post_id, misfire_gate, misfire_correct, misfire_notes],
+                    outputs=[misfire_feedback, misfire_correct, misfire_notes],
+                )
             # Refresh subreddit options + load the first page on tab activation.
             inspect_tab.select(
                 lambda: gr.update(choices=_subreddits()),
@@ -1767,18 +1831,23 @@ def build_app() -> gr.Blocks:
                     ],
                     value="Confirm expected label",
                     label="Action",
+                    visible=not read_only,
                 )
             eval_expected_edit = gr.Textbox(
                 label="Expected explanation override (optional)",
                 lines=3,
                 placeholder="Use when reclassifying a no-consensus control as consensus.",
+                visible=not read_only,
             )
             eval_notes = gr.Textbox(
                 label="Reviewer notes",
                 lines=2,
                 placeholder="Why this label is right/wrong, or why the item is ambiguous.",
+                visible=not read_only,
             )
-            btn_eval_update = gr.Button("Save eval label", variant="secondary")
+            btn_eval_update = gr.Button(
+                "Save eval label", variant="secondary", visible=not read_only
+            )
             eval_feedback = gr.Markdown()
 
             eval_render_outputs = [
@@ -1791,7 +1860,7 @@ def build_app() -> gr.Blocks:
                 eval_expected_edit,
             ]
             btn_eval_apply.click(
-                eval_apply,
+                _read_only_eval_apply if read_only else eval_apply,
                 inputs=[eval_category, eval_search],
                 outputs=[
                     eval_ids_state,
@@ -1801,35 +1870,40 @@ def build_app() -> gr.Blocks:
                 ],
             )
             btn_eval_prev.click(
-                lambda ids, idx: eval_step(ids, idx, -1),
+                (lambda ids, idx: _read_only_eval_step(ids, idx, -1))
+                if read_only
+                else (lambda ids, idx: eval_step(ids, idx, -1)),
                 inputs=[eval_ids_state, eval_idx_state],
                 outputs=[eval_idx_state, *eval_render_outputs, eval_position],
             )
             btn_eval_next.click(
-                lambda ids, idx: eval_step(ids, idx, 1),
+                (lambda ids, idx: _read_only_eval_step(ids, idx, 1))
+                if read_only
+                else (lambda ids, idx: eval_step(ids, idx, 1)),
                 inputs=[eval_ids_state, eval_idx_state],
                 outputs=[eval_idx_state, *eval_render_outputs, eval_position],
             )
-            btn_eval_update.click(
-                update_eval_item,
-                inputs=[
-                    eval_post_id,
-                    eval_category,
-                    eval_search,
-                    eval_action,
-                    eval_expected_edit,
-                    eval_notes,
-                ],
-                outputs=[
-                    eval_ids_state,
-                    eval_idx_state,
-                    *eval_render_outputs,
-                    eval_position,
-                    eval_feedback,
-                ],
-            )
+            if not read_only:
+                btn_eval_update.click(
+                    update_eval_item,
+                    inputs=[
+                        eval_post_id,
+                        eval_category,
+                        eval_search,
+                        eval_action,
+                        eval_expected_edit,
+                        eval_notes,
+                    ],
+                    outputs=[
+                        eval_ids_state,
+                        eval_idx_state,
+                        *eval_render_outputs,
+                        eval_position,
+                        eval_feedback,
+                    ],
+                )
             eval_tab.select(
-                eval_apply,
+                _read_only_eval_apply if read_only else eval_apply,
                 inputs=[eval_category, eval_search],
                 outputs=[
                     eval_ids_state,
@@ -1878,7 +1952,7 @@ CSS = """
 """
 
 
-def launch(db_path: Path | None = None) -> None:
+def launch(db_path: Path | None = None, *, read_only: bool = False) -> None:
     if db_path is None:
         # Lazy-import Config so the Space env (only HF secrets) doesn't fail early.
         from basedbench.config import Config
@@ -1893,8 +1967,7 @@ def launch(db_path: Path | None = None) -> None:
             f"Database not found at {_DB_PATH}. "
             f"Run `basedbench ingest` first to create it."
         )
-    project_root = str(_DB_PATH.resolve().parent.parent)
-    build_app().launch(css=CSS, allowed_paths=[project_root])
+    build_app(read_only=read_only).launch(css=CSS, allowed_paths=[str(_images_root())])
 
 
 def main() -> None:

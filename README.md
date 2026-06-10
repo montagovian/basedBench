@@ -62,6 +62,9 @@ uv run basedbench status
 
 # quick end-to-end smoke test on a bounded, unreviewed batch
 uv run basedbench tracer --fetch 12 --target-consensus 5 --predict gpt-5.5
+
+# release-readiness checks before publishing code or dataset artifacts
+uv run python scripts/release_audit.py --db data/basedbench.db
 ```
 
 ## Feedback loops
@@ -143,21 +146,25 @@ uv run basedbench push v0.1 --repo your-username/basedbench
 | `tracer` | Bounded fetch → gates → consensus → prediction smoke test; optional `--judge` |
 | `traces` | Inspect every recorded LLM call (filter by role/post/session/error) |
 | `run <model>` | ingest → predict → judge → status (one shot) |
-| `cleanup` | Maintenance (e.g. `--missing-images` excludes memes whose image never downloaded) |
+| `cleanup` | Maintenance (e.g. `--missing-images`, `--duplicate-images --dry-run`) |
 | `regression-eval` | Replay current consensus over the flagged "AI Gloss Failures" set (read-only) |
 | `consensus-eval seed/list/runs/run/report` | Build and run persistent consensus prompt evals |
 | `snapshot create/list` | Freeze and inspect validated sets |
 | `export <snapshot>` | Write JSONL + images + dataset card to disk |
 | `push <snapshot>` | Publish to HuggingFace Hub as a multi-config dataset |
 | `review` | Launch the Gradio UI (Review Queue · Browse · Prediction Comparison · Inspect · Stats & Leaderboard · AI Gloss Failures · Filter Misfires) |
-| `view` | Launch the Gradio UI read-only |
+| `view` | Launch the Gradio UI with mutation controls disabled |
 
 ## Status
 
 Core pipeline complete and in active use (ingest → review → predict → judge →
-leaderboard); snapshot/HF-push wired but not yet run end-to-end. Test suite:
-`uv run pytest`. Implementation state, architecture, and gotchas live in
-`HANDOFF.md`.
+leaderboard). Test suite: `uv run pytest`. Public architecture and release
+boundaries live in [`docs/architecture.md`](docs/architecture.md), with the
+release gate documented in [`docs/release-readiness.md`](docs/release-readiness.md).
+
+Local working data under `data/` is not a release artifact. Public dataset
+exports intentionally omit raw Reddit comments/authors, review metadata, local
+paths, and LLM call logs.
 
 ## License
 

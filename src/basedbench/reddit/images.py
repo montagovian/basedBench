@@ -5,6 +5,7 @@ from __future__ import annotations
 import io
 import logging
 from pathlib import Path
+from urllib.parse import urlparse
 
 import httpx
 from PIL import Image, UnidentifiedImageError
@@ -22,6 +23,21 @@ log = logging.getLogger(__name__)
 MAX_IMAGE_BYTES = 20 * 1024 * 1024
 KNOWN_EXTENSIONS = ("jpg", "jpeg", "png", "gif", "webp")
 HTTP_TIMEOUT = 30.0
+ALLOWED_IMAGE_HOSTS = {
+    "i.redd.it",
+    "preview.redd.it",
+    "i.imgur.com",
+    "i.imgflip.com",
+}
+
+
+def _validate_image_url(url: str) -> None:
+    parsed = urlparse(url)
+    if parsed.scheme != "https":
+        raise ImageDownloadError(url, "image URL must use https")
+    host = (parsed.hostname or "").lower()
+    if host not in ALLOWED_IMAGE_HOSTS:
+        raise ImageDownloadError(url, f"image host not allowed: {host or '(missing)'}")
 
 
 def _extension_from_url(url: str) -> str:
@@ -73,6 +89,7 @@ class ImageDownloader:
 
     async def download(self, url: str, post_id: str) -> str:
         """Download an image. Returns a `data/images/<post_id>.<ext>` relative path."""
+        _validate_image_url(url)
         existing = find_local_image(self._output_dir, post_id)
         if existing is not None:
             return f"data/images/{existing.name}"
@@ -90,7 +107,8 @@ class ImageDownloader:
                     raise ImageDownloadError(url, f"HTTP {resp.status_code}")
                 bytes_payload = resp.content
 
-        assert bytes_payload is not None
+        if bytes_payload is None:
+            raise ImageDownloadError(url, "image download produced no payload")
 
         if len(bytes_payload) > MAX_IMAGE_BYTES:
             raise ImageDownloadError(url, "image exceeds 20MB limit")

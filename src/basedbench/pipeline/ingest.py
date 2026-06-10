@@ -259,7 +259,8 @@ async def run(
 
     # ─── Phase 1: fetch + image download ───
     if use_date_range:
-        assert after_unix is not None and before_unix is not None
+        if after_unix is None or before_unix is None:
+            raise ValueError("date-range ingest requires both after_unix and before_unix")
         await _fetch_phase_pullpush(
             db, config, subs, limit, after_unix, before_unix, stats, console
         )

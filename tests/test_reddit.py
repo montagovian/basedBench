@@ -7,9 +7,9 @@ from unittest.mock import AsyncMock
 
 import pytest
 
-from basedbench.errors import RedditApiError
+from basedbench.errors import ImageDownloadError, RedditApiError
 from basedbench.reddit.client import RedditClient, _is_image_url
-from basedbench.reddit.images import _extension_from_url, find_local_image
+from basedbench.reddit.images import _extension_from_url, _validate_image_url, find_local_image
 
 
 @pytest.mark.parametrize(
@@ -51,6 +51,33 @@ def test_find_local_image_exists(tmp_path: Path):
     found = find_local_image(tmp_path, "test_post")
     assert found is not None
     assert found.name == "test_post.png"
+
+
+@pytest.mark.parametrize(
+    "url",
+    [
+        "https://i.redd.it/abc.jpg",
+        "https://preview.redd.it/abc.png?width=640",
+        "https://i.imgur.com/abc.gif",
+        "https://i.imgflip.com/abc.jpg",
+    ],
+)
+def test_validate_image_url_allows_known_https_hosts(url: str):
+    _validate_image_url(url)
+
+
+@pytest.mark.parametrize(
+    "url",
+    [
+        "http://i.redd.it/abc.jpg",
+        "file:///etc/passwd",
+        "https://example.com/cat.gif",
+        "https://evil.i.redd.it.example/abc.jpg",
+    ],
+)
+def test_validate_image_url_rejects_unsafe_sources(url: str):
+    with pytest.raises(ImageDownloadError):
+        _validate_image_url(url)
 
 
 # ───────── fetch_posts resilience ─────────

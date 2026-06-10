@@ -2,13 +2,20 @@
 
 from __future__ import annotations
 
+from pathlib import Path
+
+import basedbench.app as app_mod
+import basedbench.cli as cli_mod
 from basedbench.app import (
     _classify_state,
+    _comment_md,
     _eval_expected_label,
     _eval_where,
     _inline_image_urls,
     _inspect_where,
     _position_text,
+    _resolve_image,
+    set_db_path,
 )
 
 
@@ -177,3 +184,50 @@ def test_url_inside_parens_doesnt_swallow_paren():
     # The trailing ) should remain outside the URL/markdown
     assert out.endswith(")")
     assert "https://i.redd.it/x.jpg)](" in out  # url is the link target
+
+
+def test_comment_markdown_escapes_html_and_links():
+    row = {
+        "author": "<script>alert(1)</script>",
+        "score": 1,
+        "body": "<b>x</b> [click](javascript:alert(1))",
+    }
+
+    out = _comment_md(row)
+
+    assert "<script>" not in out
+    assert "<b>" not in out
+    assert "[click](javascript:alert(1))" not in out
+    assert "\\[click\\]" in out
+    assert "javascript:alert" in out
+
+
+def test_resolve_image_rejects_path_traversal(tmp_path: Path):
+    old_db = app_mod._DB_PATH
+    try:
+        db_path = tmp_path / "data" / "basedbench.db"
+        image_path = tmp_path / "data" / "images" / "meme.jpg"
+        image_path.parent.mkdir(parents=True)
+        image_path.write_bytes(b"fake")
+        (tmp_path / ".env").write_text("SECRET=1")
+        set_db_path(db_path)
+
+        assert _resolve_image("data/images/meme.jpg") == str(image_path.resolve())
+        assert _resolve_image("../../.env") is None
+        assert _resolve_image(str((tmp_path / ".env").resolve())) is None
+    finally:
+        set_db_path(old_db)
+
+
+def test_view_launches_gradio_read_only(monkeypatch):
+    class DummyDb:
+        def close(self) -> None:
+            pass
+
+    calls = []
+    monkeypatch.setattr(cli_mod, "_load", lambda: (DummyDb(), object()))
+    monkeypatch.setattr(app_mod, "launch", lambda **kw: calls.append(kw))
+
+    cli_mod.view()
+
+    assert calls == [{"read_only": True}]

@@ -12,12 +12,27 @@ wheels/
 # Local data (sqlite db, downloaded images, exports)
 data/
 export/
+release-audit-output/
+*.db
+*.sqlite
+*.sqlite3
+*.db-wal
+*.db-shm
+*.sqlite-wal
+*.sqlite-shm
 
 # Secrets
 .env
+.env.*
+!.env.example
+.claude/
 
 # Editor / OS
 .DS_Store
 
 # Test runner cache
 .pytest_cache/
+.coverage
+coverage.xml
+htmlcov/
+*.log

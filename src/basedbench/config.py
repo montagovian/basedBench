@@ -5,7 +5,6 @@ from __future__ import annotations
 import os
 from pathlib import Path
 
-from pydantic import model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -80,13 +79,3 @@ class Config(BaseSettings):
         """Create data directories if they don't exist."""
         self.data_dir.mkdir(parents=True, exist_ok=True)
         self.images_dir.mkdir(parents=True, exist_ok=True)
-
-    @model_validator(mode="after")
-    def _require_anthropic_key_for_claude_judges(self) -> "Config":
-        needs_anthropic = any(m.startswith("claude-") for m in self.judge_models)
-        if needs_anthropic and not self.anthropic_api_key:
-            raise ValueError(
-                "ANTHROPIC_API_KEY is required when judge_models contains a "
-                f"claude-* model. Got judge_models={self.judge_models}"
-            )
-        return self

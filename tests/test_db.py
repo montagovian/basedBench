@@ -1068,3 +1068,51 @@ def test_snapshot_export_helpers(db: Database):
     assert lb[0].correct == 1
     assert lb[0].total == 2
     assert lb[0].accuracy == 0.5
+
+
+def test_snapshot_export_helpers_exclude_failed_predictions(db: Database):
+    _setup_validated_meme(db, "post1")
+    _setup_validated_meme(db, "post2")
+
+    q.insert_prediction(
+        db, ModelPrediction.success("post1", "v1", "gpt-5.5", "ok", 100, 50)
+    )
+    q.insert_prediction(
+        db, ModelPrediction.failure("post2", "v1", "gpt-5.5", "rate limit")
+    )
+    q.insert_prediction(
+        db, ModelPrediction.failure("post1", "v1", "failed-only", "rate limit")
+    )
+
+    q.register_prompt(db, "judge-v1", "judge", "system", "user", "1.0")
+    good_pid = q.find_prediction_id(db, "post1", "gpt-5.5")
+    failed_pid = q.find_prediction_id(db, "post2", "gpt-5.5")
+    q.insert_judgment(db, good_pid, "correct", "good", "gpt-5.4-mini", "judge-v1")
+    q.insert_judgment(db, failed_pid, "incorrect", "bad", "gpt-5.4-mini", "judge-v1")
+
+    sid = q.create_snapshot(db, "export-failures")
+
+    assert q.snapshot_model_ids(db, sid) == ["gpt-5.5"]
+    preds = q.snapshot_predictions_for_model(db, sid, "gpt-5.5")
+    assert [p.post_id for p in preds] == ["post1"]
+    assert preds[0].prediction == "ok"
+
+    leaderboard = q.snapshot_leaderboard(db, sid)
+    assert len(leaderboard) == 1
+    assert leaderboard[0].model_id == "gpt-5.5"
+    assert leaderboard[0].correct == 1
+    assert leaderboard[0].total == 1
+
+
+def test_config_allows_openai_only_commands_without_anthropic_key(monkeypatch):
+    from basedbench.config import Config
+
+    monkeypatch.setenv("REDDIT_CLIENT_ID", "id")
+    monkeypatch.setenv("REDDIT_CLIENT_SECRET", "secret")
+    monkeypatch.setenv("OPENAI_API_KEY", "sk-test")
+    monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+
+    config = Config(_env_file=None)  # type: ignore[call-arg]
+
+    assert config.openai_api_key == "sk-test"
+    assert config.anthropic_api_key is None

@@ -710,13 +710,17 @@ def review() -> None:
     db.close()
     from basedbench import app as gradio_app
 
-    gradio_app.launch()
+    gradio_app.launch(read_only=False)
 
 
 @app.command()
 def view(snapshot: str | None = typer.Argument(None)) -> None:
     """Launch the Gradio UI (read-only view; ignores --snapshot for now)."""
-    review()
+    db, _ = _load()
+    db.close()
+    from basedbench import app as gradio_app
+
+    gradio_app.launch(read_only=True)
 
 
 if __name__ == "__main__":
