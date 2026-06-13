@@ -355,6 +355,15 @@ def _subreddits() -> list[str]:
     return ["all"] + [r["subreddit"] for r in rows]
 
 
+def _prediction_models() -> list[str]:
+    conn = _get_conn()
+    rows = conn.execute(
+        "SELECT DISTINCT model_id FROM predictions ORDER BY model_id"
+    ).fetchall()
+    conn.close()
+    return ["all"] + [r["model_id"] for r in rows]
+
+
 def browse_memes(status_filter: str, subreddit_filter: str, search_text: str, page: int):
     per_page = 20
     offset = int(page) * per_page
@@ -441,6 +450,81 @@ def _reviewed_memes() -> list[str]:
     return [f"{r['post_id']} — {r['title']}" for r in rows]
 
 
+def _badge(v: str | None) -> str:
+    if v == "correct":
+        return "\U0001f7e2"
+    if v == "incorrect":
+        return "\U0001f534"
+    return "⚪"
+
+
+def _prediction_markdown(conn: sqlite3.Connection, post_id: str) -> str:
+    preds = conn.execute(
+        """SELECT p.id, p.model_id, p.prediction
+           FROM predictions p
+           WHERE p.post_id = ? AND p.error IS NULL
+           ORDER BY p.model_id""",
+        (post_id,),
+    ).fetchall()
+    verdict_rows = conn.execute(
+        """SELECT j.prediction_id, j.judge_model, j.verdict, j.judge_reasoning
+           FROM judgments j
+           JOIN predictions p ON j.prediction_id = p.id
+           WHERE p.post_id = ?
+             AND p.error IS NULL
+             AND j.id = (
+               SELECT MAX(j2.id) FROM judgments j2
+               WHERE j2.prediction_id = j.prediction_id
+                 AND j2.judge_model = j.judge_model
+             )""",
+        (post_id,),
+    ).fetchall()
+
+    verdicts_by_pred: dict[int, list[tuple[str, str | None, str | None]]] = {}
+    for vr in verdict_rows:
+        verdicts_by_pred.setdefault(vr["prediction_id"], []).append(
+            (vr["judge_model"] or "(unknown)", vr["verdict"], vr["judge_reasoning"])
+        )
+
+    if not preds:
+        return "_No successful predictions for this meme yet._"
+
+    blocks = []
+    for p in preds:
+        verdicts = sorted(verdicts_by_pred.get(p["id"], []), key=lambda r: r[0])
+        if not verdicts:
+            header = f"### ⚪ `{_escape_md_text(p['model_id'])}`"
+            verdict_section = "_unjudged_"
+        else:
+            distinct = {v for _, v, _ in verdicts if v is not None}
+            agreement = (
+                " · judges agree"
+                if len(verdicts) > 1 and len(distinct) == 1
+                else " · judges disagree"
+                if len(verdicts) > 1
+                else ""
+            )
+            badges = " ".join(_badge(v) for _, v, _ in verdicts)
+            header = f"### {badges} `{_escape_md_text(p['model_id'])}`{agreement}"
+            verdict_lines = []
+            for judge_model, verdict, reasoning in verdicts:
+                line = (
+                    f"**{_badge(verdict)} {_escape_md_text(judge_model)}:** "
+                    f"{_escape_md_text(verdict or 'unjudged')}"
+                )
+                if reasoning:
+                    line += f"\n\n> {_escape_md_text(reasoning)}"
+                verdict_lines.append(line)
+            verdict_section = "\n\n".join(verdict_lines)
+
+        blocks.append(
+            f"{header}\n\n**Prediction:**\n\n{_escape_md_text(p['prediction'])}"
+            f"\n\n{verdict_section}"
+        )
+
+    return "\n\n---\n\n".join(blocks)
+
+
 def compare_predictions(meme_selection: str):
     if not meme_selection:
         empty = gr.update(value="", visible=False)
@@ -467,84 +551,16 @@ def compare_predictions(meme_selection: str):
             gr.update(value="", visible=False),
         )
 
-    preds = conn.execute(
-        """SELECT p.id, p.model_id, p.prediction
-           FROM predictions p
-           WHERE p.post_id = ? AND p.error IS NULL
-           ORDER BY p.model_id""",
-        (post_id,),
-    ).fetchall()
-    verdict_rows = conn.execute(
-        """SELECT j.prediction_id, j.judge_model, j.verdict, j.judge_reasoning
-           FROM judgments j
-           JOIN predictions p ON j.prediction_id = p.id
-           WHERE p.post_id = ?
-             AND j.id = (
-               SELECT MAX(j2.id) FROM judgments j2
-               WHERE j2.prediction_id = j.prediction_id
-                 AND j2.judge_model = j.judge_model
-             )""",
-        (post_id,),
-    ).fetchall()
+    predictions_md = _prediction_markdown(conn, post_id)
     conn.close()
-
-    verdicts_by_pred: dict[int, list[tuple[str, str | None, str | None]]] = {}
-    for vr in verdict_rows:
-        verdicts_by_pred.setdefault(vr["prediction_id"], []).append(
-            (vr["judge_model"] or "(unknown)", vr["verdict"], vr["judge_reasoning"])
-        )
 
     img = _resolve_image(meme["local_image_path"])
     gt_text = f"**Ground Truth:**\n\n{meme['explanation']}"
-    if not preds:
-        return (
-            gr.update(value=img, visible=True),
-            gr.update(value=gt_text, visible=True),
-            gr.update(value="_No predictions for this meme yet. Run `basedbench predict <model>`._", visible=True),
-        )
-
-    def _badge(v: str | None) -> str:
-        if v == "correct":
-            return "\U0001f7e2"
-        if v == "incorrect":
-            return "\U0001f534"
-        return "⚪"
-
-    blocks = []
-    for p in preds:
-        verdicts = sorted(verdicts_by_pred.get(p["id"], []), key=lambda r: r[0])
-        if not verdicts:
-            header = f"### ⚪ {p['model_id']}"
-            verdict_section = "_unjudged_"
-            agreement = ""
-        else:
-            distinct = {v for _, v, _ in verdicts if v is not None}
-            if len(verdicts) > 1:
-                agreement = (
-                    " · ✅ judges agree"
-                    if len(distinct) == 1
-                    else " · ⚠️ judges disagree"
-                )
-            else:
-                agreement = ""
-            badges = " ".join(_badge(v) for _, v, _ in verdicts)
-            header = f"### {badges} {p['model_id']}{agreement}"
-            verdict_lines = []
-            for judge_model, verdict, reasoning in verdicts:
-                line = f"**{_badge(verdict)} {judge_model}:** {verdict or 'unjudged'}"
-                if reasoning:
-                    line += f"\n  - _reasoning:_ {reasoning}"
-                verdict_lines.append(line)
-            verdict_section = "\n\n".join(verdict_lines)
-
-        blocks.append(
-            f"{header}\n\n**Prediction:** {p['prediction']}\n\n{verdict_section}"
-        )
 
     return (
         gr.update(value=img, visible=True),
         gr.update(value=gt_text, visible=True),
-        gr.update(value="\n\n---\n\n".join(blocks), visible=True),
+        gr.update(value=predictions_md, visible=True),
     )
 
 
@@ -580,7 +596,11 @@ _INSPECT_FROM = """
 
 
 def _inspect_where(
-    status: str, subreddit: str, search: str
+    status: str,
+    subreddit: str,
+    search: str,
+    prediction_filter: str = "all",
+    model_id: str = "all",
 ) -> tuple[str, list[object]]:
     conds: list[str] = []
     params: list[object] = []
@@ -612,6 +632,31 @@ def _inspect_where(
         conds.append("m.title LIKE ?")
         params.append(f"%{search}%")
 
+    model_clause = ""
+    model_params: list[object] = []
+    if model_id and model_id != "all":
+        model_clause = " AND p.model_id = ?"
+        model_params.append(model_id)
+    pred_exists = (
+        "EXISTS (SELECT 1 FROM predictions p "
+        "WHERE p.post_id = m.post_id AND p.error IS NULL"
+        f"{model_clause})"
+    )
+    pred_missing = (
+        "NOT EXISTS (SELECT 1 FROM predictions p "
+        "WHERE p.post_id = m.post_id AND p.error IS NULL"
+        f"{model_clause})"
+    )
+    if prediction_filter == "with_predictions":
+        conds.append(pred_exists)
+        params.extend(model_params)
+    elif prediction_filter == "without_predictions":
+        conds.append(pred_missing)
+        params.extend(model_params)
+    elif model_id and model_id != "all":
+        conds.append(pred_exists)
+        params.extend(model_params)
+
     where = " AND ".join(conds) if conds else "1=1"
     return where, params
 
@@ -621,9 +666,17 @@ def _inspect_where(
 _INSPECT_CAP = 3000
 
 
-def _inspect_ids(status: str, subreddit: str, search: str) -> tuple[list[str], int]:
+def _inspect_ids(
+    status: str,
+    subreddit: str,
+    search: str,
+    prediction_filter: str,
+    model_id: str,
+) -> tuple[list[str], int]:
     """Return (post_ids matching the filter, total matches before the cap)."""
-    where, params = _inspect_where(status, subreddit, search)
+    where, params = _inspect_where(
+        status, subreddit, search, prediction_filter, model_id
+    )
     conn = _get_conn()
     total = conn.execute(
         f"SELECT COUNT(*) AS cnt {_INSPECT_FROM} WHERE {where}", params
@@ -690,6 +743,7 @@ def _inspect_detail(post_id: str) -> dict | None:
         (post_id,),
     ).fetchall()
     comments_text = _comments_for_review(conn, post_id, row["source_comment_ids"])
+    predictions_text = _prediction_markdown(conn, post_id)
     conn.close()
 
     latest_by_role: dict[str, sqlite3.Row] = {}
@@ -701,6 +755,7 @@ def _inspect_detail(post_id: str) -> dict | None:
         "state": _classify_state(row),
         "calls": latest_by_role,
         "comments_text": comments_text,
+        "predictions_text": predictions_text,
     }
 
 
@@ -714,6 +769,7 @@ def _render_inspect(post_id: str | None):
             gr.update(value="", visible=False),
             gr.update(value="", visible=False),
             gr.update(value="", visible=False),
+            gr.update(value="", visible=False),
             "",
             gr.update(value="consensus"),
         )
@@ -723,6 +779,7 @@ def _render_inspect(post_id: str | None):
         return (
             blank,
             gr.update(value=f"_Meme `{post_id}` not found._", visible=True),
+            gr.update(value="", visible=False),
             gr.update(value="", visible=False),
             gr.update(value="", visible=False),
             gr.update(value="", visible=False),
@@ -787,6 +844,7 @@ def _render_inspect(post_id: str | None):
         gr.update(value=info_md, visible=True),
         gt_update,
         meta_update,
+        gr.update(value=detail["predictions_text"], visible=True),
         gr.update(value=detail["comments_text"] or "_no comments_", visible=True),
         post_id,
         gr.update(value=_STATE_TO_GATE.get(state, "consensus")),
@@ -801,8 +859,14 @@ def _position_text(idx: int, ids: list[str], total: int) -> str:
     return f"{idx + 1} / {shown}{suffix}"
 
 
-def inspect_apply(status: str, subreddit: str, search: str):
-    ids, total = _inspect_ids(status, subreddit, search)
+def inspect_apply(
+    status: str,
+    subreddit: str,
+    search: str,
+    prediction_filter: str,
+    model_id: str,
+):
+    ids, total = _inspect_ids(status, subreddit, search, prediction_filter, model_id)
     first = ids[0] if ids else None
     return (ids, 0, *_render_inspect(first), _position_text(0, ids, total))
 
@@ -1617,11 +1681,10 @@ def build_app(read_only: bool = False) -> gr.Blocks:
 
         with gr.Tab("Inspect") as inspect_tab:
             gr.Markdown(
-                "_Read-only viewer over **all** content — including memes the "
-                "safety/consensus filters excluded. Legacy quality-gate "
-                "exclusions remain visible too. Filter, then step "
-                "through with Prev/Next. No reviewer actions here; use the flag "
-                "below if a filter got a meme wrong._"
+                "_Read-only meme viewer over **all** content — image, metadata, "
+                "ground truth, predictions, judgments, and comments. Filters "
+                "choose which memes you step through; no review state changes "
+                "happen here._"
             )
             inspect_ids_state = gr.State([])
             inspect_idx_state = gr.State(0)
@@ -1639,6 +1702,22 @@ def build_app(read_only: bool = False) -> gr.Blocks:
                 )
                 inspect_search = gr.Textbox(
                     label="Search title", placeholder="Type to search..."
+                )
+
+            with gr.Row():
+                inspect_prediction_filter = gr.Dropdown(
+                    choices=[
+                        ("All prediction coverage", "all"),
+                        ("Has successful prediction", "with_predictions"),
+                        ("Missing successful prediction", "without_predictions"),
+                    ],
+                    value="all",
+                    label="Prediction coverage",
+                )
+                inspect_model = gr.Dropdown(
+                    choices=_prediction_models() if _DB_PATH.exists() else ["all"],
+                    value="all",
+                    label="Prediction model",
                 )
                 btn_inspect_apply = gr.Button("Apply filters", variant="primary")
 
@@ -1661,6 +1740,7 @@ def build_app(read_only: bool = False) -> gr.Blocks:
                         label="Ground Truth", lines=4, interactive=False, visible=False
                     )
                     inspect_meta = gr.Markdown(visible=False)
+                    inspect_predictions = gr.Markdown(visible=False)
                     inspect_comments = gr.Markdown(visible=False)
 
             inspect_post_id = gr.Textbox(visible=False)
@@ -1699,13 +1779,20 @@ def build_app(read_only: bool = False) -> gr.Blocks:
                 inspect_info,
                 inspect_gt,
                 inspect_meta,
+                inspect_predictions,
                 inspect_comments,
                 inspect_post_id,
                 misfire_gate,
             ]
             btn_inspect_apply.click(
                 inspect_apply,
-                inputs=[inspect_status, inspect_subreddit, inspect_search],
+                inputs=[
+                    inspect_status,
+                    inspect_subreddit,
+                    inspect_search,
+                    inspect_prediction_filter,
+                    inspect_model,
+                ],
                 outputs=[
                     inspect_ids_state,
                     inspect_idx_state,
@@ -1731,8 +1818,11 @@ def build_app(read_only: bool = False) -> gr.Blocks:
                 )
             # Refresh subreddit options + load the first page on tab activation.
             inspect_tab.select(
-                lambda: gr.update(choices=_subreddits()),
-                outputs=[inspect_subreddit],
+                lambda: (
+                    gr.update(choices=_subreddits()),
+                    gr.update(choices=_prediction_models()),
+                ),
+                outputs=[inspect_subreddit, inspect_model],
             )
 
         with gr.Tab("Stats & Leaderboard") as stats_tab:

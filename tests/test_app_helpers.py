@@ -86,6 +86,38 @@ def test_inspect_where_human_excluded_excludes_gate_reasons():
     assert "image_missing" in where
 
 
+def test_inspect_where_prediction_coverage_filters_any_model():
+    where, params = _inspect_where("all", "all", "", "with_predictions", "all")
+    assert "EXISTS (SELECT 1 FROM predictions p" in where
+    assert "p.error IS NULL" in where
+    assert "p.model_id = ?" not in where
+    assert params == []
+
+    where, params = _inspect_where("all", "all", "", "without_predictions", "all")
+    assert "NOT EXISTS (SELECT 1 FROM predictions p" in where
+    assert "p.error IS NULL" in where
+    assert params == []
+
+
+def test_inspect_where_prediction_coverage_filters_selected_model():
+    where, params = _inspect_where(
+        "validated", "memes", "cat", "without_predictions", "gpt-5.5"
+    )
+    assert "r.status = 'validated'" in where
+    assert "m.subreddit = ?" in where
+    assert "m.title LIKE ?" in where
+    assert "NOT EXISTS (SELECT 1 FROM predictions p" in where
+    assert "p.model_id = ?" in where
+    assert params == ["memes", "%cat%", "gpt-5.5"]
+
+
+def test_inspect_where_selected_model_defaults_to_has_model_prediction():
+    where, params = _inspect_where("all", "all", "", "all", "claude-opus-4-8")
+    assert "EXISTS (SELECT 1 FROM predictions p" in where
+    assert "p.model_id = ?" in where
+    assert params == ["claude-opus-4-8"]
+
+
 def test_position_text():
     assert _position_text(0, [], 0) == "0 / 0"
     assert _position_text(0, ["a", "b", "c"], 3) == "1 / 3"
