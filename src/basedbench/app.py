@@ -1482,7 +1482,7 @@ def build_app(read_only: bool = False) -> gr.Blocks:
         if read_only:
             gr.Markdown("_Read-only mode: review and labeling controls are disabled._")
 
-        with gr.Tab("Review Queue"):
+        with gr.Tab("Review Queue", visible=not read_only):
             with gr.Row():
                 with gr.Column(scale=1):
                     review_image = gr.Image(
@@ -1593,7 +1593,7 @@ def build_app(read_only: bool = False) -> gr.Blocks:
                     outputs=[flag_feedback],
                 )
 
-        with gr.Tab("Browse") as browse_tab:
+        with gr.Tab("Browse", visible=not read_only) as browse_tab:
             with gr.Row():
                 browse_status = gr.Dropdown(
                     choices=["all", "validated", "excluded", "unreviewed"],
@@ -1625,7 +1625,7 @@ def build_app(read_only: bool = False) -> gr.Blocks:
                 outputs=[browse_subreddit],
             )
 
-        with gr.Tab("Prediction Comparison") as compare_tab:
+        with gr.Tab("Prediction Comparison", visible=not read_only) as compare_tab:
             _initial_choices = _reviewed_memes() if _DB_PATH.exists() else []
             _initial_value = _initial_choices[0] if _initial_choices else None
             meme_selector = gr.Dropdown(
@@ -1825,7 +1825,7 @@ def build_app(read_only: bool = False) -> gr.Blocks:
                 outputs=[inspect_subreddit, inspect_model],
             )
 
-        with gr.Tab("Stats & Leaderboard") as stats_tab:
+        with gr.Tab("Leaderboard" if read_only else "Stats & Leaderboard") as stats_tab:
             gr.Markdown(
                 "_Refreshes when you switch to this tab — newly judged "
                 "predictions appear here automatically._"
@@ -1845,7 +1845,7 @@ def build_app(read_only: bool = False) -> gr.Blocks:
             stats_tab.select(_load_stats, outputs=stats_outputs)
             app.load(_load_stats, outputs=stats_outputs)
 
-        with gr.Tab("AI Gloss Failures") as regressions_tab:
+        with gr.Tab("AI Gloss Failures", visible=not read_only) as regressions_tab:
             gr.Markdown(
                 "_Curated regression set of memes whose consensus gloss missed "
                 "the joke. Used to A/B future consensus prompt/model changes._"
@@ -1854,7 +1854,7 @@ def build_app(read_only: bool = False) -> gr.Blocks:
             regressions_tab.select(_load_regressions, outputs=[regressions_md])
             app.load(_load_regressions, outputs=[regressions_md])
 
-        with gr.Tab("Filter Misfires") as misfires_tab:
+        with gr.Tab("Filter Misfires", visible=not read_only) as misfires_tab:
             gr.Markdown(
                 "_Memes the safety/consensus filters got wrong, flagged from "
                 "the Inspect tab. Historical quality-gate rows remain visible. "
@@ -1864,7 +1864,7 @@ def build_app(read_only: bool = False) -> gr.Blocks:
             misfires_tab.select(_load_gate_feedback, outputs=[misfires_md])
             app.load(_load_gate_feedback, outputs=[misfires_md])
 
-        with gr.Tab("Consensus Eval") as eval_tab:
+        with gr.Tab("Consensus Eval", visible=not read_only) as eval_tab:
             gr.Markdown(
                 "_Review the persistent consensus eval labels before tuning "
                 "prompts. Sampled no-consensus controls are especially worth "
