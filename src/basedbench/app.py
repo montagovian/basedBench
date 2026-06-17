@@ -601,6 +601,7 @@ def _inspect_where(
     search: str,
     prediction_filter: str = "all",
     model_id: str = "all",
+    evaluation_filter: str = "all",
 ) -> tuple[str, list[object]]:
     conds: list[str] = []
     params: list[object] = []
@@ -657,6 +658,25 @@ def _inspect_where(
         conds.append(pred_exists)
         params.extend(model_params)
 
+    eval_exists = (
+        "EXISTS (SELECT 1 FROM predictions p "
+        "JOIN judgments j ON j.prediction_id = p.id "
+        "WHERE p.post_id = m.post_id AND p.error IS NULL"
+        f"{model_clause})"
+    )
+    eval_missing = (
+        "NOT EXISTS (SELECT 1 FROM predictions p "
+        "JOIN judgments j ON j.prediction_id = p.id "
+        "WHERE p.post_id = m.post_id AND p.error IS NULL"
+        f"{model_clause})"
+    )
+    if evaluation_filter == "with_evaluations":
+        conds.append(eval_exists)
+        params.extend(model_params)
+    elif evaluation_filter == "without_evaluations":
+        conds.append(eval_missing)
+        params.extend(model_params)
+
     where = " AND ".join(conds) if conds else "1=1"
     return where, params
 
@@ -672,10 +692,11 @@ def _inspect_ids(
     search: str,
     prediction_filter: str,
     model_id: str,
+    evaluation_filter: str,
 ) -> tuple[list[str], int]:
     """Return (post_ids matching the filter, total matches before the cap)."""
     where, params = _inspect_where(
-        status, subreddit, search, prediction_filter, model_id
+        status, subreddit, search, prediction_filter, model_id, evaluation_filter
     )
     conn = _get_conn()
     total = conn.execute(
@@ -865,8 +886,16 @@ def inspect_apply(
     search: str,
     prediction_filter: str,
     model_id: str,
+    evaluation_filter: str,
 ):
-    ids, total = _inspect_ids(status, subreddit, search, prediction_filter, model_id)
+    ids, total = _inspect_ids(
+        status,
+        subreddit,
+        search,
+        prediction_filter,
+        model_id,
+        evaluation_filter,
+    )
     first = ids[0] if ids else None
     return (ids, 0, *_render_inspect(first), _position_text(0, ids, total))
 
@@ -1482,536 +1511,568 @@ def build_app(read_only: bool = False) -> gr.Blocks:
         if read_only:
             gr.Markdown("_Read-only mode: review and labeling controls are disabled._")
 
-        with gr.Tab("Review Queue", visible=not read_only):
-            with gr.Row():
-                with gr.Column(scale=1):
-                    review_image = gr.Image(
-                        label="Meme", type="filepath", elem_classes="constrained-meme"
+        with gr.Tabs(selected="inspect" if read_only else None):
+            with gr.Tab("Review Queue", visible=not read_only):
+                with gr.Row():
+                    with gr.Column(scale=1):
+                        review_image = gr.Image(
+                            label="Meme", type="filepath", elem_classes="constrained-meme"
+                        )
+                    with gr.Column(scale=1):
+                        review_info = gr.Markdown()
+                        review_gt = gr.Textbox(label="Ground Truth", lines=4, interactive=False)
+                        review_confidence = gr.Markdown()
+                        review_comments = gr.Markdown(label="Top Comments")
+
+                review_post_id = gr.Textbox(visible=False)
+                review_remaining = gr.Number(label="Remaining to review", interactive=False)
+
+                with gr.Row():
+                    btn_validate = gr.Button(
+                        "Validate", variant="primary", visible=not read_only
                     )
-                with gr.Column(scale=1):
-                    review_info = gr.Markdown()
-                    review_gt = gr.Textbox(label="Ground Truth", lines=4, interactive=False)
-                    review_confidence = gr.Markdown()
-                    review_comments = gr.Markdown(label="Top Comments")
+                    exclude_reason = gr.Dropdown(
+                        choices=[
+                            "bad image",
+                            "wrong explanation",
+                            "not a meme",
+                            "duplicate",
+                            "other",
+                        ],
+                        label="Exclude reason",
+                        value="other",
+                        allow_custom_value=True,
+                        visible=not read_only,
+                    )
+                    btn_exclude = gr.Button(
+                        "Exclude", variant="stop", visible=not read_only
+                    )
+                    btn_skip = gr.Button("Skip", visible=not read_only)
 
-            review_post_id = gr.Textbox(visible=False)
-            review_remaining = gr.Number(label="Remaining to review", interactive=False)
-
-            with gr.Row():
-                btn_validate = gr.Button(
-                    "Validate", variant="primary", visible=not read_only
-                )
-                exclude_reason = gr.Dropdown(
-                    choices=[
-                        "bad image",
-                        "wrong explanation",
-                        "not a meme",
-                        "duplicate",
-                        "other",
-                    ],
-                    label="Exclude reason",
-                    value="other",
-                    allow_custom_value=True,
-                    visible=not read_only,
-                )
-                btn_exclude = gr.Button(
-                    "Exclude", variant="stop", visible=not read_only
-                )
-                btn_skip = gr.Button("Skip", visible=not read_only)
-
-            review_outputs = [
-                review_image,
-                review_info,
-                review_gt,
-                review_confidence,
-                review_comments,
-                review_post_id,
-                exclude_reason,
-                review_remaining,
-                btn_validate,
-                btn_exclude,
-                btn_skip,
-            ]
-            if not read_only:
-                btn_validate.click(
-                    validate_meme, inputs=[review_post_id], outputs=review_outputs
-                )
-                btn_exclude.click(
-                    exclude_meme,
-                    inputs=[review_post_id, exclude_reason],
+                review_outputs = [
+                    review_image,
+                    review_info,
+                    review_gt,
+                    review_confidence,
+                    review_comments,
+                    review_post_id,
+                    exclude_reason,
+                    review_remaining,
+                    btn_validate,
+                    btn_exclude,
+                    btn_skip,
+                ]
+                if not read_only:
+                    btn_validate.click(
+                        validate_meme, inputs=[review_post_id], outputs=review_outputs
+                    )
+                    btn_exclude.click(
+                        exclude_meme,
+                        inputs=[review_post_id, exclude_reason],
+                        outputs=review_outputs,
+                    )
+                if not read_only:
+                    btn_skip.click(skip_meme, inputs=[], outputs=review_outputs)
+                app.load(
+                    _read_only_review_outputs if read_only else load_next_unreviewed,
                     outputs=review_outputs,
                 )
-            if not read_only:
-                btn_skip.click(skip_meme, inputs=[], outputs=review_outputs)
-            app.load(
-                _read_only_review_outputs if read_only else load_next_unreviewed,
-                outputs=review_outputs,
-            )
 
-            with gr.Accordion(
-                "🚩 Flag this meme's ground-truth explanation (consensus failure)",
-                open=False,
-                visible=not read_only,
-            ):
-                gr.Markdown(
-                    "_Use this when the consensus model's gloss is wrong, "
-                    "missing the joke, or merging incompatible interpretations. "
-                    "Flagged memes go into the regression set for testing future "
-                    "consensus prompt/model changes._"
-                )
-                flag_status = gr.Radio(
-                    choices=["wrong", "partial", "correct"],
-                    value="wrong",
-                    label="Status",
-                    info="`wrong` = gloss misses the joke; `partial` = "
-                    "gloss captures part but not the full picture; "
-                    "`correct` = surprisingly good (use sparingly, as positive controls).",
-                )
-                flag_failure_modes = gr.Textbox(
-                    label="Failure modes (comma-separated tags)",
-                    placeholder="e.g. vote_bias, merged_views, ignored_kym_link",
-                )
-                flag_canonical = gr.Textbox(
-                    label="Canonical explanation (optional)",
-                    placeholder="What the gloss SHOULD have said — e.g. linked KYM "
-                    "explanation, your own correction…",
-                    lines=3,
-                )
-                flag_notes = gr.Textbox(
-                    label="Reviewer notes",
-                    placeholder="Why this is wrong, what the model missed, etc.",
-                    lines=2,
-                )
-                btn_flag = gr.Button("Flag for regression set", variant="secondary")
-                flag_feedback = gr.Markdown()
-                btn_flag.click(
-                    flag_consensus_failure,
-                    inputs=[
-                        review_post_id, flag_status, flag_failure_modes,
-                        flag_notes, flag_canonical,
-                    ],
-                    outputs=[flag_feedback],
-                )
-
-        with gr.Tab("Browse", visible=not read_only) as browse_tab:
-            with gr.Row():
-                browse_status = gr.Dropdown(
-                    choices=["all", "validated", "excluded", "unreviewed"],
-                    value="all",
-                    label="Status",
-                )
-                browse_subreddit = gr.Dropdown(
-                    choices=_subreddits() if _DB_PATH.exists() else ["all"],
-                    value="all",
-                    label="Subreddit",
-                )
-                browse_search = gr.Textbox(
-                    label="Search title", placeholder="Type to search..."
-                )
-                browse_page = gr.Number(value=0, label="Page", precision=0)
-
-            btn_browse = gr.Button("Search")
-            browse_results = gr.Markdown()
-            browse_page_info = gr.Markdown()
-            btn_browse.click(
-                browse_memes,
-                inputs=[browse_status, browse_subreddit, browse_search, browse_page],
-                outputs=[browse_results, browse_page_info],
-            )
-            # Refresh subreddit options whenever the user activates the tab —
-            # otherwise the dropdown is frozen at app-startup state.
-            browse_tab.select(
-                lambda: gr.update(choices=_subreddits()),
-                outputs=[browse_subreddit],
-            )
-
-        with gr.Tab("Prediction Comparison", visible=not read_only) as compare_tab:
-            _initial_choices = _reviewed_memes() if _DB_PATH.exists() else []
-            _initial_value = _initial_choices[0] if _initial_choices else None
-            meme_selector = gr.Dropdown(
-                choices=_initial_choices,
-                value=_initial_value,
-                label="Select a validated meme",
-            )
-            compare_empty = gr.Markdown(
-                visible=not _initial_choices,
-                value=(
-                    "_No validated memes yet. Use the Review Queue tab to validate at least "
-                    "one meme, then come back here._"
-                ),
-            )
-
-            def _refresh_compare_choices():
-                """Re-query validated memes when the user opens this tab."""
-                choices = _reviewed_memes()
-                # Preserve the current selection if it's still valid; else pick the first.
-                return (
-                    gr.update(choices=choices),
-                    gr.update(visible=not choices),
-                )
-
-            compare_tab.select(
-                _refresh_compare_choices,
-                outputs=[meme_selector, compare_empty],
-            )
-            with gr.Row():
-                with gr.Column(scale=1):
-                    compare_image = gr.Image(
-                        label="Meme",
-                        type="filepath",
-                        elem_classes="constrained-meme",
-                        visible=False,
+                with gr.Accordion(
+                    "🚩 Flag this meme's ground-truth explanation (consensus failure)",
+                    open=False,
+                    visible=not read_only,
+                ):
+                    gr.Markdown(
+                        "_Use this when the consensus model's gloss is wrong, "
+                        "missing the joke, or merging incompatible interpretations. "
+                        "Flagged memes go into the regression set for testing future "
+                        "consensus prompt/model changes._"
                     )
-                with gr.Column(scale=1):
-                    compare_gt = gr.Markdown(visible=False)
-                    compare_preds = gr.Markdown(visible=False)
-            # Auto-fire on selection change AND on initial app load so the user
-            # doesn't have to click a button to see anything.
-            meme_selector.change(
-                compare_predictions,
-                inputs=[meme_selector],
-                outputs=[compare_image, compare_gt, compare_preds],
-            )
-            if _initial_value is not None:
-                app.load(
+                    flag_status = gr.Radio(
+                        choices=["wrong", "partial", "correct"],
+                        value="wrong",
+                        label="Status",
+                        info="`wrong` = gloss misses the joke; `partial` = "
+                        "gloss captures part but not the full picture; "
+                        "`correct` = surprisingly good (use sparingly, as positive controls).",
+                    )
+                    flag_failure_modes = gr.Textbox(
+                        label="Failure modes (comma-separated tags)",
+                        placeholder="e.g. vote_bias, merged_views, ignored_kym_link",
+                    )
+                    flag_canonical = gr.Textbox(
+                        label="Canonical explanation (optional)",
+                        placeholder="What the gloss SHOULD have said — e.g. linked KYM "
+                        "explanation, your own correction…",
+                        lines=3,
+                    )
+                    flag_notes = gr.Textbox(
+                        label="Reviewer notes",
+                        placeholder="Why this is wrong, what the model missed, etc.",
+                        lines=2,
+                    )
+                    btn_flag = gr.Button("Flag for regression set", variant="secondary")
+                    flag_feedback = gr.Markdown()
+                    btn_flag.click(
+                        flag_consensus_failure,
+                        inputs=[
+                            review_post_id, flag_status, flag_failure_modes,
+                            flag_notes, flag_canonical,
+                        ],
+                        outputs=[flag_feedback],
+                    )
+
+            with gr.Tab("Browse", visible=not read_only) as browse_tab:
+                with gr.Row():
+                    browse_status = gr.Dropdown(
+                        choices=["all", "validated", "excluded", "unreviewed"],
+                        value="all",
+                        label="Status",
+                    )
+                    browse_subreddit = gr.Dropdown(
+                        choices=_subreddits() if _DB_PATH.exists() else ["all"],
+                        value="all",
+                        label="Subreddit",
+                    )
+                    browse_search = gr.Textbox(
+                        label="Search title", placeholder="Type to search..."
+                    )
+                    browse_page = gr.Number(value=0, label="Page", precision=0)
+
+                btn_browse = gr.Button("Search")
+                browse_results = gr.Markdown()
+                browse_page_info = gr.Markdown()
+                btn_browse.click(
+                    browse_memes,
+                    inputs=[browse_status, browse_subreddit, browse_search, browse_page],
+                    outputs=[browse_results, browse_page_info],
+                )
+                # Refresh subreddit options whenever the user activates the tab —
+                # otherwise the dropdown is frozen at app-startup state.
+                browse_tab.select(
+                    lambda: gr.update(choices=_subreddits()),
+                    outputs=[browse_subreddit],
+                )
+
+            with gr.Tab("Prediction Comparison", visible=not read_only) as compare_tab:
+                _initial_choices = _reviewed_memes() if _DB_PATH.exists() else []
+                _initial_value = _initial_choices[0] if _initial_choices else None
+                meme_selector = gr.Dropdown(
+                    choices=_initial_choices,
+                    value=_initial_value,
+                    label="Select a validated meme",
+                )
+                compare_empty = gr.Markdown(
+                    visible=not _initial_choices,
+                    value=(
+                        "_No validated memes yet. Use the Review Queue tab to validate at least "
+                        "one meme, then come back here._"
+                    ),
+                )
+
+                def _refresh_compare_choices():
+                    """Re-query validated memes when the user opens this tab."""
+                    choices = _reviewed_memes()
+                    # Preserve the current selection if it's still valid; else pick the first.
+                    return (
+                        gr.update(choices=choices),
+                        gr.update(visible=not choices),
+                    )
+
+                compare_tab.select(
+                    _refresh_compare_choices,
+                    outputs=[meme_selector, compare_empty],
+                )
+                with gr.Row():
+                    with gr.Column(scale=1):
+                        compare_image = gr.Image(
+                            label="Meme",
+                            type="filepath",
+                            elem_classes="constrained-meme",
+                            visible=False,
+                        )
+                    with gr.Column(scale=1):
+                        compare_gt = gr.Markdown(visible=False)
+                        compare_preds = gr.Markdown(visible=False)
+                # Auto-fire on selection change AND on initial app load so the user
+                # doesn't have to click a button to see anything.
+                meme_selector.change(
                     compare_predictions,
                     inputs=[meme_selector],
                     outputs=[compare_image, compare_gt, compare_preds],
                 )
-
-        with gr.Tab("Inspect") as inspect_tab:
-            gr.Markdown(
-                "_Read-only meme viewer over **all** content — image, metadata, "
-                "ground truth, predictions, judgments, and comments. Filters "
-                "choose which memes you step through; no review state changes "
-                "happen here._"
-            )
-            inspect_ids_state = gr.State([])
-            inspect_idx_state = gr.State(0)
-
-            with gr.Row():
-                inspect_status = gr.Dropdown(
-                    choices=[(label, key) for key, label in _INSPECT_STATES],
-                    value="all",
-                    label="Status",
-                )
-                inspect_subreddit = gr.Dropdown(
-                    choices=_subreddits() if _DB_PATH.exists() else ["all"],
-                    value="all",
-                    label="Subreddit",
-                )
-                inspect_search = gr.Textbox(
-                    label="Search title", placeholder="Type to search..."
-                )
-
-            with gr.Row():
-                inspect_prediction_filter = gr.Dropdown(
-                    choices=[
-                        ("All prediction coverage", "all"),
-                        ("Has successful prediction", "with_predictions"),
-                        ("Missing successful prediction", "without_predictions"),
-                    ],
-                    value="all",
-                    label="Prediction coverage",
-                )
-                inspect_model = gr.Dropdown(
-                    choices=_prediction_models() if _DB_PATH.exists() else ["all"],
-                    value="all",
-                    label="Prediction model",
-                )
-                btn_inspect_apply = gr.Button("Apply filters", variant="primary")
-
-            with gr.Row():
-                btn_inspect_prev = gr.Button("← Prev")
-                inspect_position = gr.Markdown("0 / 0")
-                btn_inspect_next = gr.Button("Next →")
-
-            with gr.Row():
-                with gr.Column(scale=1):
-                    inspect_image = gr.Image(
-                        label="Meme",
-                        type="filepath",
-                        elem_classes="constrained-meme",
-                        visible=False,
+                if _initial_value is not None:
+                    app.load(
+                        compare_predictions,
+                        inputs=[meme_selector],
+                        outputs=[compare_image, compare_gt, compare_preds],
                     )
-                with gr.Column(scale=1):
-                    inspect_info = gr.Markdown()
-                    inspect_gt = gr.Textbox(
-                        label="Ground Truth", lines=4, interactive=False, visible=False
-                    )
-                    inspect_meta = gr.Markdown(visible=False)
-                    inspect_predictions = gr.Markdown(visible=False)
-                    inspect_comments = gr.Markdown(visible=False)
 
-            inspect_post_id = gr.Textbox(visible=False)
-
-            with gr.Accordion(
-                "🚩 A filter got this wrong", open=False, visible=not read_only
-            ):
+            with gr.Tab("Inspect", id="inspect", render_children=True) as inspect_tab:
                 gr.Markdown(
-                    "_Flag a meme the safety/consensus filter handled "
-                    "incorrectly — e.g. excluded a good meme, kept a bad one, or "
-                    "missed a real consensus. Goes into the **Filter Misfires** "
-                    "set for tuning the gates/consensus. Use `quality` only for "
-                    "legacy quality-gate rows._"
+                    "_Read-only meme viewer over **all** content — image, metadata, "
+                    "ground truth, predictions, judgments, and comments. Filters "
+                    "choose which memes you step through; no review state changes "
+                    "happen here._"
                 )
-                misfire_gate = gr.Radio(
-                    choices=["safety", "consensus", "quality"],
-                    value="consensus",
-                    label="Which filter got it wrong?",
-                    info="Defaults to whichever filter acted on this meme.",
-                )
-                misfire_correct = gr.Textbox(
-                    label="What should have happened? (optional)",
-                    placeholder="e.g. 'keep — this has a real joke', "
-                    "'exclude — pure nonsense', 'there IS a clear consensus'",
-                )
-                misfire_notes = gr.Textbox(
-                    label="Notes", lines=2, placeholder="Why the filter was wrong…"
-                )
-                btn_misfire = gr.Button("Flag misfire", variant="secondary")
-                misfire_feedback = gr.Markdown()
+                inspect_ids_state = gr.State([])
+                inspect_idx_state = gr.State(0)
+                inspect_status_default = "validated" if read_only else "all"
+                inspect_prediction_default = "with_predictions" if read_only else "all"
+                inspect_evaluation_default = "with_evaluations" if read_only else "all"
 
-            # The render tuple shape shared by apply/prev/next (minus the state
-            # and position values those handlers prepend/append).
-            inspect_render_outputs = [
-                inspect_image,
-                inspect_info,
-                inspect_gt,
-                inspect_meta,
-                inspect_predictions,
-                inspect_comments,
-                inspect_post_id,
-                misfire_gate,
-            ]
-            btn_inspect_apply.click(
-                inspect_apply,
-                inputs=[
-                    inspect_status,
-                    inspect_subreddit,
-                    inspect_search,
-                    inspect_prediction_filter,
-                    inspect_model,
-                ],
-                outputs=[
-                    inspect_ids_state,
-                    inspect_idx_state,
-                    *inspect_render_outputs,
-                    inspect_position,
-                ],
-            )
-            btn_inspect_prev.click(
-                lambda ids, idx: inspect_step(ids, idx, -1),
-                inputs=[inspect_ids_state, inspect_idx_state],
-                outputs=[inspect_idx_state, *inspect_render_outputs, inspect_position],
-            )
-            btn_inspect_next.click(
-                lambda ids, idx: inspect_step(ids, idx, 1),
-                inputs=[inspect_ids_state, inspect_idx_state],
-                outputs=[inspect_idx_state, *inspect_render_outputs, inspect_position],
-            )
-            if not read_only:
-                btn_misfire.click(
-                    flag_gate_misfire,
-                    inputs=[inspect_post_id, misfire_gate, misfire_correct, misfire_notes],
-                    outputs=[misfire_feedback, misfire_correct, misfire_notes],
-                )
-            # Refresh subreddit options + load the first page on tab activation.
-            inspect_tab.select(
-                lambda: (
-                    gr.update(choices=_subreddits()),
-                    gr.update(choices=_prediction_models()),
-                ),
-                outputs=[inspect_subreddit, inspect_model],
-            )
-
-        with gr.Tab("Leaderboard" if read_only else "Stats & Leaderboard") as stats_tab:
-            gr.Markdown(
-                "_Refreshes when you switch to this tab — newly judged "
-                "predictions appear here automatically._"
-            )
-            with gr.Row():
-                stats_corpus = gr.Markdown()
-                stats_predictions = gr.Markdown()
-            stats_leaderboard = gr.Markdown()
-            stats_consensus = gr.Markdown()
-
-            stats_outputs = [
-                stats_corpus,
-                stats_predictions,
-                stats_leaderboard,
-                stats_consensus,
-            ]
-            stats_tab.select(_load_stats, outputs=stats_outputs)
-            app.load(_load_stats, outputs=stats_outputs)
-
-        with gr.Tab("AI Gloss Failures", visible=not read_only) as regressions_tab:
-            gr.Markdown(
-                "_Curated regression set of memes whose consensus gloss missed "
-                "the joke. Used to A/B future consensus prompt/model changes._"
-            )
-            regressions_md = gr.Markdown()
-            regressions_tab.select(_load_regressions, outputs=[regressions_md])
-            app.load(_load_regressions, outputs=[regressions_md])
-
-        with gr.Tab("Filter Misfires", visible=not read_only) as misfires_tab:
-            gr.Markdown(
-                "_Memes the safety/consensus filters got wrong, flagged from "
-                "the Inspect tab. Historical quality-gate rows remain visible. "
-                "Use these to tune the gate prompts and consensus criteria._"
-            )
-            misfires_md = gr.Markdown()
-            misfires_tab.select(_load_gate_feedback, outputs=[misfires_md])
-            app.load(_load_gate_feedback, outputs=[misfires_md])
-
-        with gr.Tab("Consensus Eval", visible=not read_only) as eval_tab:
-            gr.Markdown(
-                "_Review the persistent consensus eval labels before tuning "
-                "prompts. Sampled no-consensus controls are especially worth "
-                "checking: reclassify any that actually have comment consensus, "
-                "or deactivate ambiguous rows._"
-            )
-            eval_ids_state = gr.State([])
-            eval_idx_state = gr.State(0)
-
-            with gr.Row():
-                eval_category = gr.Dropdown(
-                    choices=[(label, key) for label, key in _EVAL_CATEGORIES],
-                    value="true_no_consensus",
-                    label="Category",
-                )
-                eval_search = gr.Textbox(
-                    label="Search title or post id", placeholder="Optional search..."
-                )
-                btn_eval_apply = gr.Button("Apply filters", variant="primary")
-
-            with gr.Row():
-                btn_eval_prev = gr.Button("← Prev")
-                eval_position = gr.Markdown("0 / 0")
-                btn_eval_next = gr.Button("Next →")
-
-            with gr.Row():
-                with gr.Column(scale=1):
-                    eval_image = gr.Image(
-                        label="Meme",
-                        type="filepath",
-                        elem_classes="constrained-meme",
-                        visible=False,
+                with gr.Row():
+                    inspect_status = gr.Dropdown(
+                        choices=[(label, key) for key, label in _INSPECT_STATES],
+                        value=inspect_status_default,
+                        label="Status",
                     )
-                with gr.Column(scale=1):
-                    eval_info = gr.Markdown()
-                    eval_expected = gr.Textbox(
-                        label="Expected / current ground truth",
-                        lines=5,
-                        interactive=False,
-                        visible=False,
+                    inspect_subreddit = gr.Dropdown(
+                        choices=_subreddits() if _DB_PATH.exists() else ["all"],
+                        value="all",
+                        label="Subreddit",
                     )
-                    eval_results = gr.Markdown(visible=False)
-                    eval_comments = gr.Markdown(visible=False)
+                    inspect_search = gr.Textbox(
+                        label="Search title", placeholder="Type to search..."
+                    )
 
-            eval_post_id = gr.Textbox(visible=False)
+                with gr.Row():
+                    inspect_prediction_filter = gr.Dropdown(
+                        choices=[
+                            ("All prediction coverage", "all"),
+                            ("Has successful prediction", "with_predictions"),
+                            ("Missing successful prediction", "without_predictions"),
+                        ],
+                        value=inspect_prediction_default,
+                        label="Prediction coverage",
+                    )
+                    inspect_model = gr.Dropdown(
+                        choices=_prediction_models() if _DB_PATH.exists() else ["all"],
+                        value="all",
+                        label="Prediction model",
+                    )
+                    inspect_evaluation_filter = gr.Dropdown(
+                        choices=[
+                            ("All evaluation coverage", "all"),
+                            ("Has judge evaluation", "with_evaluations"),
+                            ("Missing judge evaluation", "without_evaluations"),
+                        ],
+                        value=inspect_evaluation_default,
+                        label="Evaluation coverage",
+                    )
+                    btn_inspect_apply = gr.Button("Apply filters", variant="primary")
 
-            with gr.Row():
-                eval_action = gr.Radio(
-                    choices=[
-                        "Confirm expected label",
-                        "Reclassify as consensus",
-                        "Reclassify as no consensus",
-                        "Deactivate from eval",
+                with gr.Row():
+                    btn_inspect_prev = gr.Button("← Prev")
+                    inspect_position = gr.Markdown("0 / 0")
+                    btn_inspect_next = gr.Button("Next →")
+
+                with gr.Row():
+                    with gr.Column(scale=1):
+                        inspect_image = gr.Image(
+                            label="Meme",
+                            type="filepath",
+                            elem_classes="constrained-meme",
+                            visible=False,
+                        )
+                    with gr.Column(scale=1):
+                        inspect_info = gr.Markdown()
+                        inspect_gt = gr.Textbox(
+                            label="Ground Truth", lines=4, interactive=False, visible=False
+                        )
+                        inspect_meta = gr.Markdown(visible=False)
+                        inspect_predictions = gr.Markdown(visible=False)
+                        inspect_comments = gr.Markdown(visible=False)
+
+                inspect_post_id = gr.Textbox(visible=False)
+
+                with gr.Accordion(
+                    "🚩 A filter got this wrong", open=False, visible=not read_only
+                ):
+                    gr.Markdown(
+                        "_Flag a meme the safety/consensus filter handled "
+                        "incorrectly — e.g. excluded a good meme, kept a bad one, or "
+                        "missed a real consensus. Goes into the **Filter Misfires** "
+                        "set for tuning the gates/consensus. Use `quality` only for "
+                        "legacy quality-gate rows._"
+                    )
+                    misfire_gate = gr.Radio(
+                        choices=["safety", "consensus", "quality"],
+                        value="consensus",
+                        label="Which filter got it wrong?",
+                        info="Defaults to whichever filter acted on this meme.",
+                    )
+                    misfire_correct = gr.Textbox(
+                        label="What should have happened? (optional)",
+                        placeholder="e.g. 'keep — this has a real joke', "
+                        "'exclude — pure nonsense', 'there IS a clear consensus'",
+                    )
+                    misfire_notes = gr.Textbox(
+                        label="Notes", lines=2, placeholder="Why the filter was wrong…"
+                    )
+                    btn_misfire = gr.Button("Flag misfire", variant="secondary")
+                    misfire_feedback = gr.Markdown()
+
+                # The render tuple shape shared by apply/prev/next (minus the state
+                # and position values those handlers prepend/append).
+                inspect_render_outputs = [
+                    inspect_image,
+                    inspect_info,
+                    inspect_gt,
+                    inspect_meta,
+                    inspect_predictions,
+                    inspect_comments,
+                    inspect_post_id,
+                    misfire_gate,
+                ]
+                btn_inspect_apply.click(
+                    inspect_apply,
+                    inputs=[
+                        inspect_status,
+                        inspect_subreddit,
+                        inspect_search,
+                        inspect_prediction_filter,
+                        inspect_model,
+                        inspect_evaluation_filter,
                     ],
-                    value="Confirm expected label",
-                    label="Action",
+                    outputs=[
+                        inspect_ids_state,
+                        inspect_idx_state,
+                        *inspect_render_outputs,
+                        inspect_position,
+                    ],
+                )
+                btn_inspect_prev.click(
+                    lambda ids, idx: inspect_step(ids, idx, -1),
+                    inputs=[inspect_ids_state, inspect_idx_state],
+                    outputs=[inspect_idx_state, *inspect_render_outputs, inspect_position],
+                )
+                btn_inspect_next.click(
+                    lambda ids, idx: inspect_step(ids, idx, 1),
+                    inputs=[inspect_ids_state, inspect_idx_state],
+                    outputs=[inspect_idx_state, *inspect_render_outputs, inspect_position],
+                )
+                if not read_only:
+                    btn_misfire.click(
+                        flag_gate_misfire,
+                        inputs=[inspect_post_id, misfire_gate, misfire_correct, misfire_notes],
+                        outputs=[misfire_feedback, misfire_correct, misfire_notes],
+                    )
+                # Refresh subreddit options + load the first page on tab activation.
+                inspect_tab.select(
+                    lambda: (
+                        gr.update(choices=_subreddits()),
+                        gr.update(choices=_prediction_models()),
+                    ),
+                    outputs=[inspect_subreddit, inspect_model],
+                )
+                if read_only:
+                    app.load(
+                        inspect_apply,
+                        inputs=[
+                            inspect_status,
+                            inspect_subreddit,
+                            inspect_search,
+                            inspect_prediction_filter,
+                            inspect_model,
+                            inspect_evaluation_filter,
+                        ],
+                        outputs=[
+                            inspect_ids_state,
+                            inspect_idx_state,
+                            *inspect_render_outputs,
+                            inspect_position,
+                        ],
+                    )
+
+            with gr.Tab("Leaderboard" if read_only else "Stats & Leaderboard") as stats_tab:
+                gr.Markdown(
+                    "_Refreshes when you switch to this tab — newly judged "
+                    "predictions appear here automatically._"
+                )
+                with gr.Row():
+                    stats_corpus = gr.Markdown()
+                    stats_predictions = gr.Markdown()
+                stats_leaderboard = gr.Markdown()
+                stats_consensus = gr.Markdown()
+
+                stats_outputs = [
+                    stats_corpus,
+                    stats_predictions,
+                    stats_leaderboard,
+                    stats_consensus,
+                ]
+                stats_tab.select(_load_stats, outputs=stats_outputs)
+                app.load(_load_stats, outputs=stats_outputs)
+
+            with gr.Tab("AI Gloss Failures", visible=not read_only) as regressions_tab:
+                gr.Markdown(
+                    "_Curated regression set of memes whose consensus gloss missed "
+                    "the joke. Used to A/B future consensus prompt/model changes._"
+                )
+                regressions_md = gr.Markdown()
+                regressions_tab.select(_load_regressions, outputs=[regressions_md])
+                app.load(_load_regressions, outputs=[regressions_md])
+
+            with gr.Tab("Filter Misfires", visible=not read_only) as misfires_tab:
+                gr.Markdown(
+                    "_Memes the safety/consensus filters got wrong, flagged from "
+                    "the Inspect tab. Historical quality-gate rows remain visible. "
+                    "Use these to tune the gate prompts and consensus criteria._"
+                )
+                misfires_md = gr.Markdown()
+                misfires_tab.select(_load_gate_feedback, outputs=[misfires_md])
+                app.load(_load_gate_feedback, outputs=[misfires_md])
+
+            with gr.Tab("Consensus Eval", visible=not read_only) as eval_tab:
+                gr.Markdown(
+                    "_Review the persistent consensus eval labels before tuning "
+                    "prompts. Sampled no-consensus controls are especially worth "
+                    "checking: reclassify any that actually have comment consensus, "
+                    "or deactivate ambiguous rows._"
+                )
+                eval_ids_state = gr.State([])
+                eval_idx_state = gr.State(0)
+
+                with gr.Row():
+                    eval_category = gr.Dropdown(
+                        choices=[(label, key) for label, key in _EVAL_CATEGORIES],
+                        value="true_no_consensus",
+                        label="Category",
+                    )
+                    eval_search = gr.Textbox(
+                        label="Search title or post id", placeholder="Optional search..."
+                    )
+                    btn_eval_apply = gr.Button("Apply filters", variant="primary")
+
+                with gr.Row():
+                    btn_eval_prev = gr.Button("← Prev")
+                    eval_position = gr.Markdown("0 / 0")
+                    btn_eval_next = gr.Button("Next →")
+
+                with gr.Row():
+                    with gr.Column(scale=1):
+                        eval_image = gr.Image(
+                            label="Meme",
+                            type="filepath",
+                            elem_classes="constrained-meme",
+                            visible=False,
+                        )
+                    with gr.Column(scale=1):
+                        eval_info = gr.Markdown()
+                        eval_expected = gr.Textbox(
+                            label="Expected / current ground truth",
+                            lines=5,
+                            interactive=False,
+                            visible=False,
+                        )
+                        eval_results = gr.Markdown(visible=False)
+                        eval_comments = gr.Markdown(visible=False)
+
+                eval_post_id = gr.Textbox(visible=False)
+
+                with gr.Row():
+                    eval_action = gr.Radio(
+                        choices=[
+                            "Confirm expected label",
+                            "Reclassify as consensus",
+                            "Reclassify as no consensus",
+                            "Deactivate from eval",
+                        ],
+                        value="Confirm expected label",
+                        label="Action",
+                        visible=not read_only,
+                    )
+                eval_expected_edit = gr.Textbox(
+                    label="Expected explanation override (optional)",
+                    lines=3,
+                    placeholder="Use when reclassifying a no-consensus control as consensus.",
                     visible=not read_only,
                 )
-            eval_expected_edit = gr.Textbox(
-                label="Expected explanation override (optional)",
-                lines=3,
-                placeholder="Use when reclassifying a no-consensus control as consensus.",
-                visible=not read_only,
-            )
-            eval_notes = gr.Textbox(
-                label="Reviewer notes",
-                lines=2,
-                placeholder="Why this label is right/wrong, or why the item is ambiguous.",
-                visible=not read_only,
-            )
-            btn_eval_update = gr.Button(
-                "Save eval label", variant="secondary", visible=not read_only
-            )
-            eval_feedback = gr.Markdown()
+                eval_notes = gr.Textbox(
+                    label="Reviewer notes",
+                    lines=2,
+                    placeholder="Why this label is right/wrong, or why the item is ambiguous.",
+                    visible=not read_only,
+                )
+                btn_eval_update = gr.Button(
+                    "Save eval label", variant="secondary", visible=not read_only
+                )
+                eval_feedback = gr.Markdown()
 
-            eval_render_outputs = [
-                eval_image,
-                eval_info,
-                eval_expected,
-                eval_results,
-                eval_comments,
-                eval_post_id,
-                eval_expected_edit,
-            ]
-            btn_eval_apply.click(
-                _read_only_eval_apply if read_only else eval_apply,
-                inputs=[eval_category, eval_search],
-                outputs=[
-                    eval_ids_state,
-                    eval_idx_state,
-                    *eval_render_outputs,
-                    eval_position,
-                ],
-            )
-            btn_eval_prev.click(
-                (lambda ids, idx: _read_only_eval_step(ids, idx, -1))
-                if read_only
-                else (lambda ids, idx: eval_step(ids, idx, -1)),
-                inputs=[eval_ids_state, eval_idx_state],
-                outputs=[eval_idx_state, *eval_render_outputs, eval_position],
-            )
-            btn_eval_next.click(
-                (lambda ids, idx: _read_only_eval_step(ids, idx, 1))
-                if read_only
-                else (lambda ids, idx: eval_step(ids, idx, 1)),
-                inputs=[eval_ids_state, eval_idx_state],
-                outputs=[eval_idx_state, *eval_render_outputs, eval_position],
-            )
-            if not read_only:
-                btn_eval_update.click(
-                    update_eval_item,
-                    inputs=[
-                        eval_post_id,
-                        eval_category,
-                        eval_search,
-                        eval_action,
-                        eval_expected_edit,
-                        eval_notes,
-                    ],
+                eval_render_outputs = [
+                    eval_image,
+                    eval_info,
+                    eval_expected,
+                    eval_results,
+                    eval_comments,
+                    eval_post_id,
+                    eval_expected_edit,
+                ]
+                btn_eval_apply.click(
+                    _read_only_eval_apply if read_only else eval_apply,
+                    inputs=[eval_category, eval_search],
                     outputs=[
                         eval_ids_state,
                         eval_idx_state,
                         *eval_render_outputs,
                         eval_position,
-                        eval_feedback,
                     ],
                 )
-            eval_tab.select(
-                _read_only_eval_apply if read_only else eval_apply,
-                inputs=[eval_category, eval_search],
-                outputs=[
-                    eval_ids_state,
-                    eval_idx_state,
-                    *eval_render_outputs,
-                    eval_position,
-                ],
-            )
-            app.load(
-                eval_apply,
-                inputs=[eval_category, eval_search],
-                outputs=[
-                    eval_ids_state,
-                    eval_idx_state,
-                    *eval_render_outputs,
-                    eval_position,
-                ],
-            )
+                btn_eval_prev.click(
+                    (lambda ids, idx: _read_only_eval_step(ids, idx, -1))
+                    if read_only
+                    else (lambda ids, idx: eval_step(ids, idx, -1)),
+                    inputs=[eval_ids_state, eval_idx_state],
+                    outputs=[eval_idx_state, *eval_render_outputs, eval_position],
+                )
+                btn_eval_next.click(
+                    (lambda ids, idx: _read_only_eval_step(ids, idx, 1))
+                    if read_only
+                    else (lambda ids, idx: eval_step(ids, idx, 1)),
+                    inputs=[eval_ids_state, eval_idx_state],
+                    outputs=[eval_idx_state, *eval_render_outputs, eval_position],
+                )
+                if not read_only:
+                    btn_eval_update.click(
+                        update_eval_item,
+                        inputs=[
+                            eval_post_id,
+                            eval_category,
+                            eval_search,
+                            eval_action,
+                            eval_expected_edit,
+                            eval_notes,
+                        ],
+                        outputs=[
+                            eval_ids_state,
+                            eval_idx_state,
+                            *eval_render_outputs,
+                            eval_position,
+                            eval_feedback,
+                        ],
+                    )
+                eval_tab.select(
+                    _read_only_eval_apply if read_only else eval_apply,
+                    inputs=[eval_category, eval_search],
+                    outputs=[
+                        eval_ids_state,
+                        eval_idx_state,
+                        *eval_render_outputs,
+                        eval_position,
+                    ],
+                )
+                app.load(
+                    eval_apply,
+                    inputs=[eval_category, eval_search],
+                    outputs=[
+                        eval_ids_state,
+                        eval_idx_state,
+                        *eval_render_outputs,
+                        eval_position,
+                    ],
+                )
 
     return app
 

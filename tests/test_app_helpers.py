@@ -118,6 +118,37 @@ def test_inspect_where_selected_model_defaults_to_has_model_prediction():
     assert params == ["claude-opus-4-8"]
 
 
+def test_inspect_where_evaluation_coverage_filters_any_model():
+    where, params = _inspect_where(
+        "validated", "all", "", "with_predictions", "all", "with_evaluations"
+    )
+    assert "r.status = 'validated'" in where
+    assert "EXISTS (SELECT 1 FROM predictions p" in where
+    assert "JOIN judgments j ON j.prediction_id = p.id" in where
+    assert "p.model_id = ?" not in where
+    assert params == []
+
+    where, params = _inspect_where(
+        "validated", "all", "", "with_predictions", "all", "without_evaluations"
+    )
+    assert "NOT EXISTS (SELECT 1 FROM predictions p" in where
+    assert "JOIN judgments j ON j.prediction_id = p.id" in where
+    assert params == []
+
+
+def test_inspect_where_evaluation_coverage_filters_selected_model():
+    where, params = _inspect_where(
+        "validated",
+        "ExplainTheJoke",
+        "golf",
+        "with_predictions",
+        "gpt-5.5",
+        "with_evaluations",
+    )
+    assert where.count("p.model_id = ?") == 2
+    assert params == ["ExplainTheJoke", "%golf%", "gpt-5.5", "gpt-5.5"]
+
+
 def test_position_text():
     assert _position_text(0, [], 0) == "0 / 0"
     assert _position_text(0, ["a", "b", "c"], 3) == "1 / 3"
