@@ -1710,34 +1710,39 @@ def build_app(read_only: bool = False) -> gr.Blocks:
                     )
 
             with gr.Tab("Inspect", id="inspect", render_children=True) as inspect_tab:
-                gr.Markdown(
-                    "_Read-only meme viewer over **all** content — image, metadata, "
-                    "ground truth, predictions, judgments, and comments. Filters "
-                    "choose which memes you step through; no review state changes "
-                    "happen here._"
-                )
                 inspect_ids_state = gr.State([])
                 inspect_idx_state = gr.State(0)
                 inspect_status_default = "validated" if read_only else "all"
                 inspect_prediction_default = "with_predictions" if read_only else "all"
                 inspect_evaluation_default = "with_evaluations" if read_only else "all"
 
-                with gr.Row():
+                with gr.Row(variant="compact", elem_classes="inspect-toolbar"):
                     inspect_status = gr.Dropdown(
                         choices=[(label, key) for key, label in _INSPECT_STATES],
                         value=inspect_status_default,
                         label="Status",
+                        show_label=False,
+                        container=False,
+                        min_width=150,
+                        scale=1,
                     )
                     inspect_subreddit = gr.Dropdown(
                         choices=_subreddits() if _DB_PATH.exists() else ["all"],
                         value="all",
                         label="Subreddit",
+                        show_label=False,
+                        container=False,
+                        min_width=150,
+                        scale=1,
                     )
                     inspect_search = gr.Textbox(
-                        label="Search title", placeholder="Type to search..."
+                        label="Search title",
+                        placeholder="Search title",
+                        show_label=False,
+                        container=False,
+                        min_width=180,
+                        scale=2,
                     )
-
-                with gr.Row():
                     inspect_prediction_filter = gr.Dropdown(
                         choices=[
                             ("All prediction coverage", "all"),
@@ -1746,11 +1751,19 @@ def build_app(read_only: bool = False) -> gr.Blocks:
                         ],
                         value=inspect_prediction_default,
                         label="Prediction coverage",
+                        show_label=False,
+                        container=False,
+                        min_width=190,
+                        scale=1,
                     )
                     inspect_model = gr.Dropdown(
                         choices=_prediction_models() if _DB_PATH.exists() else ["all"],
                         value="all",
                         label="Prediction model",
+                        show_label=False,
+                        container=False,
+                        min_width=150,
+                        scale=1,
                     )
                     inspect_evaluation_filter = gr.Dropdown(
                         choices=[
@@ -1760,13 +1773,29 @@ def build_app(read_only: bool = False) -> gr.Blocks:
                         ],
                         value=inspect_evaluation_default,
                         label="Evaluation coverage",
+                        show_label=False,
+                        container=False,
+                        min_width=180,
+                        scale=1,
                     )
-                    btn_inspect_apply = gr.Button("Apply filters", variant="primary")
+                    btn_inspect_apply = gr.Button(
+                        "Apply",
+                        variant="primary",
+                        size="sm",
+                        min_width=78,
+                        scale=0,
+                    )
 
-                with gr.Row():
-                    btn_inspect_prev = gr.Button("← Prev")
-                    inspect_position = gr.Markdown("0 / 0")
-                    btn_inspect_next = gr.Button("Next →")
+                with gr.Row(variant="compact", elem_classes="inspect-nav"):
+                    btn_inspect_prev = gr.Button(
+                        "← Prev", size="sm", min_width=92, scale=0
+                    )
+                    inspect_position = gr.Markdown(
+                        "0 / 0", elem_classes="inspect-position"
+                    )
+                    btn_inspect_next = gr.Button(
+                        "Next →", size="sm", min_width=92, scale=0
+                    )
 
                 with gr.Row():
                     with gr.Column(scale=1):
@@ -2078,6 +2107,35 @@ def build_app(read_only: bool = False) -> gr.Blocks:
 
 
 CSS = """
+.inspect-toolbar,
+.inspect-nav {
+    gap: 8px !important;
+    margin: 0 0 8px 0 !important;
+    align-items: center !important;
+}
+
+.inspect-toolbar .block,
+.inspect-nav .block {
+    min-width: 0 !important;
+}
+
+.inspect-toolbar input,
+.inspect-toolbar button,
+.inspect-toolbar [role="listbox"],
+.inspect-toolbar [role="combobox"] {
+    min-height: 38px !important;
+}
+
+.inspect-position {
+    align-self: center !important;
+    min-width: 72px !important;
+}
+
+.inspect-position p {
+    margin: 0 !important;
+    text-align: center !important;
+}
+
 .constrained-meme,
 .constrained-meme > div {
     width: 100% !important;
