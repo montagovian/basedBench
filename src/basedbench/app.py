@@ -364,6 +364,14 @@ def _prediction_models() -> list[str]:
     return ["all"] + [r["model_id"] for r in rows]
 
 
+def _inspect_subreddit_choices() -> list[tuple[str, str]]:
+    return [("All subs", "all")] + [(s, s) for s in _subreddits()[1:]]
+
+
+def _inspect_prediction_model_choices() -> list[tuple[str, str]]:
+    return [("All models", "all")] + [(m, m) for m in _prediction_models()[1:]]
+
+
 def browse_memes(status_filter: str, subreddit_filter: str, search_text: str, page: int):
     per_page = 20
     offset = int(page) * per_page
@@ -1727,74 +1735,79 @@ def build_app(read_only: bool = False) -> gr.Blocks:
                         scale=1,
                     )
                     inspect_subreddit = gr.Dropdown(
-                        choices=_subreddits() if _DB_PATH.exists() else ["all"],
+                        choices=_inspect_subreddit_choices()
+                        if _DB_PATH.exists()
+                        else [("All subs", "all")],
                         value="all",
                         label="Subreddit",
                         show_label=False,
                         container=False,
-                        min_width=150,
+                        min_width=118,
                         scale=1,
                     )
                     inspect_search = gr.Textbox(
                         label="Search title",
-                        placeholder="Search title",
+                        placeholder="Search",
                         show_label=False,
-                        container=False,
-                        min_width=180,
+                        container=True,
+                        min_width=220,
                         scale=2,
                     )
                     inspect_prediction_filter = gr.Dropdown(
                         choices=[
-                            ("All prediction coverage", "all"),
-                            ("Has successful prediction", "with_predictions"),
-                            ("Missing successful prediction", "without_predictions"),
+                            ("Any pred", "all"),
+                            ("Predicted", "with_predictions"),
+                            ("No pred", "without_predictions"),
                         ],
                         value=inspect_prediction_default,
                         label="Prediction coverage",
                         show_label=False,
                         container=False,
-                        min_width=190,
+                        min_width=116,
                         scale=1,
                     )
                     inspect_model = gr.Dropdown(
-                        choices=_prediction_models() if _DB_PATH.exists() else ["all"],
+                        choices=_inspect_prediction_model_choices()
+                        if _DB_PATH.exists()
+                        else [("All models", "all")],
                         value="all",
                         label="Prediction model",
                         show_label=False,
                         container=False,
-                        min_width=150,
+                        min_width=116,
                         scale=1,
                     )
                     inspect_evaluation_filter = gr.Dropdown(
                         choices=[
-                            ("All evaluation coverage", "all"),
-                            ("Has judge evaluation", "with_evaluations"),
-                            ("Missing judge evaluation", "without_evaluations"),
+                            ("Any eval", "all"),
+                            ("Judged", "with_evaluations"),
+                            ("Unjudged", "without_evaluations"),
                         ],
                         value=inspect_evaluation_default,
                         label="Evaluation coverage",
                         show_label=False,
                         container=False,
-                        min_width=180,
+                        min_width=112,
                         scale=1,
                     )
                     btn_inspect_apply = gr.Button(
                         "Apply",
                         variant="primary",
                         size="sm",
-                        min_width=78,
+                        min_width=64,
                         scale=0,
                     )
-
-                with gr.Row(variant="compact", elem_classes="inspect-nav"):
                     btn_inspect_prev = gr.Button(
-                        "← Prev", size="sm", min_width=92, scale=0
+                        "← Prev", size="sm", min_width=76, scale=0
                     )
                     inspect_position = gr.Markdown(
-                        "0 / 0", elem_classes="inspect-position"
+                        "0 / 0",
+                        elem_classes="inspect-position",
+                        min_width=64,
+                        scale=0,
                     )
                     btn_inspect_next = gr.Button(
-                        "Next →", size="sm", min_width=92, scale=0
+                        "Next →", size="sm", min_width=76, scale=0
                     )
 
                 with gr.Row():
@@ -1890,10 +1903,10 @@ def build_app(read_only: bool = False) -> gr.Blocks:
                     )
                 # Refresh subreddit options + load the first page on tab activation.
                 inspect_tab.select(
-                    lambda: (
-                        gr.update(choices=_subreddits()),
-                        gr.update(choices=_prediction_models()),
-                    ),
+                lambda: (
+                    gr.update(choices=_inspect_subreddit_choices()),
+                    gr.update(choices=_inspect_prediction_model_choices()),
+                ),
                     outputs=[inspect_subreddit, inspect_model],
                 )
                 if read_only:
@@ -2107,28 +2120,72 @@ def build_app(read_only: bool = False) -> gr.Blocks:
 
 
 CSS = """
-.inspect-toolbar,
-.inspect-nav {
-    gap: 8px !important;
-    margin: 0 0 8px 0 !important;
+.inspect-toolbar {
+    gap: 6px !important;
+    margin: 0 0 10px 0 !important;
+    padding: 6px !important;
     align-items: center !important;
+    border-radius: 6px !important;
 }
 
-.inspect-toolbar .block,
-.inspect-nav .block {
+.inspect-toolbar .block {
     min-width: 0 !important;
 }
 
+.inspect-toolbar label {
+    display: none !important;
+}
+
 .inspect-toolbar input,
+.inspect-toolbar textarea,
 .inspect-toolbar button,
 .inspect-toolbar [role="listbox"],
 .inspect-toolbar [role="combobox"] {
-    min-height: 38px !important;
+    min-height: 32px !important;
+    height: 32px !important;
+}
+
+.inspect-toolbar input,
+.inspect-toolbar textarea,
+.inspect-toolbar [role="listbox"],
+.inspect-toolbar [role="combobox"] {
+    padding-top: 0 !important;
+    padding-bottom: 0 !important;
+    font-size: 14px !important;
+}
+
+.inspect-toolbar textarea {
+    background: var(--input-background-fill) !important;
+    border: 1px solid var(--border-color-primary) !important;
+    border-radius: 4px !important;
+    color: var(--body-text-color) !important;
+    padding-left: 10px !important;
+    padding-right: 10px !important;
+    padding-top: 5px !important;
+    padding-bottom: 5px !important;
+    resize: none !important;
+    line-height: 20px !important;
+    overflow: hidden !important;
+}
+
+.inspect-toolbar textarea::placeholder {
+    color: var(--body-text-color-subdued) !important;
+}
+
+.inspect-toolbar button {
+    padding: 0 12px !important;
+    font-size: 14px !important;
+    border-radius: 6px !important;
 }
 
 .inspect-position {
     align-self: center !important;
-    min-width: 72px !important;
+    min-width: 64px !important;
+    height: 32px !important;
+    display: flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+    color: var(--body-text-color-subdued) !important;
 }
 
 .inspect-position p {
