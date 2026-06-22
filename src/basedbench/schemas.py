@@ -37,6 +37,11 @@ def is_anthropic_model(model_id: str) -> bool:
     return model_id.startswith("claude")
 
 
+def is_openrouter_model(model_id: str) -> bool:
+    """Return True if this model should use OpenRouter's provider namespace."""
+    return "/" in model_id
+
+
 # ═══════════════════════════════════════════════════════
 # Reddit
 # ═══════════════════════════════════════════════════════

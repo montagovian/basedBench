@@ -23,6 +23,8 @@ from pathlib import Path
 
 import gradio as gr
 
+from basedbench.model_policy import is_active_summary_model
+
 # Match common image URLs people drop in Reddit comments:
 # - preview.redd.it / i.redd.it / i.imgur.com (host-based, takes query strings)
 # - Any URL ending in a known image extension (with optional query string)
@@ -372,6 +374,114 @@ def _inspect_prediction_model_choices() -> list[tuple[str, str]]:
     return [("All models", "all")] + [(m, m) for m in _prediction_models()[1:]]
 
 
+def _tag_choices() -> list[tuple[str, str]]:
+    from basedbench.db import queries
+    from basedbench.db.connection import Database
+
+    db = Database.open(_DB_PATH)
+    try:
+        tags = queries.list_tags(db)
+    finally:
+        db.close()
+    return [(tag.name, tag.name) for tag in tags]
+
+
+def _tag_markdown(post_id: str | None) -> str:
+    if not post_id:
+        return "_No meme loaded._"
+
+    from basedbench.db import queries
+    from basedbench.db.connection import Database
+
+    db = Database.open(_DB_PATH)
+    try:
+        tags = queries.tags_for_meme(db, post_id)
+    finally:
+        db.close()
+
+    if not tags:
+        return "_No tags on this meme yet._"
+
+    lines = []
+    for tag in tags:
+        line = f"- `{_escape_md_text(tag.name)}`"
+        if tag.notes:
+            line += f" — {_escape_md_text(tag.notes)}"
+        lines.append(line)
+    return "\n".join(lines)
+
+
+def add_current_tag(
+    post_id: str,
+    selected_tag: str | None,
+    new_tag: str | None,
+    notes: str | None,
+):
+    from basedbench.db import queries
+    from basedbench.db.connection import Database
+
+    if not post_id:
+        return (
+            gr.update(value="_No meme loaded._"),
+            gr.update(choices=_tag_choices(), value=None),
+            "Load a meme before tagging.",
+        )
+
+    tag_name = (new_tag or "").strip() or (selected_tag or "").strip()
+    if not tag_name:
+        return (
+            gr.update(value=_tag_markdown(post_id)),
+            gr.update(choices=_tag_choices(), value=selected_tag or None),
+            "Pick an existing tag or type a new one.",
+        )
+
+    db = Database.open(_DB_PATH)
+    try:
+        queries.add_meme_tag(db, post_id, tag_name, notes)
+    except ValueError as e:
+        feedback = str(e)
+    else:
+        feedback = f"Added tag `{tag_name}`."
+    finally:
+        db.close()
+
+    return (
+        gr.update(value=_tag_markdown(post_id)),
+        gr.update(choices=_tag_choices(), value=tag_name),
+        feedback,
+    )
+
+
+def remove_current_tag(post_id: str, selected_tag: str | None):
+    from basedbench.db import queries
+    from basedbench.db.connection import Database
+
+    if not post_id:
+        return (
+            gr.update(value="_No meme loaded._"),
+            gr.update(choices=_tag_choices(), value=None),
+            "Load a meme before removing tags.",
+        )
+    if not selected_tag:
+        return (
+            gr.update(value=_tag_markdown(post_id)),
+            gr.update(choices=_tag_choices(), value=None),
+            "Pick a tag to remove.",
+        )
+
+    db = Database.open(_DB_PATH)
+    try:
+        removed = queries.remove_meme_tag(db, post_id, selected_tag)
+    finally:
+        db.close()
+    feedback = f"Removed tag `{selected_tag}`." if removed else "Tag was not on this meme."
+    return (
+        gr.update(value=_tag_markdown(post_id)),
+        gr.update(choices=_tag_choices(), value=None),
+        feedback,
+    )
+
+
 def browse_memes(status_filter: str, subreddit_filter: str, search_text: str, page: int):
     per_page = 20
     offset = int(page) * per_page
@@ -466,6 +576,19 @@ def _badge(v: str | None) -> str:
     return "⚪"
 
 
+def _details(summary: str, body: str, *, open: bool = False) -> str:
+    """Render a compact Markdown/HTML details block."""
+    if not body.strip():
+        return ""
+    open_attr = " open" if open else ""
+    return (
+        f"<details{open_attr}>\n"
+        f"<summary>{html.escape(summary)}</summary>\n\n"
+        f"{body.strip()}\n\n"
+        f"</details>"
+    )
+
+
 def _prediction_markdown(conn: sqlite3.Connection, post_id: str) -> str:
     preds = conn.execute(
         """SELECT p.id, p.model_id, p.prediction
@@ -501,19 +624,24 @@ def _prediction_markdown(conn: sqlite3.Connection, post_id: str) -> str:
     for p in preds:
         verdicts = sorted(verdicts_by_pred.get(p["id"], []), key=lambda r: r[0])
         if not verdicts:
-            header = f"### ⚪ `{_escape_md_text(p['model_id'])}`"
-            verdict_section = "_unjudged_"
+            header = f"### `{_escape_md_text(p['model_id'])}`"
+            verdict_section = "_No judge evaluations yet._"
         else:
-            distinct = {v for _, v, _ in verdicts if v is not None}
-            agreement = (
-                " · judges agree"
-                if len(verdicts) > 1 and len(distinct) == 1
-                else " · judges disagree"
-                if len(verdicts) > 1
-                else ""
+            correct_n = sum(1 for _, verdict, _ in verdicts if verdict == "correct")
+            incorrect_n = sum(1 for _, verdict, _ in verdicts if verdict == "incorrect")
+            if correct_n > incorrect_n and correct_n >= 2:
+                consensus = "Consensus: correct"
+                consensus_badge = _badge("correct")
+            elif incorrect_n > correct_n and incorrect_n >= 2:
+                consensus = "Consensus: incorrect"
+                consensus_badge = _badge("incorrect")
+            else:
+                consensus = "No consensus verdict"
+                consensus_badge = _badge(None)
+            header = (
+                f"### {consensus_badge} `{_escape_md_text(p['model_id'])}`"
+                f" — {consensus} ({correct_n} correct / {incorrect_n} incorrect)"
             )
-            badges = " ".join(_badge(v) for _, v, _ in verdicts)
-            header = f"### {badges} `{_escape_md_text(p['model_id'])}`{agreement}"
             verdict_lines = []
             for judge_model, verdict, reasoning in verdicts:
                 line = (
@@ -526,8 +654,9 @@ def _prediction_markdown(conn: sqlite3.Connection, post_id: str) -> str:
             verdict_section = "\n\n".join(verdict_lines)
 
         blocks.append(
-            f"{header}\n\n**Prediction:**\n\n{_escape_md_text(p['prediction'])}"
-            f"\n\n{verdict_section}"
+            f"{header}\n\n"
+            f"{_details('Model Prediction', _escape_md_text(p['prediction']))}"
+            f"\n\n{_details('Judge details', verdict_section)}"
         )
 
     return "\n\n---\n\n".join(blocks)
@@ -605,11 +734,11 @@ _INSPECT_FROM = """
 
 def _inspect_where(
     status: str,
-    subreddit: str,
     search: str,
     prediction_filter: str = "all",
     model_id: str = "all",
     evaluation_filter: str = "all",
+    verdict_filter: str = "all",
 ) -> tuple[str, list[object]]:
     conds: list[str] = []
     params: list[object] = []
@@ -634,9 +763,6 @@ def _inspect_where(
     if status in state_conds:
         conds.append(state_conds[status])
 
-    if subreddit and subreddit != "all":
-        conds.append("m.subreddit = ?")
-        params.append(subreddit)
     if search:
         conds.append("m.title LIKE ?")
         params.append(f"%{search}%")
@@ -685,6 +811,48 @@ def _inspect_where(
         conds.append(eval_missing)
         params.extend(model_params)
 
+    verdict_sql = f"""
+        SELECT p.post_id,
+               SUM(CASE WHEN j.verdict = 'correct' THEN 1 ELSE 0 END) AS correct_n,
+               SUM(CASE WHEN j.verdict = 'incorrect' THEN 1 ELSE 0 END) AS incorrect_n
+        FROM predictions p
+        JOIN judgments j ON j.prediction_id = p.id
+        WHERE p.error IS NULL
+          {model_clause}
+          AND j.id = (
+              SELECT MAX(j2.id) FROM judgments j2
+              WHERE j2.prediction_id = j.prediction_id
+                AND j2.judge_model = j.judge_model
+          )
+        GROUP BY p.id, p.post_id
+        HAVING correct_n <> incorrect_n
+    """
+    correct_exists = (
+        "EXISTS (SELECT 1 FROM ("
+        + verdict_sql
+        + ") cv WHERE cv.post_id = m.post_id AND cv.correct_n > cv.incorrect_n)"
+    )
+    incorrect_exists = (
+        "EXISTS (SELECT 1 FROM ("
+        + verdict_sql
+        + ") cv WHERE cv.post_id = m.post_id AND cv.incorrect_n > cv.correct_n)"
+    )
+    if verdict_filter == "all_correct":
+        conds.append(correct_exists)
+        conds.append(f"NOT {incorrect_exists}")
+        params.extend(model_params)
+        params.extend(model_params)
+    elif verdict_filter == "all_incorrect":
+        conds.append(incorrect_exists)
+        conds.append(f"NOT {correct_exists}")
+        params.extend(model_params)
+        params.extend(model_params)
+    elif verdict_filter == "mixed":
+        conds.append(correct_exists)
+        conds.append(incorrect_exists)
+        params.extend(model_params)
+        params.extend(model_params)
+
     where = " AND ".join(conds) if conds else "1=1"
     return where, params
 
@@ -696,15 +864,20 @@ _INSPECT_CAP = 3000
 
 def _inspect_ids(
     status: str,
-    subreddit: str,
     search: str,
     prediction_filter: str,
     model_id: str,
     evaluation_filter: str,
+    verdict_filter: str,
 ) -> tuple[list[str], int]:
     """Return (post_ids matching the filter, total matches before the cap)."""
     where, params = _inspect_where(
-        status, subreddit, search, prediction_filter, model_id, evaluation_filter
+        status,
+        search,
+        prediction_filter,
+        model_id,
+        evaluation_filter,
+        verdict_filter,
     )
     conn = _get_conn()
     total = conn.execute(
@@ -773,6 +946,14 @@ def _inspect_detail(post_id: str) -> dict | None:
     ).fetchall()
     comments_text = _comments_for_review(conn, post_id, row["source_comment_ids"])
     predictions_text = _prediction_markdown(conn, post_id)
+    tag_rows = conn.execute(
+        """SELECT t.name, mt.notes
+           FROM meme_tags mt
+           JOIN tags t ON t.tag_id = mt.tag_id
+           WHERE mt.post_id = ?
+           ORDER BY lower(t.name)""",
+        (post_id,),
+    ).fetchall()
     conn.close()
 
     latest_by_role: dict[str, sqlite3.Row] = {}
@@ -785,6 +966,7 @@ def _inspect_detail(post_id: str) -> dict | None:
         "calls": latest_by_role,
         "comments_text": comments_text,
         "predictions_text": predictions_text,
+        "tags": tag_rows,
     }
 
 
@@ -799,6 +981,7 @@ def _render_inspect(post_id: str | None):
             gr.update(value="", visible=False),
             gr.update(value="", visible=False),
             gr.update(value="", visible=False),
+            gr.update(value="_No meme loaded._", visible=False),
             "",
             gr.update(value="consensus"),
         )
@@ -812,6 +995,7 @@ def _render_inspect(post_id: str | None):
             gr.update(value="", visible=False),
             gr.update(value="", visible=False),
             gr.update(value="", visible=False),
+            gr.update(value="_No meme loaded._", visible=False),
             "",
             gr.update(value="consensus"),
         )
@@ -821,13 +1005,26 @@ def _render_inspect(post_id: str | None):
     calls = detail["calls"]
 
     banner = _INSPECT_STATE_LABELS.get(state, state)
-    info_lines = [
-        f"**{_escape_md_text(row['title'])}**",
-        f"r/{_escape_md_text(row['subreddit'])}",
+    detail_lines = [
+        f"**Title:** {_escape_md_text(row['title'])}",
+        f"**Subreddit:** r/{_escape_md_text(row['subreddit'])}",
+        f"**Post ID:** `{_escape_md_text(row['post_id'])}`",
         f"**Status:** {banner}",
     ]
     if row["review_reason"]:
-        info_lines.append(f"_reason:_ `{row['review_reason']}`")
+        detail_lines.append(f"**Review reason:** `{_escape_md_text(row['review_reason'])}`")
+    if row["consensus_confidence"] is not None:
+        detail_lines.append(
+            f"**Consensus quality:** confidence {row['consensus_confidence']:.2f}; "
+            f"{row['num_agreeing_comments']} agreeing comments"
+        )
+    if detail["tags"]:
+        tag_text = ", ".join(
+            f"`{_escape_md_text(tag['name'])}`"
+            for tag in detail["tags"]
+        )
+        detail_lines.append(f"**Tags:** {tag_text}")
+
     # Surface the gate/consensus model's own reasoning so you can judge whether
     # the decision was right.
     role_label = {
@@ -835,38 +1032,47 @@ def _render_inspect(post_id: str | None):
         "quality_gate": "Quality gate",
         "consensus": "Consensus",
     }
+    gate_blocks = []
     for role in ("safety_gate", "quality_gate", "consensus"):
         cr = calls.get(role)
         if cr is None:
             continue
         verdict = cr["verdict"] or ("error" if cr["error"] else "—")
         reasoning = (cr["reasoning"] or cr["error"] or "").strip()
+        label = role_label[role]
         if reasoning:
-            info_lines.append(
-                f"**{role_label[role]}:** _{verdict}_ — {reasoning[:400]}"
+            gate_blocks.append(
+                _details(
+                    f"{label}: {verdict}",
+                    _escape_md_text(reasoning),
+                )
             )
         else:
-            info_lines.append(f"**{role_label[role]}:** _{verdict}_")
-    info_md = "\n\n".join(info_lines)
+            gate_blocks.append(f"**{_escape_md_text(label)}:** _{_escape_md_text(verdict)}_")
 
     if row["explanation"] is not None:
+        info_md = f"`ID: {_escape_md_text(row['post_id'])}`"
         gt_update = gr.update(value=row["explanation"], visible=True)
-        conf = row["consensus_confidence"]
         meta_update = gr.update(
-            value=(
-                f"Confidence: {conf:.2f} | Agreeing comments: "
-                f"{row['num_agreeing_comments']}"
-                if conf is not None
-                else ""
+            value=_details(
+                "Post, source, and consensus details",
+                "\n\n".join(detail_lines + gate_blocks),
             ),
-            visible=conf is not None,
+            visible=True,
         )
     else:
+        info_md = f"`ID: {_escape_md_text(row['post_id'])}`"
         gt_update = gr.update(
             value="— no ground truth (meme has no consensus explanation) —",
             visible=True,
         )
-        meta_update = gr.update(value="", visible=False)
+        meta_update = gr.update(
+            value=_details("Post and filter details", "\n\n".join(detail_lines + gate_blocks)),
+            visible=True,
+        )
+
+    comments_md = detail["comments_text"] or "_No comments available._"
+    comments_detail = _details("Consensus source comments and top comments", comments_md)
 
     return (
         gr.update(value=_resolve_image(row["local_image_path"]), visible=True),
@@ -874,7 +1080,8 @@ def _render_inspect(post_id: str | None):
         gt_update,
         meta_update,
         gr.update(value=detail["predictions_text"], visible=True),
-        gr.update(value=detail["comments_text"] or "_no comments_", visible=True),
+        gr.update(value=comments_detail, visible=True),
+        gr.update(value=_tag_markdown(post_id), visible=True),
         post_id,
         gr.update(value=_STATE_TO_GATE.get(state, "consensus")),
     )
@@ -890,19 +1097,19 @@ def _position_text(idx: int, ids: list[str], total: int) -> str:
 
 def inspect_apply(
     status: str,
-    subreddit: str,
     search: str,
     prediction_filter: str,
     model_id: str,
     evaluation_filter: str,
+    verdict_filter: str,
 ):
     ids, total = _inspect_ids(
         status,
-        subreddit,
         search,
         prediction_filter,
         model_id,
         evaluation_filter,
+        verdict_filter,
     )
     first = ids[0] if ids else None
     return (ids, 0, *_render_inspect(first), _position_text(0, ids, total))
@@ -976,9 +1183,18 @@ def _load_stats() -> tuple[str, str, str, str]:
     db = Database.open(_DB_PATH)
     try:
         counts = queries.get_status_counts(db)
-        pred_counts = queries.get_prediction_counts(db)
-        judge_counts = queries.get_judgment_counts(db)
-        agreement = queries.get_judge_agreement(db)
+        pred_counts = [
+            p for p in queries.get_prediction_counts(db)
+            if is_active_summary_model(p.model_id)
+        ]
+        consensus_counts = [
+            c for c in queries.get_consensus_judgment_counts(db)
+            if is_active_summary_model(c.model_id)
+        ]
+        agreement = [
+            a for a in queries.get_judge_agreement(db)
+            if is_active_summary_model(a.model_id)
+        ]
         consensus = queries.consensus_quality_stats(db)
     finally:
         db.close()
@@ -1012,56 +1228,22 @@ def _load_stats() -> tuple[str, str, str, str]:
             "Run `basedbench predict <model>` to start._"
         )
 
-    # ─── Leaderboard: pivot per-(target, judge) into a matrix ───
-    if judge_counts:
-        judges = sorted({jc.judge_model for jc in judge_counts})
-        targets = sorted({jc.model_id for jc in judge_counts})
-        by_pair = {(jc.model_id, jc.judge_model): jc for jc in judge_counts}
+    # ─── Leaderboard: consensus majority-vote score ───
+    if consensus_counts:
         agreement_by_target = {a.model_id: a for a in agreement}
-
-        # Compute the per-target Combined (mean) score first so we can sort
-        # the leaderboard by it. Simple mean of per-judge accuracies — close
-        # enough to a strict per-prediction mean even when judge denominators
-        # differ slightly (off by <0.5% in practice).
-        combined_by_target: dict[str, float | None] = {}
-        for target in targets:
-            accs = [
-                by_pair[(target, j)].accuracy
-                for j in judges
-                if (target, j) in by_pair and by_pair[(target, j)].judged > 0
-            ]
-            combined_by_target[target] = sum(accs) / len(accs) if accs else None
-
-        # Sort highest combined score first; targets without scores fall to the
-        # bottom but stay alphabetized among themselves.
-        ranked_targets = sorted(
-            targets,
+        ranked_counts = sorted(
+            consensus_counts,
             key=lambda t: (
-                -(combined_by_target[t] or -1),
-                t,
+                -t.accuracy,
+                t.model_id,
             ),
         )
 
-        header = (
-            "| Target model | "
-            + " | ".join(f"vs. {j}" for j in judges)
-            + " | **Combined** | Agreement |"
-        )
-        sep = "|---|" + "|".join(["---"] * len(judges)) + "|---|---|"
+        header = "| Target model | Consensus correct | Consensus total | Accuracy | Agreement |"
+        sep = "|---|---:|---:|---:|---:|"
         body_rows = []
-        for target in ranked_targets:
-            cells = []
-            for j in judges:
-                jc = by_pair.get((target, j))
-                if jc is None or jc.judged == 0:
-                    cells.append("—")
-                else:
-                    cells.append(f"{jc.correct}/{jc.judged} ({jc.accuracy * 100:.1f}%)")
-            combined = combined_by_target[target]
-            combined_cell = (
-                f"**{combined * 100:.1f}%**" if combined is not None else "—"
-            )
-            agree = agreement_by_target.get(target)
+        for row in ranked_counts:
+            agree = agreement_by_target.get(row.model_id)
             if agree is not None and agree.judged_by_multiple > 0:
                 agree_cell = (
                     f"{agree.agreements}/{agree.judged_by_multiple} "
@@ -1070,16 +1252,17 @@ def _load_stats() -> tuple[str, str, str, str]:
             else:
                 agree_cell = "—"
             body_rows.append(
-                f"| `{target}` | "
-                + " | ".join(cells)
-                + f" | {combined_cell} | {agree_cell} |"
+                f"| `{row.model_id}` | {row.correct:,} | {row.judged:,} | "
+                f"**{row.accuracy * 100:.1f}%** | {agree_cell} |"
             )
         leaderboard_md = (
             "### Leaderboard\n\n"
             + header + "\n" + sep + "\n"
             + "\n".join(body_rows)
-            + "\n\n_**Combined** = mean across judges. Agreement = fraction "
-            "of predictions where both judges returned the same verdict._"
+            + "\n\n_Accuracy uses the consensus verdict for each prediction: "
+            "at least two judges must agree on correct or incorrect. Agreement "
+            "is the stricter fraction where all available judges returned the "
+            "same verdict._"
         )
     else:
         leaderboard_md = (
@@ -1515,9 +1698,42 @@ def update_eval_item(
 
 def build_app(read_only: bool = False) -> gr.Blocks:
     with gr.Blocks(title="basedBench Review UI") as app:
-        gr.Markdown("# basedBench Review UI")
-        if read_only:
-            gr.Markdown("_Read-only mode: review and labeling controls are disabled._")
+        mode_note = (
+            '<span class="app-mode-note">Read-only mode: review and labeling controls are disabled.</span>'
+            if read_only
+            else ""
+        )
+        with gr.Row(elem_classes="app-header"):
+            gr.HTML(
+                f"""
+                <div class="app-title-content">
+                    <h1>basedBench Review UI</h1>
+                    {mode_note}
+                </div>
+                """,
+                elem_classes="app-title-block",
+            )
+            if read_only:
+                btn_inspect_prev = gr.Button(
+                    "← Prev",
+                    size="sm",
+                    min_width=76,
+                    scale=0,
+                    elem_classes="inspect-prev",
+                )
+                inspect_position = gr.Markdown(
+                    "0 / 0",
+                    elem_classes="inspect-position",
+                    min_width=64,
+                    scale=0,
+                )
+                btn_inspect_next = gr.Button(
+                    "Next →",
+                    size="sm",
+                    min_width=76,
+                    scale=0,
+                    elem_classes="inspect-next",
+                )
 
         with gr.Tabs(selected="inspect" if read_only else None):
             with gr.Tab("Review Queue", visible=not read_only):
@@ -1724,6 +1940,29 @@ def build_app(read_only: bool = False) -> gr.Blocks:
                 inspect_prediction_default = "with_predictions" if read_only else "all"
                 inspect_evaluation_default = "with_evaluations" if read_only else "all"
 
+                if not read_only:
+                    with gr.Row(elem_classes="inspect-top-nav inspect-inline-nav"):
+                        btn_inspect_prev = gr.Button(
+                            "← Prev",
+                            size="sm",
+                            min_width=76,
+                            scale=0,
+                            elem_classes="inspect-prev",
+                        )
+                        inspect_position = gr.Markdown(
+                            "0 / 0",
+                            elem_classes="inspect-position",
+                            min_width=64,
+                            scale=0,
+                        )
+                        btn_inspect_next = gr.Button(
+                            "Next →",
+                            size="sm",
+                            min_width=76,
+                            scale=0,
+                            elem_classes="inspect-next",
+                        )
+
                 with gr.Row(variant="compact", elem_classes="inspect-toolbar"):
                     inspect_status = gr.Dropdown(
                         choices=[(label, key) for key, label in _INSPECT_STATES],
@@ -1731,18 +1970,8 @@ def build_app(read_only: bool = False) -> gr.Blocks:
                         label="Status",
                         show_label=False,
                         container=False,
+                        filterable=False,
                         min_width=150,
-                        scale=1,
-                    )
-                    inspect_subreddit = gr.Dropdown(
-                        choices=_inspect_subreddit_choices()
-                        if _DB_PATH.exists()
-                        else [("All subs", "all")],
-                        value="all",
-                        label="Subreddit",
-                        show_label=False,
-                        container=False,
-                        min_width=118,
                         scale=1,
                     )
                     inspect_search = gr.Textbox(
@@ -1763,6 +1992,7 @@ def build_app(read_only: bool = False) -> gr.Blocks:
                         label="Prediction coverage",
                         show_label=False,
                         container=False,
+                        filterable=False,
                         min_width=116,
                         scale=1,
                     )
@@ -1774,6 +2004,7 @@ def build_app(read_only: bool = False) -> gr.Blocks:
                         label="Prediction model",
                         show_label=False,
                         container=False,
+                        filterable=False,
                         min_width=116,
                         scale=1,
                     )
@@ -1787,7 +2018,23 @@ def build_app(read_only: bool = False) -> gr.Blocks:
                         label="Evaluation coverage",
                         show_label=False,
                         container=False,
+                        filterable=False,
                         min_width=112,
+                        scale=1,
+                    )
+                    inspect_verdict_filter = gr.Dropdown(
+                        choices=[
+                            ("Any verdict", "all"),
+                            ("All right", "all_correct"),
+                            ("All wrong", "all_incorrect"),
+                            ("Mixed", "mixed"),
+                        ],
+                        value="all",
+                        label="Judge result",
+                        show_label=False,
+                        container=False,
+                        filterable=False,
+                        min_width=116,
                         scale=1,
                     )
                     btn_inspect_apply = gr.Button(
@@ -1796,18 +2043,6 @@ def build_app(read_only: bool = False) -> gr.Blocks:
                         size="sm",
                         min_width=64,
                         scale=0,
-                    )
-                    btn_inspect_prev = gr.Button(
-                        "← Prev", size="sm", min_width=76, scale=0
-                    )
-                    inspect_position = gr.Markdown(
-                        "0 / 0",
-                        elem_classes="inspect-position",
-                        min_width=64,
-                        scale=0,
-                    )
-                    btn_inspect_next = gr.Button(
-                        "Next →", size="sm", min_width=76, scale=0
                     )
 
                 with gr.Row():
@@ -1828,6 +2063,30 @@ def build_app(read_only: bool = False) -> gr.Blocks:
                         inspect_comments = gr.Markdown(visible=False)
 
                 inspect_post_id = gr.Textbox(visible=False)
+
+                with gr.Accordion("🏷️ Tags", open=False, visible=not read_only):
+                    inspect_tags = gr.Markdown()
+                    with gr.Row():
+                        tag_select = gr.Dropdown(
+                            choices=_tag_choices() if _DB_PATH.exists() else [],
+                            label="Existing tag",
+                            filterable=False,
+                            scale=1,
+                        )
+                        tag_new = gr.Textbox(
+                            label="New tag",
+                            placeholder="e.g. failure: visual reference miss",
+                            scale=1,
+                        )
+                    tag_notes = gr.Textbox(
+                        label="Notes",
+                        placeholder="Why this is a good example",
+                        lines=2,
+                    )
+                    with gr.Row():
+                        btn_add_tag = gr.Button("Add tag", variant="primary")
+                        btn_remove_tag = gr.Button("Remove selected tag")
+                    tag_feedback = gr.Markdown()
 
                 with gr.Accordion(
                     "🚩 A filter got this wrong", open=False, visible=not read_only
@@ -1865,6 +2124,7 @@ def build_app(read_only: bool = False) -> gr.Blocks:
                     inspect_meta,
                     inspect_predictions,
                     inspect_comments,
+                    inspect_tags,
                     inspect_post_id,
                     misfire_gate,
                 ]
@@ -1872,11 +2132,11 @@ def build_app(read_only: bool = False) -> gr.Blocks:
                     inspect_apply,
                     inputs=[
                         inspect_status,
-                        inspect_subreddit,
                         inspect_search,
                         inspect_prediction_filter,
                         inspect_model,
                         inspect_evaluation_filter,
+                        inspect_verdict_filter,
                     ],
                     outputs=[
                         inspect_ids_state,
@@ -1901,24 +2161,35 @@ def build_app(read_only: bool = False) -> gr.Blocks:
                         inputs=[inspect_post_id, misfire_gate, misfire_correct, misfire_notes],
                         outputs=[misfire_feedback, misfire_correct, misfire_notes],
                     )
-                # Refresh subreddit options + load the first page on tab activation.
+                # Refresh model options + load the first page on tab activation.
                 inspect_tab.select(
-                lambda: (
-                    gr.update(choices=_inspect_subreddit_choices()),
-                    gr.update(choices=_inspect_prediction_model_choices()),
-                ),
-                    outputs=[inspect_subreddit, inspect_model],
+                    lambda: (
+                        gr.update(choices=_inspect_prediction_model_choices()),
+                        gr.update(choices=_tag_choices()),
+                    ),
+                    outputs=[inspect_model, tag_select],
                 )
+                if not read_only:
+                    btn_add_tag.click(
+                        add_current_tag,
+                        inputs=[inspect_post_id, tag_select, tag_new, tag_notes],
+                        outputs=[inspect_tags, tag_select, tag_feedback],
+                    )
+                    btn_remove_tag.click(
+                        remove_current_tag,
+                        inputs=[inspect_post_id, tag_select],
+                        outputs=[inspect_tags, tag_select, tag_feedback],
+                    )
                 if read_only:
                     app.load(
                         inspect_apply,
                         inputs=[
                             inspect_status,
-                            inspect_subreddit,
                             inspect_search,
                             inspect_prediction_filter,
                             inspect_model,
                             inspect_evaluation_filter,
+                            inspect_verdict_filter,
                         ],
                         outputs=[
                             inspect_ids_state,
@@ -2120,26 +2391,108 @@ def build_app(read_only: bool = False) -> gr.Blocks:
 
 
 CSS = """
+.app-header {
+    align-items: center !important;
+    gap: 16px !important;
+    flex-wrap: nowrap !important;
+    margin: 0 0 4px 0 !important;
+}
+
+.app-title-block {
+    flex: 1 1 auto !important;
+    width: auto !important;
+    max-width: calc(100% - 320px) !important;
+    min-width: 0 !important;
+    padding: 0 !important;
+    border: 0 !important;
+}
+
+.app-title-content {
+    display: flex !important;
+    align-items: baseline !important;
+    gap: 18px !important;
+}
+
+.app-title-content h1 {
+    margin: 0 !important;
+    line-height: 1.1 !important;
+}
+
+.app-mode-note {
+    color: var(--body-text-color-subdued) !important;
+    font-size: 15px !important;
+    font-style: italic !important;
+    white-space: nowrap !important;
+}
+
+.inspect-top-nav {
+    align-items: center !important;
+    justify-content: flex-end !important;
+    gap: 10px !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    flex: 0 0 auto !important;
+    min-width: 296px !important;
+}
+
+.app-header .inspect-position {
+    flex: 0 0 64px !important;
+}
+
+.app-header .inspect-prev,
+.app-header .inspect-next {
+    flex: 0 0 auto !important;
+}
+
+.inspect-inline-nav {
+    margin: 0 0 8px 0 !important;
+}
+
+.inspect-top-nav button,
+.app-header .inspect-prev,
+.app-header .inspect-next {
+    min-height: 32px !important;
+    height: 32px !important;
+    padding: 0 12px !important;
+    font-size: 14px !important;
+    border-radius: 6px !important;
+}
+
 .inspect-toolbar {
     gap: 6px !important;
     margin: 0 0 10px 0 !important;
     padding: 6px !important;
     align-items: center !important;
     border-radius: 6px !important;
+    overflow: visible !important;
+    position: relative !important;
+    z-index: 30 !important;
 }
 
 .inspect-toolbar .block {
     min-width: 0 !important;
+    overflow: visible !important;
 }
 
-.inspect-toolbar label {
+.inspect-toolbar .wrap,
+.inspect-toolbar .wrap-inner,
+.inspect-toolbar .secondary-wrap {
+    overflow: visible !important;
+}
+
+.inspect-toolbar .options,
+.gradio-container .options {
+    z-index: 10000 !important;
+}
+
+.inspect-toolbar [data-testid="block-info"] {
     display: none !important;
 }
 
 .inspect-toolbar input,
 .inspect-toolbar textarea,
 .inspect-toolbar button,
-.inspect-toolbar [role="listbox"],
+.inspect-toolbar input[role="listbox"],
 .inspect-toolbar [role="combobox"] {
     min-height: 32px !important;
     height: 32px !important;
@@ -2147,7 +2500,7 @@ CSS = """
 
 .inspect-toolbar input,
 .inspect-toolbar textarea,
-.inspect-toolbar [role="listbox"],
+.inspect-toolbar input[role="listbox"],
 .inspect-toolbar [role="combobox"] {
     padding-top: 0 !important;
     padding-bottom: 0 !important;

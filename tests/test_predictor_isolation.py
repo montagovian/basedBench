@@ -16,6 +16,7 @@ import pytest
 
 from basedbench.llm.anthropic import AnthropicPredictor
 from basedbench.llm.openai import OpenAIPredictor
+from basedbench.llm.openrouter import OpenRouterPredictor
 from basedbench.schemas import CuratedMeme
 
 
@@ -104,6 +105,29 @@ async def test_anthropic_predictor_passes_no_tools(tmp_path: Path):
 
 
 @pytest.mark.asyncio
+async def test_openrouter_predictor_passes_no_tools(tmp_path: Path):
+    predictor = OpenRouterPredictor(api_key="or-x", model="x-ai/grok-4.3")
+    fake_response = SimpleNamespace(
+        choices=[SimpleNamespace(message=SimpleNamespace(content="ok"))],
+        usage=SimpleNamespace(prompt_tokens=10, completion_tokens=5),
+    )
+    predictor._client.chat.completions.create = AsyncMock(  # type: ignore[attr-defined]
+        return_value=fake_response
+    )
+
+    meme = _make_meme(tmp_path / "p1.png")
+    await predictor.predict(meme, dataset_version="v1")
+
+    call_kwargs = predictor._client.chat.completions.create.call_args.kwargs  # type: ignore[attr-defined]
+    leaked = FORBIDDEN_KWARGS & set(call_kwargs.keys())
+    assert not leaked, (
+        f"OpenRouter predictor passed forbidden kwargs {leaked}; "
+        "this would let the model use external tools (web search etc.) "
+        "and invalidate the benchmark."
+    )
+
+
+@pytest.mark.asyncio
 async def test_predictors_only_send_image_and_static_prompt(tmp_path: Path):
     """The user-side message content should be exactly the static prompt + image —
     no title, no comments, no permalink, no ground truth."""
@@ -130,5 +154,32 @@ async def test_predictors_only_send_image_and_static_prompt(tmp_path: Path):
     for forbidden in ("DISTINCTIVE-TITLE", "GROUND-TRUTH-SHOULD", "PERMALINK-SHOULD"):
         assert forbidden not in blob, (
             f"Found '{forbidden}' in OpenAI predict kwargs — meme metadata "
+            "is leaking into the predict call"
+        )
+
+
+@pytest.mark.asyncio
+async def test_openrouter_predictor_only_sends_image_and_static_prompt(tmp_path: Path):
+    predictor = OpenRouterPredictor(api_key="or-x", model="x-ai/grok-4.3")
+    fake_response = SimpleNamespace(
+        choices=[SimpleNamespace(message=SimpleNamespace(content="ok"))],
+        usage=SimpleNamespace(prompt_tokens=10, completion_tokens=5),
+    )
+    predictor._client.chat.completions.create = AsyncMock(  # type: ignore[attr-defined]
+        return_value=fake_response
+    )
+
+    meme = _make_meme(tmp_path / "p1.png")
+    meme.title = "DISTINCTIVE-TITLE-THAT-SHOULD-NOT-APPEAR"
+    meme.ground_truth_explanation = "GROUND-TRUTH-SHOULD-NOT-APPEAR"
+    meme.permalink = "/r/memes/PERMALINK-SHOULD-NOT-APPEAR"
+
+    await predictor.predict(meme, dataset_version="v1")
+
+    call_kwargs = predictor._client.chat.completions.create.call_args.kwargs  # type: ignore[attr-defined]
+    blob = repr(call_kwargs)
+    for forbidden in ("DISTINCTIVE-TITLE", "GROUND-TRUTH-SHOULD", "PERMALINK-SHOULD"):
+        assert forbidden not in blob, (
+            f"Found '{forbidden}' in OpenRouter predict kwargs — meme metadata "
             "is leaking into the predict call"
         )

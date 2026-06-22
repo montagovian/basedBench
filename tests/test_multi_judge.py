@@ -165,6 +165,40 @@ def test_judgment_counts_split_by_judge(db: Database):
     assert by_model["gpt-5.5"].rate == 0.5
 
 
+def test_consensus_judgment_counts_use_majority_vote(db: Database):
+    _setup_validated_meme(db, "post1")
+    _setup_validated_meme(db, "post2")
+    _setup_validated_meme(db, "post3")
+    q.insert_prediction(db, ModelPrediction.success("post1", "v1", "gpt-5.5", "a", 1, 1))
+    q.insert_prediction(db, ModelPrediction.success("post2", "v1", "gpt-5.5", "b", 1, 1))
+    q.insert_prediction(db, ModelPrediction.success("post3", "v1", "gpt-5.5", "c", 1, 1))
+    q.register_prompt(db, "vJ", "judge", "s", "u", "1.0")
+    pid1 = q.find_prediction_id(db, "post1", "gpt-5.5")
+    pid2 = q.find_prediction_id(db, "post2", "gpt-5.5")
+    pid3 = q.find_prediction_id(db, "post3", "gpt-5.5")
+
+    q.insert_judgment(db, pid1, "correct", "", "gpt-5.4-mini", "vJ")
+    q.insert_judgment(db, pid1, "correct", "", "claude-sonnet-4-6", "vJ")
+    q.insert_judgment(db, pid1, "incorrect", "", "z-ai/glm-5.2", "vJ")
+
+    q.insert_judgment(db, pid2, "correct", "", "gpt-5.4-mini", "vJ")
+    q.insert_judgment(db, pid2, "incorrect", "", "claude-sonnet-4-6", "vJ")
+    q.insert_judgment(db, pid2, "incorrect", "", "z-ai/glm-5.2", "vJ")
+
+    # Two judges disagree, so no consensus verdict is available for post3.
+    q.insert_judgment(db, pid3, "correct", "", "gpt-5.4-mini", "vJ")
+    q.insert_judgment(db, pid3, "incorrect", "", "claude-sonnet-4-6", "vJ")
+
+    counts = q.get_consensus_judgment_counts(db)
+
+    assert len(counts) == 1
+    assert counts[0].model_id == "gpt-5.5"
+    assert counts[0].judged == 2
+    assert counts[0].correct == 1
+    assert counts[0].incorrect == 1
+    assert counts[0].accuracy == 0.5
+
+
 def test_agreement_excludes_solo_judged_predictions(db: Database):
     """A prediction with only one judge shouldn't count toward agreement at all."""
     _setup_validated_meme(db, "post1")

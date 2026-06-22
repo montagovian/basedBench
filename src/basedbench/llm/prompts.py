@@ -1,7 +1,4 @@
-"""Prompt constants and utilities for LLM interactions.
-
-All prompt text is copied verbatim from v4 to ensure identical behavior.
-"""
+"""Prompt constants and utilities for LLM interactions."""
 
 from __future__ import annotations
 
@@ -21,8 +18,8 @@ You are an expert at understanding and explaining internet memes.
 
 When shown a meme image, provide a clear explanation that:
 1. Identifies any references (cultural, media, internet, etc.)
-2. Explains why it's funny or what the joke is
-3. Notes any visual elements that are important to the humor
+2. States what the joke is: the setup, implication, contrast, inversion, irony, wordplay, or other mechanism the viewer is meant to notice
+3. Notes any visual elements that are important to getting the joke
 
 Be direct and informative. If you genuinely don't understand the meme, say so honestly."""
 
@@ -33,13 +30,13 @@ Be direct and informative. If you genuinely don't understand the meme, say so ho
 CONSENSUS_SYSTEM_PROMPT = """\
 You are an expert at analyzing Reddit comments to determine whether they contain a usable consensus explanation for a meme.
 
-Given Reddit comments about a meme, decide whether there is a clear shared interpretation of what the meme means and why it is funny.
+Given Reddit comments about a meme, decide whether there is a clear shared interpretation of what joke the meme is making.
 
 Mark has_consensus as true only when ALL of these are met:
 1. At least 3 comments support the same core interpretation.
-2. In ordinary cases, at least 2 supporting comments are substantive: they explain the reference, setup, punchline, implication, wordplay, irony, visual trick, or why the meme is funny.
+2. In ordinary cases, at least 2 supporting comments are substantive: they explain the reference, setup, punchline, implication, wordplay, irony, visual trick, or other thing a viewer must notice to get the joke.
 3. The resulting explanation is specific enough to become a benchmark ground truth and includes the relevant reference, person, event, phrase, meme format, or situation when the comments provide it.
-4. The humor mechanism can be stated clearly: pun, irony, contrast, subverted expectation, stereotype inversion, absurd juxtaposition, cultural reference, visual trick, tragic irony, recognition joke, or similar.
+4. The joke can be stated clearly: pun, irony, contrast, subverted expectation, stereotype inversion, absurd juxtaposition, cultural reference, visual trick, tragic irony, recognition joke, or similar.
 
 Support-counting rules:
 - Do NOT require all 3 agreeing comments to independently write a complete formal explanation.
@@ -56,7 +53,7 @@ Support-counting rules:
 Reject with has_consensus false if:
 - Fewer than 3 comments support the same core interpretation.
 - The comments disagree on the central reference or joke mechanism.
-- The comments only identify a reference and no supported explanation of the humor can be recovered.
+- The comments only identify a reference and no supported explanation of the joke/setup/implication can be recovered.
 - The explanation is just a one-step decoding of a symbol, acronym, number, or phrase and the comments do not establish a specific meme scenario or implication beyond that decoding.
 - The explanation would be generic enough to apply to many unrelated memes.
 - The meme relies on "you had to be there" humor with no transferable explanation.
@@ -66,7 +63,7 @@ When has_consensus is true:
 - Include only comment IDs that support the selected interpretation.
 - Write selected_explanation as a concise ground-truth explanation of the joke, not a summary of the comment thread.
 - Include specific names, titles, events, phrases, or handles when the comments identify them.
-- Explain why the meme is funny, not just what it references.
+- Explain what a viewer must understand to get the joke, not just what the meme references. Do not require or invent a psychological theory of why someone feels amused.
 - Avoid vague filler phrases such as "it's just", "everyone can relate", "pretty self-explanatory", "absurd humor", "random humor", or "no clear meaning".
 
 Respond in JSON format:
@@ -94,18 +91,20 @@ You are a strict judge evaluating whether a model's meme explanation matches the
 Compare the model's explanation to the ground truth and determine if the model correctly understood the meme.
 
 CORRECT if the model:
-- Identifies the SAME core joke mechanism (pun, irony, reference, etc.)
-- Names the SAME specific people, events, or references mentioned in ground truth
-- Demonstrates understanding of WHY it's funny, not just WHAT is shown
+- Gets the joke: it identifies the same core setup, implication, contrast, inversion, irony, wordplay, reference, or other mechanism that the ground truth identifies
+- Names the same specific people, events, memes, media, phrases, or references mentioned in the ground truth
+- Correctly states what is funny, ironic, contrastive, implied, or otherwise notable about the overall setup
 
 INCORRECT if the model:
 - Misses specific names, events, or references that the ground truth mentions
 - Provides only a generic understanding without the specific target
 - Gets the wrong interpretation entirely
-- Gives a literal description without understanding the humor
+- Gives a literal description without getting the joke
 - Identifies the right general area but misses the specific joke
 
-CRITICAL: If the ground truth mentions a SPECIFIC person, event, show, or reference by name, the model MUST identify it to be correct. A generic understanding is NOT sufficient.
+CRITICAL: If the ground truth mentions a SPECIFIC person, event, show, meme, phrase, or reference by name, the model MUST identify it to be correct. A generic understanding is NOT sufficient.
+
+Do not require the model to explain the psychology of amusement or give a theory of why humor works. The benchmark is about whether the model gets the joke in the same sense as the consensus comments: the relevant references plus the intended setup, implication, contrast, irony, or wordplay.
 
 Respond in JSON format:
 {
@@ -226,9 +225,19 @@ def prompt_id(role: str, system: str, user_template: str) -> str:
 
 
 _MIME_BY_EXT = {
+    "jpg": "image/jpeg",
+    "jpeg": "image/jpeg",
     "png": "image/png",
     "gif": "image/gif",
     "webp": "image/webp",
+}
+
+_OPENROUTER_IMAGE_MIME_BY_EXT = {
+    "jpg": "image/jpeg",
+    "jpeg": "image/jpeg",
+    "png": "image/png",
+    "webp": "image/webp",
+    "ico": "image/x-icon",
 }
 
 
@@ -242,6 +251,27 @@ def load_image_base64(path: Path) -> tuple[str, str]:
     ext = path.suffix.lstrip(".").lower()
     mime = _MIME_BY_EXT.get(ext, "image/jpeg")
     return b64, mime
+
+
+def load_image_base64_for_openrouter(path: Path) -> tuple[str, str]:
+    """Read an image for OpenRouter-hosted VLMs.
+
+    Some OpenRouter providers, including xAI Grok, reject GIF payloads even
+    though the corpus contains them. Preserve directly supported still formats
+    and convert everything else to a JPEG still frame.
+    """
+    ext = path.suffix.lstrip(".").lower()
+    if ext in _OPENROUTER_IMAGE_MIME_BY_EXT:
+        data = path.read_bytes()
+        b64 = base64.standard_b64encode(data).decode("ascii")
+        return b64, _OPENROUTER_IMAGE_MIME_BY_EXT[ext]
+
+    with Image.open(path) as raw_image:
+        image = ImageOps.exif_transpose(raw_image).convert("RGB")
+        out = io.BytesIO()
+        image.save(out, format="JPEG", quality=90, optimize=True)
+        b64 = base64.standard_b64encode(out.getvalue()).decode("ascii")
+        return b64, "image/jpeg"
 
 
 def load_image_base64_under_limit(

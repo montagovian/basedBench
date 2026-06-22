@@ -71,9 +71,29 @@ def _new_record(model: str, post_id: str, user_prompt: str, prompt_id: str) -> L
     )
 
 
+def _normalize_json_response(text: str) -> str:
+    """Accept plain JSON plus common fenced-JSON wrappers from OpenAI-compatible APIs."""
+    stripped = text.strip()
+    if stripped.startswith("```"):
+        lines = stripped.splitlines()
+        if (
+            len(lines) >= 3
+            and lines[0].strip().startswith("```")
+            and lines[-1].strip() == "```"
+        ):
+            stripped = "\n".join(lines[1:-1]).strip()
+    if stripped.startswith("{"):
+        return stripped
+    start = stripped.find("{")
+    end = stripped.rfind("}")
+    if start != -1 and end > start:
+        return stripped[start : end + 1].strip()
+    return stripped
+
+
 def _parse_verdict(text: str, record: LlmCallRecord) -> JudgeResult:
     try:
-        parsed = _JudgeResponse.model_validate_json(text)
+        parsed = _JudgeResponse.model_validate_json(_normalize_json_response(text))
     except ValueError as e:
         record.error = f"judge response parse: {e}"
         raise LlmJsonParseError(f"judge response: {e}") from e
@@ -187,6 +207,62 @@ class AnthropicJudge:
         return result, record
 
 
+class OpenRouterJudge:
+    """OpenRouter-backed judge using OpenRouter's OpenAI-compatible API."""
+
+    def __init__(self, api_key: str, model: str) -> None:
+        self._client = AsyncOpenAI(
+            api_key=api_key,
+            base_url="https://openrouter.ai/api/v1",
+            default_headers={
+                "HTTP-Referer": "https://github.com/basedbench/basedbench",
+                "X-Title": "basedBench",
+            },
+        )
+        self.model_id = model
+        self.prompt_id = prompts.prompt_id("judge", JUDGE_SYSTEM_PROMPT, JUDGE_USER_TEMPLATE)
+
+    async def judge(
+        self, prediction: str, ground_truth: str, post_id: str
+    ) -> tuple[JudgeResult, LlmCallRecord]:
+        user_prompt = _user_prompt(prediction, ground_truth)
+        record = _new_record(self.model_id, post_id, user_prompt, self.prompt_id)
+
+        start = time.monotonic()
+        try:
+            async for attempt in openai_retry():
+                with attempt:
+                    response = await self._client.chat.completions.create(
+                        model=self.model_id,
+                        messages=[
+                            {"role": "system", "content": JUDGE_SYSTEM_PROMPT},
+                            {"role": "user", "content": user_prompt},
+                        ],
+                        temperature=0.0,
+                        max_tokens=2000,
+                        response_format={"type": "json_object"},
+                    )
+        except openai.OpenAIError as e:
+            record.latency_ms = int((time.monotonic() - start) * 1000)
+            record.error = str(e)
+            raise OpenAIError(
+                str(e),
+                fatal=is_fatal_llm_error(e),
+                code=getattr(e, "code", None),
+            ) from e
+
+        record.latency_ms = int((time.monotonic() - start) * 1000)
+        text = response.choices[0].message.content or "" if response.choices else ""
+        record.response = text
+        usage = getattr(response, "usage", None)
+        if usage is not None:
+            record.prompt_tokens = getattr(usage, "prompt_tokens", None)
+            record.completion_tokens = getattr(usage, "completion_tokens", None)
+
+        result = _parse_verdict(text, record)
+        return result, record
+
+
 def make_judge(model_id: str, config: Config) -> Judge:
     """Route model_id to the correct provider implementation."""
     if model_id.startswith("gpt-") or model_id.startswith("o"):
@@ -197,4 +273,10 @@ def make_judge(model_id: str, config: Config) -> Judge:
                 f"ANTHROPIC_API_KEY required for judge model {model_id!r}"
             )
         return AnthropicJudge(config.anthropic_api_key, model_id)
+    if "/" in model_id:
+        if not config.openrouter_api_key:
+            raise ValueError(
+                f"OPENROUTER_API_KEY required for judge model {model_id!r}"
+            )
+        return OpenRouterJudge(config.openrouter_api_key, model_id)
     raise ValueError(f"Unknown judge model provider: {model_id!r}")

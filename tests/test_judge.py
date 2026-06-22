@@ -57,6 +57,36 @@ async def test_judge_incorrect_verdict():
 
 
 @pytest.mark.asyncio
+async def test_judge_accepts_fenced_json_verdict():
+    judge = _judge()
+    judge._client.chat.completions.create = AsyncMock(  # type: ignore[attr-defined]
+        return_value=_mock_response(
+            '```json\n{"reasoning": "same joke", "verdict": "correct"}\n```'
+        )
+    )
+
+    result, record = await judge.judge("prediction text", "ground truth", "p1")
+
+    assert result.verdict == JudgeVerdict.CORRECT
+    assert record.verdict == "correct"
+
+
+@pytest.mark.asyncio
+async def test_judge_accepts_prefaced_json_verdict():
+    judge = _judge()
+    judge._client.chat.completions.create = AsyncMock(  # type: ignore[attr-defined]
+        return_value=_mock_response(
+            'The model provided no explanation.\n{"reasoning": "missing", "verdict": "incorrect"}'
+        )
+    )
+
+    result, record = await judge.judge("prediction text", "ground truth", "p1")
+
+    assert result.verdict == JudgeVerdict.INCORRECT
+    assert record.verdict == "incorrect"
+
+
+@pytest.mark.asyncio
 async def test_judge_invalid_verdict_raises():
     judge = _judge()
     judge._client.chat.completions.create = AsyncMock(  # type: ignore[attr-defined]

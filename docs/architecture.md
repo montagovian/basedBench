@@ -11,8 +11,13 @@ Reddit -> image download -> safety gate -> consensus -> human review
 ```
 
 The benchmark target is intentionally narrow: a model receives only the meme
-image and must explain the joke. Ground truth is derived from Reddit comment
-consensus and then validated by a human reviewer.
+image and must show that it gets the joke. Ground truth is derived from Reddit
+comment consensus and then validated by a human reviewer.
+
+"Gets the joke" means the model identifies the relevant references and
+reconstructs the intended setup, implication, contrast, inversion, irony,
+wordplay, or similar mechanism. It does not mean the model must explain the
+psychology of why humans find something funny.
 
 ## Main Components
 
@@ -48,6 +53,8 @@ dataset artifacts.
 
 - Predictors see the image only: no title, comments, Reddit metadata, tools, or
   web search.
+- Predictors and judges should optimize for getting the same joke as the
+  consensus ground truth, not for producing a general theory of humor.
 - Normal prediction and judging operate on currently validated memes.
 - Failed prediction rows are excluded from snapshot export and leaderboard
   helpers.

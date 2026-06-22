@@ -6,7 +6,7 @@ import httpx
 import openai
 import pytest
 
-from basedbench.errors import OpenAIError, is_fatal_llm_error
+from basedbench.errors import ConfigError, OpenAIError, is_fatal_llm_error
 
 
 def _make_rate_limit_error(status: int, code: str | None) -> openai.RateLimitError:
@@ -60,6 +60,71 @@ def test_500_server_error_is_transient():
     """Server errors are retryable, not fatal."""
     e = _make_rate_limit_error(500, None)
     assert not is_fatal_llm_error(e)
+
+
+def test_make_judge_routes_slash_model_to_openrouter():
+    from basedbench.config import Config
+    from basedbench.llm.judge import OpenRouterJudge, make_judge
+
+    config = Config(  # type: ignore[call-arg]
+        reddit_client_id="x",
+        reddit_client_secret="y",
+        openai_api_key="sk-test",
+        openrouter_api_key="or-test",
+    )
+
+    judge = make_judge("z-ai/glm-5.2", config)
+
+    assert isinstance(judge, OpenRouterJudge)
+    assert judge.model_id == "z-ai/glm-5.2"
+
+
+def test_make_judge_requires_openrouter_key_for_slash_model():
+    from basedbench.config import Config
+    from basedbench.llm.judge import make_judge
+
+    config = Config(  # type: ignore[call-arg]
+        reddit_client_id="x",
+        reddit_client_secret="y",
+        openai_api_key="sk-test",
+        openrouter_api_key=None,
+    )
+
+    with pytest.raises(ValueError, match="OPENROUTER_API_KEY"):
+        make_judge("z-ai/glm-5.2", config)
+
+
+def test_build_predictor_routes_slash_model_to_openrouter():
+    from basedbench.config import Config
+    from basedbench.llm.openrouter import OpenRouterPredictor
+    from basedbench.pipeline.predict import _build_predictor
+
+    config = Config(  # type: ignore[call-arg]
+        reddit_client_id="x",
+        reddit_client_secret="y",
+        openai_api_key="sk-test",
+        openrouter_api_key="or-test",
+    )
+
+    predictor = _build_predictor("x-ai/grok-4.3", config)
+
+    assert isinstance(predictor, OpenRouterPredictor)
+    assert predictor.model_id == "x-ai/grok-4.3"
+
+
+def test_build_predictor_requires_openrouter_key_for_slash_model():
+    from basedbench.config import Config
+    from basedbench.pipeline.predict import _build_predictor
+
+    config = Config(  # type: ignore[call-arg]
+        reddit_client_id="x",
+        reddit_client_secret="y",
+        openai_api_key="sk-test",
+        openrouter_api_key=None,
+    )
+
+    with pytest.raises(ConfigError, match="OPENROUTER_API_KEY"):
+        _build_predictor("x-ai/grok-4.3", config)
 
 
 # ─── Consensus raises on fatal, swallows transient errors ───

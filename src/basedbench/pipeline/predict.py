@@ -19,10 +19,17 @@ from basedbench.errors import (
 )
 from basedbench.llm.anthropic import AnthropicPredictor
 from basedbench.llm.openai import OpenAIPredictor
+from basedbench.llm.openrouter import OpenRouterPredictor
 from basedbench.llm.prompts import EXPLAIN_MEME_PROMPT
 from basedbench.llm.provider import Predictor
 from basedbench.pipeline._progress import make_progress
-from basedbench.schemas import CuratedMeme, dataset_version, display_index, is_anthropic_model
+from basedbench.schemas import (
+    CuratedMeme,
+    dataset_version,
+    display_index,
+    is_anthropic_model,
+    is_openrouter_model,
+)
 
 log = logging.getLogger(__name__)
 
@@ -42,6 +49,10 @@ def _build_predictor(model: str, config: Config) -> Predictor:
         if not config.anthropic_api_key:
             raise ConfigError("ANTHROPIC_API_KEY required for Claude models")
         return AnthropicPredictor(config.anthropic_api_key, model)
+    if is_openrouter_model(model):
+        if not config.openrouter_api_key:
+            raise ConfigError(f"OPENROUTER_API_KEY required for {model}")
+        return OpenRouterPredictor(config.openrouter_api_key, model)
     return OpenAIPredictor(config.openai_api_key, model)
 
 

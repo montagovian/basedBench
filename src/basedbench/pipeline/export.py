@@ -14,6 +14,7 @@ from rich.console import Console
 from basedbench.config import Config
 from basedbench.db import queries
 from basedbench.db.connection import Database
+from basedbench.model_policy import is_active_summary_model
 
 
 def _safe_model_name(model_id: str) -> str:
@@ -74,8 +75,14 @@ def run(
                     + "\n"
                 )
 
-    leaderboard = queries.snapshot_leaderboard(db, snapshot.snapshot_id)
-    agreement = queries.get_judge_agreement(db, snapshot.snapshot_id)
+    leaderboard = [
+        e for e in queries.snapshot_leaderboard(db, snapshot.snapshot_id)
+        if is_active_summary_model(e.model_id)
+    ]
+    agreement = [
+        a for a in queries.get_judge_agreement(db, snapshot.snapshot_id)
+        if is_active_summary_model(a.model_id)
+    ]
     with (output_dir / "data" / "leaderboard.json").open("w") as f:
         json.dump(
             {
@@ -168,7 +175,8 @@ ds = load_dataset("path/to/export")
 
 Ground truth explanations are extracted from Reddit comments via LLM consensus
 detection (>=3 comments agreeing on the same specific explanation). Each model
-prediction is judged as correct/incorrect by an LLM judge using strict criteria.
+prediction is judged by an LLM judge ensemble using strict criteria; leaderboard
+accuracy uses the consensus verdict where at least two judges agree.
 
 ## Content and Privacy
 

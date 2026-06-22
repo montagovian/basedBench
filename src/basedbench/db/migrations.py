@@ -353,6 +353,26 @@ CREATE INDEX IF NOT EXISTS idx_image_fingerprints_exact_hash
 """
 
 
+MIGRATION_011 = """\
+CREATE TABLE IF NOT EXISTS tags (
+    tag_id INTEGER PRIMARY KEY AUTOINCREMENT,
+    name TEXT NOT NULL COLLATE NOCASE UNIQUE,
+    description TEXT,
+    created_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS meme_tags (
+    post_id TEXT NOT NULL REFERENCES memes(post_id) ON DELETE CASCADE,
+    tag_id INTEGER NOT NULL REFERENCES tags(tag_id) ON DELETE CASCADE,
+    notes TEXT,
+    created_at TEXT NOT NULL,
+    PRIMARY KEY (post_id, tag_id)
+);
+CREATE INDEX IF NOT EXISTS idx_meme_tags_tag_id ON meme_tags(tag_id);
+CREATE INDEX IF NOT EXISTS idx_meme_tags_post_id ON meme_tags(post_id);
+"""
+
+
 def _column_exists(conn: sqlite3.Connection, table: str, column: str) -> bool:
     cursor = conn.execute(
         f"SELECT COUNT(*) FROM pragma_table_info('{table}') WHERE name = ?",
@@ -405,3 +425,7 @@ def run_migrations(conn: sqlite3.Connection) -> None:
     if version < 10:
         conn.executescript(MIGRATION_010)
         conn.execute("PRAGMA user_version = 10")
+
+    if version < 11:
+        conn.executescript(MIGRATION_011)
+        conn.execute("PRAGMA user_version = 11")

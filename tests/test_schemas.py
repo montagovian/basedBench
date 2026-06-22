@@ -10,6 +10,7 @@ from basedbench.schemas import (
     dataset_version,
     display_index,
     is_anthropic_model,
+    is_openrouter_model,
 )
 
 
@@ -40,6 +41,13 @@ def test_model_id_is_anthropic():
     assert is_anthropic_model("claude-3-opus")
     assert not is_anthropic_model("gpt-4o-mini")
     assert not is_anthropic_model("gemini-pro")
+
+
+def test_model_id_is_openrouter():
+    assert is_openrouter_model("x-ai/grok-4.3")
+    assert is_openrouter_model("z-ai/glm-5.2")
+    assert not is_openrouter_model("gpt-5.5")
+    assert not is_openrouter_model("claude-opus-4-8")
 
 
 def test_display_index():

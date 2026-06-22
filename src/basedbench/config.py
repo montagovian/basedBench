@@ -35,6 +35,7 @@ class Config(BaseSettings):
     # LLM
     openai_api_key: str
     anthropic_api_key: str | None = None
+    openrouter_api_key: str | None = None
 
     # Model selection.
     # consensus is text-only inner-loop calls (run on every meme),
@@ -44,7 +45,7 @@ class Config(BaseSettings):
 
     # Judge ensemble: each prediction is judged by every model in this list to
     # surface judge-family bias. Override via JUDGE_MODELS='["m1","m2"]' (JSON).
-    judge_models: list[str] = ["gpt-5.4-mini", "claude-sonnet-4-6"]
+    judge_models: list[str] = ["gpt-5.4-mini", "claude-sonnet-4-6", "z-ai/glm-5.2"]
 
     # Quality thresholds (same defaults as v4)
     min_agreeing_comments: int = 3

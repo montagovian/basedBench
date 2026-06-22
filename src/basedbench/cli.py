@@ -12,6 +12,7 @@ from rich.console import Console
 from basedbench.config import Config
 from basedbench.db import queries
 from basedbench.db.connection import Database
+from basedbench.model_policy import is_active_summary_model
 from basedbench.pipeline import consensus_eval as consensus_eval_pipe
 from basedbench.pipeline import duplicates as duplicates_pipe
 from basedbench.pipeline import export as export_pipe
@@ -184,8 +185,14 @@ def status() -> None:
     db, config = _load()
     console = Console()
     counts = queries.get_status_counts(db)
-    pred_counts = queries.get_prediction_counts(db)
-    judge_counts = queries.get_judgment_counts(db)
+    pred_counts = [
+        p for p in queries.get_prediction_counts(db)
+        if is_active_summary_model(p.model_id)
+    ]
+    consensus_counts = [
+        c for c in queries.get_consensus_judgment_counts(db)
+        if is_active_summary_model(c.model_id)
+    ]
     snapshots = queries.list_snapshots(db)
 
     console.print(f"Database: {config.database_path}")
@@ -200,20 +207,23 @@ def status() -> None:
         for pc in pred_counts:
             console.print(f"  {pc.model_id:<30} {pc.predicted}/{pc.total_available} predicted")
 
-    if judge_counts:
-        console.print("\n[bold]Judgments:[/bold]")
-        for jc in judge_counts:
+    if consensus_counts:
+        console.print("\n[bold]Consensus judgments:[/bold]")
+        for jc in consensus_counts:
             total = next(
                 (pc.predicted for pc in pred_counts if pc.model_id == jc.model_id),
                 jc.judged,
             )
-            label = f"{jc.model_id} ← {jc.judge_model}"
             console.print(
-                f"  {label:<50} {jc.judged}/{total} judged "
-                f"(accuracy: {jc.accuracy * 100:.1f}%)"
+                f"  {jc.model_id:<30} {jc.judged}/{total} consensus-scored "
+                f"({jc.correct} correct, {jc.incorrect} incorrect, "
+                f"accuracy: {jc.accuracy * 100:.1f}%)"
             )
 
-        agreement = queries.get_judge_agreement(db)
+        agreement = [
+            a for a in queries.get_judge_agreement(db)
+            if is_active_summary_model(a.model_id)
+        ]
         agreement_rows = [a for a in agreement if a.judged_by_multiple > 0]
         if agreement_rows:
             console.print("\n[bold]Judge agreement (predictions scored by ≥2 judges):[/bold]")

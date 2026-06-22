@@ -4,7 +4,11 @@ import base64
 
 from PIL import Image
 
-from basedbench.llm.prompts import load_image_base64, load_image_base64_under_limit
+from basedbench.llm.prompts import (
+    load_image_base64,
+    load_image_base64_for_openrouter,
+    load_image_base64_under_limit,
+)
 
 
 def test_load_image_base64_under_limit_preserves_small_file(tmp_path):
@@ -32,3 +36,13 @@ def test_load_image_base64_under_limit_compresses_large_file(tmp_path):
 
     assert capped_mime == "image/jpeg"
     assert len(base64.standard_b64decode(capped_b64)) <= 20_000
+
+
+def test_load_image_base64_for_openrouter_converts_gif_to_jpeg(tmp_path):
+    path = tmp_path / "animated.gif"
+    Image.new("RGB", (16, 16), "red").save(path)
+
+    b64, mime = load_image_base64_for_openrouter(path)
+
+    assert mime == "image/jpeg"
+    assert base64.standard_b64decode(b64).startswith(b"\xff\xd8")

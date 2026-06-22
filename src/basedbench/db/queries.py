@@ -69,6 +69,15 @@ class ModelJudgmentCount:
 
 
 @dataclass
+class ConsensusJudgmentCount:
+    model_id: str
+    judged: int
+    correct: int
+    incorrect: int
+    accuracy: float
+
+
+@dataclass
 class JudgeAgreement:
     model_id: str
     judged_by_multiple: int
@@ -239,6 +248,23 @@ class LlmCallDetail:
     image_path: str | None
     completion_tokens: int | None
     prompt_tokens: int | None
+
+
+@dataclass
+class Tag:
+    tag_id: int
+    name: str
+    description: str | None
+    created_at: str
+
+
+@dataclass
+class MemeTag:
+    tag_id: int
+    name: str
+    description: str | None
+    notes: str | None
+    created_at: str
 
 
 def _now() -> str:
@@ -1308,34 +1334,17 @@ def snapshot_predictions_for_model(
 
 
 def snapshot_leaderboard(db: Database, snapshot_id: str) -> list[LeaderboardEntry]:
-    """Per-(target, judge) accuracy for a snapshot. Latest judgment per pair wins."""
-    rows = db.conn.execute(
-        """SELECT p.model_id,
-                  j.judge_model,
-                  SUM(CASE WHEN j.verdict = 'correct' THEN 1 ELSE 0 END) as correct,
-                  COUNT(j.verdict) as total
-           FROM predictions p
-           JOIN snapshot_memes sm ON p.post_id = sm.post_id
-           JOIN judgments j ON p.id = j.prediction_id
-           WHERE sm.snapshot_id = ?
-             AND p.error IS NULL
-             AND j.id = (
-               SELECT MAX(j2.id) FROM judgments j2
-               WHERE j2.prediction_id = p.id AND j2.judge_model = j.judge_model
-             )
-           GROUP BY p.model_id, j.judge_model
-           ORDER BY p.model_id, j.judge_model""",
-        (snapshot_id,),
-    ).fetchall()
+    """Consensus accuracy for a snapshot, using latest per-judge verdicts."""
+    counts = get_consensus_judgment_counts(db, snapshot_id)
     return [
         LeaderboardEntry(
-            model_id=r[0],
-            judge_model=r[1] or "(unknown)",
-            correct=r[2],
-            total=r[3],
-            accuracy=r[2] / r[3] if r[3] > 0 else 0.0,
+            model_id=c.model_id,
+            judge_model="consensus",
+            correct=c.correct,
+            total=c.judged,
+            accuracy=c.accuracy,
         )
-        for r in rows
+        for c in counts
     ]
 
 
@@ -1602,6 +1611,82 @@ def get_judgment_counts(db: Database) -> list[ModelJudgmentCount]:
     ]
 
 
+def get_consensus_judgment_counts(
+    db: Database, snapshot_id: str | None = None
+) -> list[ConsensusJudgmentCount]:
+    """Per-target-model majority-vote accuracy across latest judge verdicts.
+
+    A prediction receives a consensus verdict when at least two judges agree.
+    With the default three-judge ensemble this is the usual 2/3 majority. If
+    only one judge has scored a prediction, or two judges disagree, the
+    prediction is excluded from the consensus denominator.
+    """
+    if snapshot_id is not None:
+        scope_join = "JOIN snapshot_memes sm ON p.post_id = sm.post_id"
+        scope_filter = "AND sm.snapshot_id = ?"
+        params: tuple = (snapshot_id,)
+    else:
+        scope_join = "JOIN reviews r ON p.post_id = r.post_id"
+        scope_filter = "AND r.status = 'validated'"
+        params = ()
+
+    query = f"""
+        WITH latest_per_judge AS (
+            SELECT p.id AS prediction_id, p.model_id, j.judge_model, j.verdict
+            FROM predictions p
+            JOIN judgments j ON p.id = j.prediction_id
+            {scope_join}
+            WHERE p.error IS NULL
+              AND j.id = (
+                SELECT MAX(j2.id) FROM judgments j2
+                WHERE j2.prediction_id = p.id AND j2.judge_model = j.judge_model
+              )
+              {scope_filter}
+        ),
+        per_prediction AS (
+            SELECT prediction_id,
+                   model_id,
+                   COUNT(DISTINCT judge_model) AS n_judges,
+                   SUM(CASE WHEN verdict = 'correct' THEN 1 ELSE 0 END) AS correct_votes,
+                   SUM(CASE WHEN verdict = 'incorrect' THEN 1 ELSE 0 END) AS incorrect_votes
+            FROM latest_per_judge
+            GROUP BY prediction_id, model_id
+        ),
+        consensus AS (
+            SELECT model_id,
+                   CASE
+                     WHEN n_judges >= 2
+                      AND correct_votes > incorrect_votes
+                      AND correct_votes >= 2 THEN 'correct'
+                     WHEN n_judges >= 2
+                      AND incorrect_votes > correct_votes
+                      AND incorrect_votes >= 2 THEN 'incorrect'
+                     ELSE NULL
+                   END AS consensus_verdict
+            FROM per_prediction
+        )
+        SELECT model_id,
+               COUNT(consensus_verdict) AS judged,
+               SUM(CASE WHEN consensus_verdict = 'correct' THEN 1 ELSE 0 END) AS correct,
+               SUM(CASE WHEN consensus_verdict = 'incorrect' THEN 1 ELSE 0 END) AS incorrect
+        FROM consensus
+        WHERE consensus_verdict IS NOT NULL
+        GROUP BY model_id
+        ORDER BY model_id
+    """
+    rows = db.conn.execute(query, params).fetchall()
+    return [
+        ConsensusJudgmentCount(
+            model_id=r[0],
+            judged=r[1],
+            correct=r[2] or 0,
+            incorrect=r[3] or 0,
+            accuracy=(r[2] or 0) / r[1] if r[1] > 0 else 0.0,
+        )
+        for r in rows
+    ]
+
+
 def get_judge_agreement(
     db: Database, snapshot_id: str | None = None
 ) -> list[JudgeAgreement]:
@@ -1807,6 +1892,83 @@ def unflag_gate_feedback(db: Database, post_id: str, gate: str) -> bool:
     """Remove a gate-feedback entry. Returns True if a row was deleted."""
     cursor = db.conn.execute(
         "DELETE FROM gate_feedback WHERE post_id = ? AND gate = ?", (post_id, gate)
+    )
+    return cursor.rowcount > 0
+
+
+# ═══════════════════════════════════════════════════════
+# Tags
+# ═══════════════════════════════════════════════════════
+
+
+def _clean_tag_name(name: str) -> str:
+    cleaned = " ".join(name.strip().split())
+    if not cleaned:
+        raise ValueError("tag name cannot be empty")
+    return cleaned
+
+
+def upsert_tag(db: Database, name: str, description: str | None = None) -> int:
+    """Create a reusable tag if needed, returning its id."""
+    cleaned = _clean_tag_name(name)
+    db.conn.execute(
+        """INSERT INTO tags (name, description, created_at)
+           VALUES (?, ?, ?)
+           ON CONFLICT(name) DO UPDATE SET
+             description = COALESCE(excluded.description, tags.description)""",
+        (cleaned, description.strip() if description else None, _now()),
+    )
+    row = db.conn.execute(
+        "SELECT tag_id FROM tags WHERE name = ? COLLATE NOCASE", (cleaned,)
+    ).fetchone()
+    if row is None:
+        raise RuntimeError(f"failed to create tag: {cleaned}")
+    return int(row[0])
+
+
+def list_tags(db: Database) -> list[Tag]:
+    rows = db.conn.execute(
+        """SELECT tag_id, name, description, created_at
+           FROM tags ORDER BY lower(name)"""
+    ).fetchall()
+    return [Tag(*r) for r in rows]
+
+
+def tags_for_meme(db: Database, post_id: str) -> list[MemeTag]:
+    rows = db.conn.execute(
+        """SELECT t.tag_id, t.name, t.description, mt.notes, mt.created_at
+           FROM meme_tags mt
+           JOIN tags t ON t.tag_id = mt.tag_id
+           WHERE mt.post_id = ?
+           ORDER BY lower(t.name)""",
+        (post_id,),
+    ).fetchall()
+    return [MemeTag(*r) for r in rows]
+
+
+def add_meme_tag(
+    db: Database, post_id: str, tag_name: str, notes: str | None = None
+) -> None:
+    tag_id = upsert_tag(db, tag_name)
+    note_value = notes.strip() if notes and notes.strip() else None
+    db.conn.execute(
+        """INSERT INTO meme_tags (post_id, tag_id, notes, created_at)
+           VALUES (?, ?, ?, ?)
+           ON CONFLICT(post_id, tag_id) DO UPDATE SET
+             notes = excluded.notes,
+             created_at = excluded.created_at""",
+        (post_id, tag_id, note_value, _now()),
+    )
+
+
+def remove_meme_tag(db: Database, post_id: str, tag_name: str) -> bool:
+    cursor = db.conn.execute(
+        """DELETE FROM meme_tags
+           WHERE post_id = ?
+             AND tag_id = (
+               SELECT tag_id FROM tags WHERE name = ? COLLATE NOCASE
+             )""",
+        (post_id, _clean_tag_name(tag_name)),
     )
     return cursor.rowcount > 0
 

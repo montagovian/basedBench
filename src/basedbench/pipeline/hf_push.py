@@ -20,6 +20,7 @@ from basedbench.config import Config
 from basedbench.db import queries
 from basedbench.db.connection import Database
 from basedbench.errors import ConfigError
+from basedbench.model_policy import is_active_summary_model
 
 log = logging.getLogger(__name__)
 
@@ -130,8 +131,11 @@ def run(
         console.print(f"Pushing '{cfg}' ({len(preds)} predictions)...")
         pred_ds.push_to_hub(repo, config_name=cfg, token=config.hf_token, private=private)
 
-    # ─── leaderboard config (per-(target, judge) rows) ───
-    leaderboard = queries.snapshot_leaderboard(db, snapshot.snapshot_id)
+    # ─── leaderboard config (per-target consensus rows) ───
+    leaderboard = [
+        e for e in queries.snapshot_leaderboard(db, snapshot.snapshot_id)
+        if is_active_summary_model(e.model_id)
+    ]
     lb_ds = Dataset.from_dict(
         {
             "model_id": [e.model_id for e in leaderboard],

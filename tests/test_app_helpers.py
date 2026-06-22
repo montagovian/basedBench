@@ -60,40 +60,39 @@ def test_classify_state_unreviewed_vs_no_consensus_vs_pending():
 
 
 def test_inspect_where_all_has_no_state_condition():
-    where, params = _inspect_where("all", "all", "")
+    where, params = _inspect_where("all", "")
     assert where == "1=1"
     assert params == []
 
 
 def test_inspect_where_quality_excluded_uses_auto_prefix():
-    where, params = _inspect_where("quality_excluded", "all", "")
+    where, params = _inspect_where("quality_excluded", "")
     assert "r.reason LIKE 'auto:%'" in where
     assert params == []
 
 
-def test_inspect_where_combines_status_subreddit_search():
-    where, params = _inspect_where("validated", "memes", "cat")
+def test_inspect_where_combines_status_search():
+    where, params = _inspect_where("validated", "cat")
     assert "r.status = 'validated'" in where
-    assert "m.subreddit = ?" in where
     assert "m.title LIKE ?" in where
-    assert params == ["memes", "%cat%"]
+    assert params == ["%cat%"]
 
 
 def test_inspect_where_human_excluded_excludes_gate_reasons():
-    where, _ = _inspect_where("human_excluded", "all", "")
+    where, _ = _inspect_where("human_excluded", "")
     assert "NOT LIKE 'safety:%'" in where
     assert "NOT LIKE 'auto:%'" in where
     assert "image_missing" in where
 
 
 def test_inspect_where_prediction_coverage_filters_any_model():
-    where, params = _inspect_where("all", "all", "", "with_predictions", "all")
+    where, params = _inspect_where("all", "", "with_predictions", "all")
     assert "EXISTS (SELECT 1 FROM predictions p" in where
     assert "p.error IS NULL" in where
     assert "p.model_id = ?" not in where
     assert params == []
 
-    where, params = _inspect_where("all", "all", "", "without_predictions", "all")
+    where, params = _inspect_where("all", "", "without_predictions", "all")
     assert "NOT EXISTS (SELECT 1 FROM predictions p" in where
     assert "p.error IS NULL" in where
     assert params == []
@@ -101,18 +100,17 @@ def test_inspect_where_prediction_coverage_filters_any_model():
 
 def test_inspect_where_prediction_coverage_filters_selected_model():
     where, params = _inspect_where(
-        "validated", "memes", "cat", "without_predictions", "gpt-5.5"
+        "validated", "cat", "without_predictions", "gpt-5.5"
     )
     assert "r.status = 'validated'" in where
-    assert "m.subreddit = ?" in where
     assert "m.title LIKE ?" in where
     assert "NOT EXISTS (SELECT 1 FROM predictions p" in where
     assert "p.model_id = ?" in where
-    assert params == ["memes", "%cat%", "gpt-5.5"]
+    assert params == ["%cat%", "gpt-5.5"]
 
 
 def test_inspect_where_selected_model_defaults_to_has_model_prediction():
-    where, params = _inspect_where("all", "all", "", "all", "claude-opus-4-8")
+    where, params = _inspect_where("all", "", "all", "claude-opus-4-8")
     assert "EXISTS (SELECT 1 FROM predictions p" in where
     assert "p.model_id = ?" in where
     assert params == ["claude-opus-4-8"]
@@ -120,7 +118,7 @@ def test_inspect_where_selected_model_defaults_to_has_model_prediction():
 
 def test_inspect_where_evaluation_coverage_filters_any_model():
     where, params = _inspect_where(
-        "validated", "all", "", "with_predictions", "all", "with_evaluations"
+        "validated", "", "with_predictions", "all", "with_evaluations"
     )
     assert "r.status = 'validated'" in where
     assert "EXISTS (SELECT 1 FROM predictions p" in where
@@ -129,7 +127,7 @@ def test_inspect_where_evaluation_coverage_filters_any_model():
     assert params == []
 
     where, params = _inspect_where(
-        "validated", "all", "", "with_predictions", "all", "without_evaluations"
+        "validated", "", "with_predictions", "all", "without_evaluations"
     )
     assert "NOT EXISTS (SELECT 1 FROM predictions p" in where
     assert "JOIN judgments j ON j.prediction_id = p.id" in where
@@ -139,14 +137,43 @@ def test_inspect_where_evaluation_coverage_filters_any_model():
 def test_inspect_where_evaluation_coverage_filters_selected_model():
     where, params = _inspect_where(
         "validated",
-        "ExplainTheJoke",
         "golf",
         "with_predictions",
         "gpt-5.5",
         "with_evaluations",
     )
     assert where.count("p.model_id = ?") == 2
-    assert params == ["ExplainTheJoke", "%golf%", "gpt-5.5", "gpt-5.5"]
+    assert params == ["%golf%", "gpt-5.5", "gpt-5.5"]
+
+
+def test_inspect_where_verdict_filter_all_correct():
+    where, params = _inspect_where(
+        "validated",
+        "",
+        "with_predictions",
+        "gpt-5.5",
+        "with_evaluations",
+        "all_correct",
+    )
+    assert "cv.correct_n > cv.incorrect_n" in where
+    assert "NOT EXISTS" in where
+    assert "cv.incorrect_n > cv.correct_n" in where
+    assert params == ["gpt-5.5", "gpt-5.5", "gpt-5.5", "gpt-5.5"]
+
+
+def test_inspect_where_verdict_filter_mixed_any_model():
+    where, params = _inspect_where(
+        "validated",
+        "",
+        "with_predictions",
+        "all",
+        "with_evaluations",
+        "mixed",
+    )
+    assert where.count("EXISTS (SELECT 1 FROM (") >= 2
+    assert "cv.correct_n > cv.incorrect_n" in where
+    assert "cv.incorrect_n > cv.correct_n" in where
+    assert params == []
 
 
 def test_position_text():

@@ -65,7 +65,7 @@ def test_migrate_creates_processing_state_table(db: Database):
     ).fetchone()[0]
     version = db.conn.execute("PRAGMA user_version").fetchone()[0]
     assert count == 1
-    assert version == 10
+    assert version == 11
 
 
 def test_migrate_creates_consensus_eval_tables(db: Database):
@@ -89,6 +89,15 @@ def test_migrate_creates_image_fingerprints_table(db: Database):
     assert count == 1
 
 
+def test_migrate_creates_tag_tables(db: Database):
+    tables = db.conn.execute(
+        """SELECT name FROM sqlite_master
+           WHERE type='table' AND name IN ('tags', 'meme_tags')
+           ORDER BY name"""
+    ).fetchall()
+    assert [r[0] for r in tables] == ["meme_tags", "tags"]
+
+
 # ═══════════════════════════════════════════════════════
 # Memes
 # ═══════════════════════════════════════════════════════
@@ -105,6 +114,25 @@ def test_insert_meme_idempotent(db: Database):
     post = sample_post("post1")
     assert q.insert_meme(db, post) is True
     assert q.insert_meme(db, post) is False
+
+
+def test_meme_tags_roundtrip(db: Database):
+    q.insert_meme(db, sample_post("post1"))
+
+    q.add_meme_tag(db, "post1", "Failure: Visual Reference Miss", "misses the sign")
+    q.add_meme_tag(db, "post1", "failure: visual reference miss", "updated note")
+
+    tags = q.list_tags(db)
+    meme_tags = q.tags_for_meme(db, "post1")
+
+    assert len(tags) == 1
+    assert tags[0].name == "Failure: Visual Reference Miss"
+    assert len(meme_tags) == 1
+    assert meme_tags[0].name == "Failure: Visual Reference Miss"
+    assert meme_tags[0].notes == "updated note"
+
+    assert q.remove_meme_tag(db, "post1", "FAILURE: VISUAL REFERENCE MISS")
+    assert q.tags_for_meme(db, "post1") == []
 
 
 # ═══════════════════════════════════════════════════════
@@ -1040,7 +1068,9 @@ def test_snapshot_export_helpers(db: Database):
     pid1 = q.find_prediction_id(db, "post1", "gpt-4o")
     pid2 = q.find_prediction_id(db, "post2", "gpt-4o")
     q.insert_judgment(db, pid1, "correct", "good", "gpt-4o-mini", "v1")
+    q.insert_judgment(db, pid1, "correct", "good", "claude-sonnet-4-6", "v1")
     q.insert_judgment(db, pid2, "incorrect", "bad", "gpt-4o-mini", "v1")
+    q.insert_judgment(db, pid2, "incorrect", "bad", "claude-sonnet-4-6", "v1")
 
     sid = q.create_snapshot(db, "export-test")
 
@@ -1060,11 +1090,11 @@ def test_snapshot_export_helpers(db: Database):
     assert p_by_post["post1"].verdicts["gpt-4o-mini"]["verdict"] == "correct"
     assert p_by_post["post2"].verdicts["gpt-4o-mini"]["verdict"] == "incorrect"
 
-    # Leaderboard — one row per (target, judge)
+    # Leaderboard — one consensus row per target model
     lb = q.snapshot_leaderboard(db, sid)
     assert len(lb) == 1
     assert lb[0].model_id == "gpt-4o"
-    assert lb[0].judge_model == "gpt-4o-mini"
+    assert lb[0].judge_model == "consensus"
     assert lb[0].correct == 1
     assert lb[0].total == 2
     assert lb[0].accuracy == 0.5
@@ -1088,7 +1118,11 @@ def test_snapshot_export_helpers_exclude_failed_predictions(db: Database):
     good_pid = q.find_prediction_id(db, "post1", "gpt-5.5")
     failed_pid = q.find_prediction_id(db, "post2", "gpt-5.5")
     q.insert_judgment(db, good_pid, "correct", "good", "gpt-5.4-mini", "judge-v1")
+    q.insert_judgment(db, good_pid, "correct", "good", "claude-sonnet-4-6", "judge-v1")
     q.insert_judgment(db, failed_pid, "incorrect", "bad", "gpt-5.4-mini", "judge-v1")
+    q.insert_judgment(
+        db, failed_pid, "incorrect", "bad", "claude-sonnet-4-6", "judge-v1"
+    )
 
     sid = q.create_snapshot(db, "export-failures")
 

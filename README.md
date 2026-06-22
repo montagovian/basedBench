@@ -13,11 +13,25 @@ short_description: VLM Meme Understanding Benchmark
 
 # basedBench
 
-A benchmark for evaluating how well Vision-Language Models understand internet memes.
+A benchmark for evaluating how well Vision-Language Models "get" internet memes.
 
 Ground truth is derived from Reddit comment consensus (≥3 substantive comments agreeing
 on the same specific explanation), not synthetic labels. Each model prediction is judged
 correct/incorrect by an LLM judge against the consensus explanation.
+
+## Task definition
+
+basedBench tests whether a model **gets the joke**, not whether it can produce
+a theory of humor. A good prediction identifies the relevant people, events,
+memes, media, phrases, visual details, or cultural references, then reconstructs
+the intended setup, implication, contrast, inversion, irony, wordplay, or other
+mechanism a viewer must notice to understand the meme.
+
+Do not treat "why is this funny?" as a requirement for a psychological or
+aesthetic account of amusement. The consensus commenters are successful because
+they recover the intended joke; they do not need to explain humor as a human
+phenomenon. Predictors, judges, prompt revisions, and docs should preserve this
+distinction.
 
 This is the fifth iteration — a Python rewrite of the Rust basedBench4 unified around
 the HuggingFace ecosystem (Datasets + Spaces).
@@ -34,14 +48,17 @@ Reddit → safety gate → consensus → human review → prediction → judge �
 - **Safety gate**: text-only LLM pre-filter that drops content unfit for a public
   dataset (explicit sexual content, slurs, hate, doxx). Keeps edgy/dark/political humor.
 - **Consensus**: `gpt-5.4-mini` analyzes top comments, must agree on a specific
-  explanation passing 10 stages of validation (confidence ≥ 0.6, len ≥ 100, no
-  vague phrases, no pure scrambled-nonsense jokes, etc.)
+  explanation of the joke/setup/implication passing 10 stages of validation
+  (confidence ≥ 0.6, len ≥ 100, no vague phrases, no pure scrambled-nonsense
+  jokes, etc.)
 - **Review**: Gradio UI to validate/exclude individual memes before they become ground truth
 - **Predict**: any OpenAI or Anthropic vision model explains each validated meme
   (image only — no comments, no title, no web search)
 - **Judge**: every prediction is scored by **each** judge model
-  (`gpt-5.4-mini` + `claude-sonnet-4-6` by default) → correct/incorrect, with a
-  cross-judge agreement rate as a robustness signal
+  (`gpt-5.4-mini`, `claude-sonnet-4-6`, and `z-ai/glm-5.2` by default) →
+  correct/incorrect, with a cross-judge agreement rate as a robustness signal.
+  Judges ask whether the model got the same joke as the ground truth, not
+  whether it explained the psychology of why humor works.
 - **Snapshot**: freezes the validated set as a content-addressed dataset version
 - **Push**: publishes the snapshot to HF Hub (memes + per-model predictions + leaderboard)
 
