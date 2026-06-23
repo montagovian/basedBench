@@ -69,8 +69,8 @@ def test_make_judge_routes_slash_model_to_openrouter():
     config = Config(  # type: ignore[call-arg]
         reddit_client_id="x",
         reddit_client_secret="y",
-        openai_api_key="sk-test",
-        openrouter_api_key="or-test",
+        openai_api_key="x",
+        openrouter_api_key="x",
     )
 
     judge = make_judge("z-ai/glm-5.2", config)
@@ -86,7 +86,7 @@ def test_make_judge_requires_openrouter_key_for_slash_model():
     config = Config(  # type: ignore[call-arg]
         reddit_client_id="x",
         reddit_client_secret="y",
-        openai_api_key="sk-test",
+        openai_api_key="x",
         openrouter_api_key=None,
     )
 
@@ -102,8 +102,8 @@ def test_build_predictor_routes_slash_model_to_openrouter():
     config = Config(  # type: ignore[call-arg]
         reddit_client_id="x",
         reddit_client_secret="y",
-        openai_api_key="sk-test",
-        openrouter_api_key="or-test",
+        openai_api_key="x",
+        openrouter_api_key="x",
     )
 
     predictor = _build_predictor("x-ai/grok-4.3", config)
@@ -119,7 +119,7 @@ def test_build_predictor_requires_openrouter_key_for_slash_model():
     config = Config(  # type: ignore[call-arg]
         reddit_client_id="x",
         reddit_client_secret="y",
-        openai_api_key="sk-test",
+        openai_api_key="x",
         openrouter_api_key=None,
     )
 
