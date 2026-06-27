@@ -970,13 +970,26 @@ def _inspect_detail(post_id: str) -> dict | None:
     }
 
 
-def _render_inspect(post_id: str | None):
+_TRY_IT_YOURSELF_MASK = (
+    "### Answer hidden\n\n"
+    "Take your shot, then reveal the benchmark answer when you're ready."
+)
+
+
+def _render_inspect(
+    post_id: str | None,
+    try_it_yourself: bool = False,
+    answer_revealed: bool = False,
+):
     """Render one meme into the inspect widgets (read-only)."""
     blank = gr.update(value=None, visible=False)
+    answer_hidden = bool(try_it_yourself) and not bool(answer_revealed)
     if not post_id:
         return (
             blank,
             gr.update(value="_No meme to show for this filter._", visible=True),
+            gr.update(value="", visible=False),
+            gr.update(visible=False),
             gr.update(value="", visible=False),
             gr.update(value="", visible=False),
             gr.update(value="", visible=False),
@@ -991,6 +1004,8 @@ def _render_inspect(post_id: str | None):
         return (
             blank,
             gr.update(value=f"_Meme `{post_id}` not found._", visible=True),
+            gr.update(value="", visible=False),
+            gr.update(visible=False),
             gr.update(value="", visible=False),
             gr.update(value="", visible=False),
             gr.update(value="", visible=False),
@@ -1073,14 +1088,28 @@ def _render_inspect(post_id: str | None):
 
     comments_md = detail["comments_text"] or "_No comments available._"
     comments_detail = _details("Consensus source comments and top comments", comments_md)
+    if answer_hidden:
+        gt_update = gr.update(value="", visible=False)
+        meta_update = gr.update(value="", visible=False)
+        predictions_update = gr.update(value="", visible=False)
+        comments_update = gr.update(value="", visible=False)
+        mask_update = gr.update(value=_TRY_IT_YOURSELF_MASK, visible=True)
+        reveal_update = gr.update(visible=True)
+    else:
+        predictions_update = gr.update(value=detail["predictions_text"], visible=True)
+        comments_update = gr.update(value=comments_detail, visible=True)
+        mask_update = gr.update(value="", visible=False)
+        reveal_update = gr.update(visible=False)
 
     return (
         gr.update(value=_resolve_image(row["local_image_path"]), visible=True),
         gr.update(value=info_md, visible=True),
+        mask_update,
+        reveal_update,
         gt_update,
         meta_update,
-        gr.update(value=detail["predictions_text"], visible=True),
-        gr.update(value=comments_detail, visible=True),
+        predictions_update,
+        comments_update,
         gr.update(value=_tag_markdown(post_id), visible=True),
         post_id,
         gr.update(value=_STATE_TO_GATE.get(state, "consensus")),
@@ -1102,6 +1131,7 @@ def inspect_apply(
     model_id: str,
     evaluation_filter: str,
     verdict_filter: str,
+    try_it_yourself: bool = False,
 ):
     ids, total = _inspect_ids(
         status,
@@ -1112,18 +1142,43 @@ def inspect_apply(
         verdict_filter,
     )
     first = ids[0] if ids else None
-    return (ids, 0, *_render_inspect(first), _position_text(0, ids, total))
+    return (
+        ids,
+        0,
+        False,
+        *_render_inspect(first, try_it_yourself, False),
+        _position_text(0, ids, total),
+    )
 
 
-def inspect_step(ids: list[str], idx: int, delta: int):
+def inspect_step(
+    ids: list[str],
+    idx: int,
+    delta: int,
+    try_it_yourself: bool = False,
+):
     if not ids:
-        return (idx, *_render_inspect(None), _position_text(idx, ids, len(ids)))
+        return (
+            idx,
+            False,
+            *_render_inspect(None, try_it_yourself, False),
+            _position_text(idx, ids, len(ids)),
+        )
     new_idx = max(0, min(int(idx) + delta, len(ids) - 1))
     return (
         new_idx,
-        *_render_inspect(ids[new_idx]),
+        False,
+        *_render_inspect(ids[new_idx], try_it_yourself, False),
         _position_text(new_idx, ids, len(ids)),
     )
+
+
+def inspect_toggle_try_it_yourself(try_it_yourself: bool, post_id: str):
+    return (False, *_render_inspect(post_id or None, try_it_yourself, False))
+
+
+def inspect_show_answer(post_id: str):
+    return (True, *_render_inspect(post_id or None, True, True))
 
 
 def flag_gate_misfire(post_id: str, gate: str, correct_decision: str, notes: str):
@@ -1936,6 +1991,7 @@ def build_app(read_only: bool = False) -> gr.Blocks:
             with gr.Tab("Inspect", id="inspect", render_children=True) as inspect_tab:
                 inspect_ids_state = gr.State([])
                 inspect_idx_state = gr.State(0)
+                inspect_revealed_state = gr.State(False)
                 inspect_status_default = "validated" if read_only else "all"
                 inspect_prediction_default = "with_predictions" if read_only else "all"
                 inspect_evaluation_default = "with_evaluations" if read_only else "all"
@@ -2037,6 +2093,13 @@ def build_app(read_only: bool = False) -> gr.Blocks:
                         min_width=116,
                         scale=1,
                     )
+                    inspect_try_it_yourself = gr.Checkbox(
+                        label="Try it yourself",
+                        value=False,
+                        container=False,
+                        min_width=132,
+                        scale=0,
+                    )
                     btn_inspect_apply = gr.Button(
                         "Apply",
                         variant="primary",
@@ -2055,6 +2118,12 @@ def build_app(read_only: bool = False) -> gr.Blocks:
                         )
                     with gr.Column(scale=1):
                         inspect_info = gr.Markdown()
+                        inspect_answer_mask = gr.Markdown(visible=False)
+                        btn_inspect_show_answer = gr.Button(
+                            "Show me the answer",
+                            variant="primary",
+                            visible=False,
+                        )
                         inspect_gt = gr.Textbox(
                             label="Ground Truth", lines=4, interactive=False, visible=False
                         )
@@ -2120,6 +2189,8 @@ def build_app(read_only: bool = False) -> gr.Blocks:
                 inspect_render_outputs = [
                     inspect_image,
                     inspect_info,
+                    inspect_answer_mask,
+                    btn_inspect_show_answer,
                     inspect_gt,
                     inspect_meta,
                     inspect_predictions,
@@ -2137,23 +2208,57 @@ def build_app(read_only: bool = False) -> gr.Blocks:
                         inspect_model,
                         inspect_evaluation_filter,
                         inspect_verdict_filter,
+                        inspect_try_it_yourself,
                     ],
                     outputs=[
                         inspect_ids_state,
                         inspect_idx_state,
+                        inspect_revealed_state,
                         *inspect_render_outputs,
                         inspect_position,
                     ],
                 )
                 btn_inspect_prev.click(
-                    lambda ids, idx: inspect_step(ids, idx, -1),
-                    inputs=[inspect_ids_state, inspect_idx_state],
-                    outputs=[inspect_idx_state, *inspect_render_outputs, inspect_position],
+                    lambda ids, idx, try_it_yourself: inspect_step(
+                        ids, idx, -1, try_it_yourself
+                    ),
+                    inputs=[
+                        inspect_ids_state,
+                        inspect_idx_state,
+                        inspect_try_it_yourself,
+                    ],
+                    outputs=[
+                        inspect_idx_state,
+                        inspect_revealed_state,
+                        *inspect_render_outputs,
+                        inspect_position,
+                    ],
                 )
                 btn_inspect_next.click(
-                    lambda ids, idx: inspect_step(ids, idx, 1),
-                    inputs=[inspect_ids_state, inspect_idx_state],
-                    outputs=[inspect_idx_state, *inspect_render_outputs, inspect_position],
+                    lambda ids, idx, try_it_yourself: inspect_step(
+                        ids, idx, 1, try_it_yourself
+                    ),
+                    inputs=[
+                        inspect_ids_state,
+                        inspect_idx_state,
+                        inspect_try_it_yourself,
+                    ],
+                    outputs=[
+                        inspect_idx_state,
+                        inspect_revealed_state,
+                        *inspect_render_outputs,
+                        inspect_position,
+                    ],
+                )
+                inspect_try_it_yourself.change(
+                    inspect_toggle_try_it_yourself,
+                    inputs=[inspect_try_it_yourself, inspect_post_id],
+                    outputs=[inspect_revealed_state, *inspect_render_outputs],
+                )
+                btn_inspect_show_answer.click(
+                    inspect_show_answer,
+                    inputs=[inspect_post_id],
+                    outputs=[inspect_revealed_state, *inspect_render_outputs],
                 )
                 if not read_only:
                     btn_misfire.click(
@@ -2190,10 +2295,12 @@ def build_app(read_only: bool = False) -> gr.Blocks:
                             inspect_model,
                             inspect_evaluation_filter,
                             inspect_verdict_filter,
+                            inspect_try_it_yourself,
                         ],
                         outputs=[
                             inspect_ids_state,
                             inspect_idx_state,
+                            inspect_revealed_state,
                             *inspect_render_outputs,
                             inspect_position,
                         ],

@@ -14,6 +14,7 @@ from basedbench.app import (
     _inline_image_urls,
     _inspect_where,
     _position_text,
+    _render_inspect,
     _resolve_image,
     set_db_path,
 )
@@ -290,6 +291,77 @@ def test_comment_markdown_escapes_html_and_links():
     assert "[click](javascript:alert(1))" not in out
     assert "\\[click\\]" in out
     assert "javascript:alert" in out
+
+
+def test_render_inspect_try_it_yourself_masks_answers(monkeypatch):
+    detail = {
+        "row": {
+            "post_id": "p1",
+            "title": "Hard meme",
+            "subreddit": "ExplainTheJoke",
+            "local_image_path": "data/images/p1.jpg",
+            "explanation": "ground truth answer",
+            "consensus_confidence": 0.9,
+            "num_agreeing_comments": 3,
+            "review_status": "validated",
+            "review_reason": None,
+        },
+        "state": "validated",
+        "calls": {},
+        "comments_text": "comment answer",
+        "predictions_text": "model answer",
+        "tags": [],
+    }
+    monkeypatch.setattr(app_mod, "_inspect_detail", lambda post_id: detail)
+    monkeypatch.setattr(app_mod, "_resolve_image", lambda path: f"resolved:{path}")
+    monkeypatch.setattr(app_mod, "_tag_markdown", lambda post_id: "tags")
+
+    rendered = _render_inspect("p1", try_it_yourself=True, answer_revealed=False)
+
+    assert rendered[0]["value"] == "resolved:data/images/p1.jpg"
+    assert rendered[2]["visible"] is True
+    assert "Answer hidden" in rendered[2]["value"]
+    assert rendered[3]["visible"] is True
+    assert rendered[4]["visible"] is False
+    assert rendered[4]["value"] == ""
+    assert rendered[5]["visible"] is False
+    assert rendered[6]["visible"] is False
+    assert rendered[7]["visible"] is False
+    assert rendered[9] == "p1"
+
+
+def test_render_inspect_try_it_yourself_reveals_answers(monkeypatch):
+    detail = {
+        "row": {
+            "post_id": "p1",
+            "title": "Hard meme",
+            "subreddit": "ExplainTheJoke",
+            "local_image_path": "data/images/p1.jpg",
+            "explanation": "ground truth answer",
+            "consensus_confidence": 0.9,
+            "num_agreeing_comments": 3,
+            "review_status": "validated",
+            "review_reason": None,
+        },
+        "state": "validated",
+        "calls": {},
+        "comments_text": "comment answer",
+        "predictions_text": "model answer",
+        "tags": [],
+    }
+    monkeypatch.setattr(app_mod, "_inspect_detail", lambda post_id: detail)
+    monkeypatch.setattr(app_mod, "_resolve_image", lambda path: f"resolved:{path}")
+    monkeypatch.setattr(app_mod, "_tag_markdown", lambda post_id: "tags")
+
+    rendered = _render_inspect("p1", try_it_yourself=True, answer_revealed=True)
+
+    assert rendered[2]["visible"] is False
+    assert rendered[3]["visible"] is False
+    assert rendered[4]["visible"] is True
+    assert rendered[4]["value"] == "ground truth answer"
+    assert rendered[6]["visible"] is True
+    assert rendered[6]["value"] == "model answer"
+    assert rendered[7]["visible"] is True
 
 
 def test_resolve_image_rejects_path_traversal(tmp_path: Path):
