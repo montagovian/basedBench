@@ -65,6 +65,23 @@ class AnthropicError(BasedBenchError):
         self.code = code
 
 
+class MetaError(BasedBenchError):
+    """Meta Model API error."""
+
+    def __init__(
+        self,
+        msg: str,
+        *,
+        fatal: bool = False,
+        code: str | None = None,
+        status_code: int | None = None,
+    ) -> None:
+        super().__init__(msg)
+        self.fatal = fatal
+        self.code = code
+        self.status_code = status_code
+
+
 class LlmJsonParseError(BasedBenchError):
     """Failed to parse LLM JSON response."""
 
@@ -149,6 +166,7 @@ class MigrationError(BasedBenchError):
 RETRYABLE_TYPES = (
     OpenAIError,
     AnthropicError,
+    MetaError,
     RedditRateLimitError,
 )
 

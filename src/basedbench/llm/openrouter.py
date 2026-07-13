@@ -12,7 +12,12 @@ import basedbench
 from basedbench.errors import ImageNotFoundError, OpenAIError, is_fatal_llm_error
 from basedbench.llm import prompts
 from basedbench.llm._retry import openai_retry
-from basedbench.llm.openai import USER_PROMPT
+from basedbench.llm.openai import (
+    PREDICTION_MAX_COMPLETION_TOKENS,
+    USER_PROMPT,
+    _finish_reason,
+    _prediction_output_error,
+)
 from basedbench.llm.prompts import EXPLAIN_MEME_PROMPT
 from basedbench.llm.record import LlmCallRecord
 from basedbench.schemas import CuratedMeme, ModelPrediction
@@ -79,7 +84,7 @@ class OpenRouterPredictor:
                                 ],
                             },
                         ],
-                        max_tokens=4000,
+                        max_tokens=PREDICTION_MAX_COMPLETION_TOKENS,
                     )
         except openai.OpenAIError as e:
             record.latency_ms = int((time.monotonic() - start) * 1000)
@@ -102,6 +107,7 @@ class OpenRouterPredictor:
         text = ""
         if response.choices:
             text = response.choices[0].message.content or ""
+        finish_reason = _finish_reason(response)
         usage = response.usage
         completion_tokens = usage.completion_tokens if usage else 0
         prompt_tokens = usage.prompt_tokens if usage else 0
@@ -110,6 +116,25 @@ class OpenRouterPredictor:
         record.response = text
         record.completion_tokens = completion_tokens
         record.prompt_tokens = prompt_tokens
+
+        output_error = _prediction_output_error(
+            provider="OpenRouter",
+            finish_reason=finish_reason,
+            max_tokens=PREDICTION_MAX_COMPLETION_TOKENS,
+        )
+        if output_error is None and not text.strip():
+            output_error = "OpenRouter prediction response contained no extracted text."
+        if output_error is not None:
+            record.error = output_error
+            return (
+                ModelPrediction.failure(
+                    post_id=meme.post_id,
+                    dataset_version=dataset_version,
+                    model_id=self._model,
+                    error=output_error,
+                ),
+                record,
+            )
 
         return (
             ModelPrediction.success(

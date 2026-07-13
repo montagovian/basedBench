@@ -131,6 +131,12 @@ def predict(
     include_unreviewed: bool = typer.Option(
         False, help="Include memes with unreviewed ground truth."
     ),
+    limit: int | None = typer.Option(
+        None,
+        "--limit",
+        min=1,
+        help="Maximum number of predictions to run.",
+    ),
 ) -> None:
     """Run a VLM over memes that need a prediction."""
     _configure_logging()
@@ -142,6 +148,7 @@ def predict(
             model=model,
             snapshot=snapshot,
             include_unreviewed=include_unreviewed,
+            limit=limit,
         )
     )
 

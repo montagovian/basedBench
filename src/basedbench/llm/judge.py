@@ -6,6 +6,7 @@ run multiple judges per prediction to surface judge-family bias.
 
 from __future__ import annotations
 
+import json
 import time
 from dataclasses import dataclass
 from typing import Protocol
@@ -30,9 +31,11 @@ from basedbench.llm.prompts import JUDGE_SYSTEM_PROMPT, JUDGE_USER_TEMPLATE
 from basedbench.llm.record import LlmCallRecord
 from basedbench.schemas import JudgeVerdict
 
+MIN_JUDGE_REASONING_CHARS = 4
+
 
 class _JudgeResponse(BaseModel):
-    reasoning: str = ""
+    reasoning: str
     verdict: str
 
 
@@ -93,10 +96,39 @@ def _normalize_json_response(text: str) -> str:
 
 def _parse_verdict(text: str, record: LlmCallRecord) -> JudgeResult:
     try:
-        parsed = _JudgeResponse.model_validate_json(_normalize_json_response(text))
+        data = json.loads(_normalize_json_response(text))
+        if isinstance(data, dict) and "reasoning" not in data:
+            # GLM has occasionally returned this misspelling despite the
+            # requested JSON schema. Preserve the valid explanation instead
+            # of silently storing an empty judge-reasoning field.
+            reasonation = data.get("reasonation")
+            if isinstance(reasonation, str):
+                data["reasoning"] = reasonation
+        if isinstance(data, dict) and "verdict" not in data:
+            for key, value in data.items():
+                if (
+                    isinstance(key, str)
+                    and not key.strip()
+                    and isinstance(value, str)
+                    and value.strip().lower() in {v.value for v in JudgeVerdict}
+                ):
+                    data["verdict"] = value
+                    break
+        parsed = _JudgeResponse.model_validate(data)
     except ValueError as e:
         record.error = f"judge response parse: {e}"
         raise LlmJsonParseError(f"judge response: {e}") from e
+
+    reasoning = parsed.reasoning.strip()
+    if (
+        len(reasoning) < MIN_JUDGE_REASONING_CHARS
+        or not any(character.isalnum() for character in reasoning)
+    ):
+        record.error = (
+            "judge response parse: reasoning must contain at least "
+            f"{MIN_JUDGE_REASONING_CHARS} non-whitespace characters"
+        )
+        raise LlmJsonParseError(record.error)
 
     try:
         verdict = JudgeVerdict.parse(parsed.verdict)
@@ -105,8 +137,8 @@ def _parse_verdict(text: str, record: LlmCallRecord) -> JudgeResult:
         raise
 
     record.verdict = verdict.value
-    record.reasoning = parsed.reasoning
-    return JudgeResult(verdict=verdict, reasoning=parsed.reasoning)
+    record.reasoning = reasoning
+    return JudgeResult(verdict=verdict, reasoning=reasoning)
 
 
 class LlmJudge:

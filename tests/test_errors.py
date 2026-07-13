@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import json
+
 import httpx
 import openai
 import pytest
@@ -60,6 +62,14 @@ def test_500_server_error_is_transient():
     """Server errors are retryable, not fatal."""
     e = _make_rate_limit_error(500, None)
     assert not is_fatal_llm_error(e)
+
+
+def test_openai_retry_treats_json_decode_as_transient():
+    from basedbench.llm._retry import OPENAI_RETRY_TYPES, _make_predicate
+
+    predicate = _make_predicate(OPENAI_RETRY_TYPES)
+
+    assert predicate(json.JSONDecodeError("bad provider body", "", 0))
 
 
 def test_make_judge_routes_slash_model_to_openrouter():
@@ -125,6 +135,59 @@ def test_build_predictor_requires_openrouter_key_for_slash_model():
 
     with pytest.raises(ConfigError, match="OPENROUTER_API_KEY"):
         _build_predictor("x-ai/grok-4.3", config)
+
+
+def test_build_predictor_routes_muse_spark_to_meta():
+    from basedbench.config import Config
+    from basedbench.llm.meta import MetaPredictor
+    from basedbench.pipeline.predict import _build_predictor
+
+    config = Config(  # type: ignore[call-arg]
+        reddit_client_id="x",
+        reddit_client_secret="y",
+        openai_api_key="x",
+        meta_api_key="x",
+        meta_api_base_url="https://meta.test/v1",
+    )
+
+    predictor = _build_predictor("muse-spark-1.1", config)
+
+    assert isinstance(predictor, MetaPredictor)
+    assert predictor.model_id == "muse-spark-1.1"
+
+
+def test_build_predictor_routes_muse_spark_display_name_to_meta():
+    from basedbench.config import Config
+    from basedbench.llm.meta import MetaPredictor
+    from basedbench.pipeline.predict import _build_predictor
+
+    config = Config(  # type: ignore[call-arg]
+        reddit_client_id="x",
+        reddit_client_secret="y",
+        openai_api_key="x",
+        meta_api_key="x",
+        meta_api_base_url="https://meta.test/v1",
+    )
+
+    predictor = _build_predictor("Muse Spark 1.1", config)
+
+    assert isinstance(predictor, MetaPredictor)
+    assert predictor.model_id == "muse-spark-1.1"
+
+
+def test_build_predictor_requires_meta_key_for_muse_spark():
+    from basedbench.config import Config
+    from basedbench.pipeline.predict import _build_predictor
+
+    config = Config(  # type: ignore[call-arg]
+        reddit_client_id="x",
+        reddit_client_secret="y",
+        openai_api_key="x",
+        meta_api_key=None,
+    )
+
+    with pytest.raises(ConfigError, match="META_API_KEY"):
+        _build_predictor("muse-spark-1.1", config)
 
 
 # ─── Consensus raises on fatal, swallows transient errors ───

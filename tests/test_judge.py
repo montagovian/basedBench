@@ -87,6 +87,34 @@ async def test_judge_accepts_prefaced_json_verdict():
 
 
 @pytest.mark.asyncio
+async def test_judge_accepts_blank_key_verdict_from_openrouter():
+    judge = _judge()
+    judge._client.chat.completions.create = AsyncMock(  # type: ignore[attr-defined]
+        return_value=_mock_response(
+            json.dumps({"reasoning": "same joke", " ": "correct"})
+        )
+    )
+
+    result, record = await judge.judge("prediction text", "ground truth", "p1")
+
+    assert result.verdict == JudgeVerdict.CORRECT
+    assert record.verdict == "correct"
+
+
+@pytest.mark.asyncio
+async def test_judge_rejects_blank_key_placeholder_verdict():
+    judge = _judge()
+    judge._client.chat.completions.create = AsyncMock(  # type: ignore[attr-defined]
+        return_value=_mock_response(
+            json.dumps({"reasoning": "same joke", "": "verdict"})
+        )
+    )
+
+    with pytest.raises(LlmJsonParseError):
+        await judge.judge("p", "g", "p1")
+
+
+@pytest.mark.asyncio
 async def test_judge_invalid_verdict_raises():
     judge = _judge()
     judge._client.chat.completions.create = AsyncMock(  # type: ignore[attr-defined]
@@ -96,6 +124,35 @@ async def test_judge_invalid_verdict_raises():
     )
 
     with pytest.raises(LlmJsonParseError):
+        await judge.judge("p", "g", "p1")
+
+
+@pytest.mark.asyncio
+async def test_judge_accepts_reasonation_typo_with_nonempty_explanation():
+    judge = _judge()
+    judge._client.chat.completions.create = AsyncMock(  # type: ignore[attr-defined]
+        return_value=_mock_response(
+            json.dumps({"reasonation": "same joke", "verdict": "correct"})
+        )
+    )
+
+    result, record = await judge.judge("p", "g", "p1")
+
+    assert result.reasoning == "same joke"
+    assert record.reasoning == "same joke"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("reasoning", ["  ", "..."])
+async def test_judge_rejects_low_information_reasoning(reasoning: str):
+    judge = _judge()
+    judge._client.chat.completions.create = AsyncMock(  # type: ignore[attr-defined]
+        return_value=_mock_response(
+            json.dumps({"reasoning": reasoning, "verdict": "correct"})
+        )
+    )
+
+    with pytest.raises(LlmJsonParseError, match="at least 4"):
         await judge.judge("p", "g", "p1")
 
 

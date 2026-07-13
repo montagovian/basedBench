@@ -7,6 +7,8 @@ on something that will never recover. Transient errors (rate limits, timeouts,
 
 from __future__ import annotations
 
+import json
+
 import anthropic
 import openai
 from tenacity import (
@@ -24,6 +26,7 @@ OPENAI_RETRY_TYPES: tuple[type[BaseException], ...] = (
     openai.APIConnectionError,
     openai.APITimeoutError,
     openai.InternalServerError,
+    json.JSONDecodeError,
 )
 
 ANTHROPIC_RETRY_TYPES: tuple[type[BaseException], ...] = (

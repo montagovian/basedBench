@@ -26,6 +26,7 @@ from basedbench.errors import (
     ImageNotFoundError,
     ImageValidationError,
     LlmJsonParseError,
+    MetaError,
     OpenAIError,
     is_fatal_llm_error,
 )
@@ -487,7 +488,7 @@ async def _predict_batch(
     tasks, queue = await _fan_out(
         list(enumerate(rows, start=1)),
         predict_one,
-        catchable=(ImageNotFoundError, OpenAIError, AnthropicError),
+        catchable=(ImageNotFoundError, OpenAIError, AnthropicError, MetaError),
     )
     aborted = False
     with make_progress() as prog:

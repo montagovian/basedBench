@@ -36,6 +36,9 @@ class Config(BaseSettings):
     openai_api_key: str
     anthropic_api_key: str | None = None
     openrouter_api_key: str | None = None
+    meta_api_key: str | None = None
+    meta_api_base_url: str = "https://api.meta.ai/v1"
+    meta_api_endpoint: str = "chat/completions"
 
     # Model selection.
     # consensus is text-only inner-loop calls (run on every meme),

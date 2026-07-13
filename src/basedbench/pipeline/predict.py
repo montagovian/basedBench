@@ -14,10 +14,12 @@ from basedbench.errors import (
     AnthropicError,
     ConfigError,
     ImageNotFoundError,
+    MetaError,
     OpenAIError,
     is_fatal_llm_error,
 )
 from basedbench.llm.anthropic import AnthropicPredictor
+from basedbench.llm.meta import MetaPredictor
 from basedbench.llm.openai import OpenAIPredictor
 from basedbench.llm.openrouter import OpenRouterPredictor
 from basedbench.llm.prompts import EXPLAIN_MEME_PROMPT
@@ -28,6 +30,7 @@ from basedbench.schemas import (
     dataset_version,
     display_index,
     is_anthropic_model,
+    is_meta_model,
     is_openrouter_model,
 )
 
@@ -49,6 +52,15 @@ def _build_predictor(model: str, config: Config) -> Predictor:
         if not config.anthropic_api_key:
             raise ConfigError("ANTHROPIC_API_KEY required for Claude models")
         return AnthropicPredictor(config.anthropic_api_key, model)
+    if is_meta_model(model):
+        if not config.meta_api_key:
+            raise ConfigError(f"META_API_KEY required for {model}")
+        return MetaPredictor(
+            config.meta_api_key,
+            model,
+            base_url=config.meta_api_base_url,
+            endpoint=config.meta_api_endpoint,
+        )
     if is_openrouter_model(model):
         if not config.openrouter_api_key:
             raise ConfigError(f"OPENROUTER_API_KEY required for {model}")
@@ -87,6 +99,7 @@ async def run(
     model: str,
     snapshot: str | None = None,
     include_unreviewed: bool = False,
+    limit: int | None = None,
     console: Console | None = None,
 ) -> PredictStats:
     console = console or Console()
@@ -120,7 +133,16 @@ async def run(
     console.print(f"Dataset version: {ds_version}")
 
     memes = queries.memes_needing_prediction(db, model, snapshot_id, validated_only)
-    console.print(f"{len(memes)} memes need prediction for {model}")
+    total_needed = len(memes)
+    if limit is not None:
+        memes = memes[:limit]
+    if limit is not None and total_needed > len(memes):
+        console.print(
+            f"{total_needed} memes need prediction for {model}; "
+            f"running {len(memes)} due to --limit"
+        )
+    else:
+        console.print(f"{len(memes)} memes need prediction for {model}")
     if not memes:
         if validated_only:
             counts = queries.get_status_counts(db)
@@ -148,7 +170,7 @@ async def run(
                 stats.errors += 1
                 prog.update(task, advance=1)
                 continue
-            except (OpenAIError, AnthropicError) as e:
+            except (OpenAIError, AnthropicError, MetaError) as e:
                 if is_fatal_llm_error(e):
                     console.print(
                         f"\n[bold red]Fatal {type(e).__name__}:[/bold red] {e}"

@@ -42,6 +42,14 @@ def is_openrouter_model(model_id: str) -> bool:
     return "/" in model_id
 
 
+def is_meta_model(model_id: str) -> bool:
+    """Return True if this model should use Meta's direct Model API."""
+    normalized = model_id.strip().lower()
+    return normalized in {"muse spark 1.1", "muse-spark-1.1"} or normalized.startswith(
+        ("muse-", "meta-muse-", "meta/muse-")
+    )
+
+
 # ═══════════════════════════════════════════════════════
 # Reddit
 # ═══════════════════════════════════════════════════════

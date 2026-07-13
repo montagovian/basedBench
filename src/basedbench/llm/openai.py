@@ -17,6 +17,31 @@ from basedbench.llm.record import LlmCallRecord
 from basedbench.schemas import CuratedMeme, ModelPrediction
 
 USER_PROMPT = "Please explain this meme."
+PREDICTION_MAX_COMPLETION_TOKENS = 16000
+TRUNCATION_FINISH_REASONS = {"length"}
+
+
+def _finish_reason(response: object) -> str | None:
+    choices = getattr(response, "choices", None)
+    if not choices:
+        return None
+    reason = getattr(choices[0], "finish_reason", None)
+    return str(reason) if reason is not None else None
+
+
+def _prediction_output_error(
+    *,
+    provider: str,
+    finish_reason: str | None,
+    max_tokens: int,
+) -> str | None:
+    if finish_reason in TRUNCATION_FINISH_REASONS:
+        return (
+            f"{provider} prediction output was truncated by the provider "
+            f"(finish_reason={finish_reason!r}, max_tokens={max_tokens}); "
+            "increase the predictor output budget or retry with a shorter prompt."
+        )
+    return None
 
 
 class OpenAIPredictor:
@@ -73,7 +98,11 @@ class OpenAIPredictor:
                                 ],
                             },
                         ],
-                        max_completion_tokens=4000,
+                        # Reasoning models count hidden reasoning against the
+                        # output budget; keep this aligned with Anthropic's
+                        # 16k predictor budget so visible explanations are not
+                        # silently squeezed out.
+                        max_completion_tokens=PREDICTION_MAX_COMPLETION_TOKENS,
                         # Explicit medium reasoning effort: matches gpt-5.5's
                         # default but documents intent + protects against future
                         # default changes. Symmetric with the Anthropic
@@ -101,6 +130,7 @@ class OpenAIPredictor:
         text = ""
         if response.choices:
             text = response.choices[0].message.content or ""
+        finish_reason = _finish_reason(response)
         usage = response.usage
         completion_tokens = usage.completion_tokens if usage else 0
         prompt_tokens = usage.prompt_tokens if usage else 0
@@ -109,6 +139,25 @@ class OpenAIPredictor:
         record.response = text
         record.completion_tokens = completion_tokens
         record.prompt_tokens = prompt_tokens
+
+        output_error = _prediction_output_error(
+            provider="OpenAI",
+            finish_reason=finish_reason,
+            max_tokens=PREDICTION_MAX_COMPLETION_TOKENS,
+        )
+        if output_error is None and not text.strip():
+            output_error = "OpenAI prediction response contained no extracted text."
+        if output_error is not None:
+            record.error = output_error
+            return (
+                ModelPrediction.failure(
+                    post_id=meme.post_id,
+                    dataset_version=dataset_version,
+                    model_id=self._model,
+                    error=output_error,
+                ),
+                record,
+            )
 
         return (
             ModelPrediction.success(

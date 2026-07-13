@@ -52,8 +52,8 @@ Reddit → safety gate → consensus → human review → prediction → judge �
   (confidence ≥ 0.6, len ≥ 100, no vague phrases, no pure scrambled-nonsense
   jokes, etc.)
 - **Review**: Gradio UI to validate/exclude individual memes before they become ground truth
-- **Predict**: any OpenAI or Anthropic vision model explains each validated meme
-  (image only — no comments, no title, no web search)
+- **Predict**: OpenAI, Anthropic, OpenRouter, or direct Meta Model API vision
+  models explain each validated meme (image only — no comments, no title, no web search)
 - **Judge**: every prediction is scored by **each** judge model
   (`gpt-5.4-mini`, `claude-sonnet-4-6`, and `z-ai/glm-5.2` by default) →
   correct/incorrect, with a cross-judge agreement rate as a robustness signal.
@@ -69,7 +69,7 @@ for how flagged failures drive prompt/model improvements without silent regressi
 
 ```bash
 uv sync
-cp .env.example .env  # fill in REDDIT_CLIENT_ID, REDDIT_CLIENT_SECRET, OPENAI_API_KEY
+cp .env.example .env  # fill in Reddit/OpenAI keys; add META_API_KEY for Muse Spark
 
 uv run basedbench ingest --limit 20
 uv run basedbench review              # validate in Gradio
@@ -79,6 +79,10 @@ uv run basedbench status
 
 # quick end-to-end smoke test on a bounded, unreviewed batch
 uv run basedbench tracer --fetch 12 --target-consensus 5 --predict gpt-5.5
+
+# direct Meta Model API target
+# set META_API_KEY first; override META_API_BASE_URL / META_API_ENDPOINT if Meta's preview docs differ
+uv run basedbench predict muse-spark-1.1 --snapshot release-audit-500 --limit 1
 
 # release-readiness checks before publishing code or dataset artifacts
 uv run python scripts/release_audit.py --db data/basedbench.db
