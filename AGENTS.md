@@ -25,6 +25,9 @@ intended joke. They are not expected to provide a formal account of humor.
 
 - Use `uv` for Python package management and command execution.
 - Run `uv run pytest` before release-facing changes.
+- For frontend/UI changes, verify the running app in a browser whenever
+  practical, especially after Gradio layout or callback changes. Do not rely
+  only on import/build checks for UI work.
 - Keep local working data under `data/` and generated exports under `export/`;
   neither is a public repo artifact.
 - Do not commit secrets, raw SQLite databases, local images, caches, or LLM call

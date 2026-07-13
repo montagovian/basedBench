@@ -11,9 +11,14 @@ from basedbench.app import (
     _comment_md,
     _eval_expected_label,
     _eval_where,
+    _inspect_filter_defaults,
+    _inspect_order,
     _inline_image_urls,
     _inspect_where,
     _position_text,
+    _queue_index,
+    _queue_position_index,
+    _queue_step_index,
     _render_inspect,
     _resolve_image,
     set_db_path,
@@ -66,6 +71,16 @@ def test_inspect_where_all_has_no_state_condition():
     assert params == []
 
 
+def test_inspect_filter_defaults_do_not_hide_untagged_content():
+    assert _inspect_filter_defaults(False) == ("all", "all", "all", "all")
+    assert _inspect_filter_defaults(True) == (
+        "validated",
+        "with_predictions",
+        "with_evaluations",
+        "all",
+    )
+
+
 def test_inspect_where_quality_excluded_uses_auto_prefix():
     where, params = _inspect_where("quality_excluded", "")
     assert "r.reason LIKE 'auto:%'" in where
@@ -76,7 +91,32 @@ def test_inspect_where_combines_status_search():
     where, params = _inspect_where("validated", "cat")
     assert "r.status = 'validated'" in where
     assert "m.title LIKE ?" in where
-    assert params == ["%cat%"]
+    assert "m.post_id LIKE ?" in where
+    assert "gt.explanation LIKE ?" in where
+    assert "FROM predictions ps" in where
+    assert "JOIN judgments js" in where
+    assert "FROM comments c" in where
+    assert "JOIN tags ts" in where
+    assert "FROM llm_calls lc" in where
+    assert params == ["%cat%"] * 36
+
+
+def test_inspect_where_search_matches_post_id():
+    where, params = _inspect_where("all", "1jc0hsb")
+    assert "m.post_id LIKE ?" in where
+    assert "m.title LIKE ?" in where
+    assert params == ["%1jc0hsb%"] * 36
+
+
+def test_inspect_order_prioritizes_exact_post_id_search():
+    order, params = _inspect_order(" 1jc0hsb ")
+    assert "lower(m.post_id) = lower(?)" in order
+    assert "m.post_id DESC" in order
+    assert params == ["1jc0hsb"]
+
+    order, params = _inspect_order("")
+    assert order == "ORDER BY m.post_id DESC"
+    assert params == []
 
 
 def test_inspect_where_human_excluded_excludes_gate_reasons():
@@ -107,7 +147,7 @@ def test_inspect_where_prediction_coverage_filters_selected_model():
     assert "m.title LIKE ?" in where
     assert "NOT EXISTS (SELECT 1 FROM predictions p" in where
     assert "p.model_id = ?" in where
-    assert params == ["%cat%", "gpt-5.5"]
+    assert params == ["%cat%"] * 36 + ["gpt-5.5"]
 
 
 def test_inspect_where_selected_model_defaults_to_has_model_prediction():
@@ -144,7 +184,7 @@ def test_inspect_where_evaluation_coverage_filters_selected_model():
         "with_evaluations",
     )
     assert where.count("p.model_id = ?") == 2
-    assert params == ["%golf%", "gpt-5.5", "gpt-5.5"]
+    assert params == ["%golf%"] * 36 + ["gpt-5.5", "gpt-5.5"]
 
 
 def test_inspect_where_verdict_filter_all_correct():
@@ -177,12 +217,86 @@ def test_inspect_where_verdict_filter_mixed_any_model():
     assert params == []
 
 
+def test_inspect_where_tag_filter_any_selected():
+    where, params = _inspect_where(
+        "all",
+        "",
+        tag_filter="any",
+        tag_names=["visual miss", "culture"],
+    )
+    assert "EXISTS (SELECT 1 FROM meme_tags mt" in where
+    assert "JOIN tags t ON t.tag_id = mt.tag_id" in where
+    assert "t.name COLLATE NOCASE IN (?,?)" in where
+    assert params == ["visual miss", "culture"]
+
+
+def test_inspect_where_tag_filter_tagged():
+    where, params = _inspect_where("all", "", tag_filter="tagged")
+    assert "EXISTS (SELECT 1 FROM meme_tags mt WHERE mt.post_id = m.post_id)" in where
+    assert params == []
+
+    where, params = _inspect_where(
+        "all",
+        "",
+        tag_filter="tagged",
+        tag_names=["grok-sucks"],
+    )
+    assert "JOIN tags t ON t.tag_id = mt.tag_id" in where
+    assert "t.name COLLATE NOCASE IN (?)" in where
+    assert params == ["grok-sucks"]
+
+
+def test_inspect_where_tag_filter_all_selected_deduplicates():
+    where, params = _inspect_where(
+        "all",
+        "",
+        tag_filter="all_tags",
+        tag_names=["visual miss", "Visual Miss", "culture"],
+    )
+    assert "COUNT(DISTINCT t.tag_id)" in where
+    assert "= ?" in where
+    assert params == ["visual miss", "culture", 2]
+
+
+def test_inspect_where_tag_filter_exclude_and_untagged():
+    where, params = _inspect_where(
+        "all",
+        "",
+        tag_filter="exclude",
+        tag_names=["visual miss"],
+    )
+    assert "NOT EXISTS (SELECT 1 FROM meme_tags mt" in where
+    assert params == ["visual miss"]
+
+    where, params = _inspect_where("all", "", tag_filter="untagged")
+    assert "NOT EXISTS (SELECT 1 FROM meme_tags mt WHERE mt.post_id = m.post_id)" in where
+    assert params == []
+
+
 def test_position_text():
     assert _position_text(0, [], 0) == "0 / 0"
     assert _position_text(0, ["a", "b", "c"], 3) == "1 / 3"
     assert _position_text(2, ["a", "b", "c"], 3) == "3 / 3"
     # capped result notes the true total
     assert _position_text(0, ["a"], 50) == "1 / 1 (capped from 50)"
+
+
+def test_queue_index_helpers_clamp_navigation():
+    assert _queue_index(None, 0) == 0
+    assert _queue_index(-5, 10) == 0
+    assert _queue_index(99, 10) == 9
+    assert _queue_index("4", 10) == 4
+
+    assert _queue_step_index(20, -50, 100) == 0
+    assert _queue_step_index(20, -10, 100) == 10
+    assert _queue_step_index(20, 10, 100) == 30
+    assert _queue_step_index(90, 50, 100) == 99
+
+    assert _queue_position_index(1, 20, 100) == 0
+    assert _queue_position_index(50, 20, 100) == 49
+    assert _queue_position_index(500, 20, 100) == 99
+    assert _queue_position_index("", 20, 100) == 20
+    assert _queue_position_index("nope", 20, 100) == 20
 
 
 def test_eval_expected_label():

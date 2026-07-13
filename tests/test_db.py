@@ -135,6 +135,48 @@ def test_meme_tags_roundtrip(db: Database):
     assert q.tags_for_meme(db, "post1") == []
 
 
+def test_tag_management_preserves_associations_and_cascades(db: Database):
+    q.insert_meme(db, sample_post("post1"))
+    q.insert_meme(db, sample_post("post2"))
+
+    q.add_meme_tag(db, "post1", "Failure: Visual Reference Miss", "misses the sign")
+    q.add_meme_tag(db, "post2", "Failure: Visual Reference Miss", "same issue")
+    q.add_meme_tag(db, "post2", "Failure: Cultural Context")
+
+    summaries = q.list_tag_summaries(db)
+    assert [(t.name, t.meme_count) for t in summaries] == [
+        ("Failure: Cultural Context", 1),
+        ("Failure: Visual Reference Miss", 2),
+    ]
+    assert (
+        q.meme_tag_note(db, "post1", "failure: visual reference miss")
+        == "misses the sign"
+    )
+
+    assert q.update_tag(
+        db,
+        "failure: visual reference miss",
+        "Visual Reference Miss",
+        "Image detail was missed",
+    )
+    renamed = q.tag_summary_by_name(db, "visual reference miss")
+    assert renamed is not None
+    assert renamed.name == "Visual Reference Miss"
+    assert renamed.description == "Image detail was missed"
+    assert renamed.meme_count == 2
+    assert [t.name for t in q.tags_for_meme(db, "post1")] == ["Visual Reference Miss"]
+
+    with pytest.raises(ValueError, match="already exists"):
+        q.update_tag(db, "Visual Reference Miss", "Failure: Cultural Context")
+
+    assert q.delete_tag(db, "Visual Reference Miss")
+    assert q.tag_summary_by_name(db, "Visual Reference Miss") is None
+    assert q.tags_for_meme(db, "post1") == []
+    assert [t.name for t in q.tags_for_meme(db, "post2")] == [
+        "Failure: Cultural Context"
+    ]
+
+
 # ═══════════════════════════════════════════════════════
 # Comments
 # ═══════════════════════════════════════════════════════

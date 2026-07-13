@@ -18,8 +18,21 @@ import html
 import json
 import re
 import sqlite3
+import warnings
 from datetime import datetime, timezone
 from pathlib import Path
+
+from starlette.exceptions import StarletteDeprecationWarning
+
+# Gradio currently references Starlette's old HTTP_422 constant inside its queue
+# join route, which can spam the server log on every browser poll. Keep this
+# narrow so real deprecations and app warnings still surface.
+warnings.filterwarnings(
+    "ignore",
+    message="'HTTP_422_UNPROCESSABLE_ENTITY' is deprecated.*",
+    category=StarletteDeprecationWarning,
+    module=r"gradio\.routes",
+)
 
 import gradio as gr
 
@@ -374,6 +387,12 @@ def _inspect_prediction_model_choices() -> list[tuple[str, str]]:
     return [("All models", "all")] + [(m, m) for m in _prediction_models()[1:]]
 
 
+def _inspect_filter_defaults(read_only: bool) -> tuple[str, str, str, str]:
+    if read_only:
+        return ("validated", "with_predictions", "with_evaluations", "all")
+    return ("all", "all", "all", "all")
+
+
 def _tag_choices() -> list[tuple[str, str]]:
     from basedbench.db import queries
     from basedbench.db.connection import Database
@@ -384,6 +403,24 @@ def _tag_choices() -> list[tuple[str, str]]:
     finally:
         db.close()
     return [(tag.name, tag.name) for tag in tags]
+
+
+def _tag_names(value: str | list[str] | tuple[str, ...] | None) -> list[str]:
+    if value is None:
+        return []
+    if isinstance(value, str):
+        raw = [value]
+    else:
+        raw = list(value)
+    cleaned: list[str] = []
+    seen: set[str] = set()
+    for name in raw:
+        stripped = name.strip() if name else ""
+        key = stripped.casefold()
+        if stripped and key not in seen:
+            cleaned.append(stripped)
+            seen.add(key)
+    return cleaned
 
 
 def _tag_markdown(post_id: str | None) -> str:
@@ -407,8 +444,25 @@ def _tag_markdown(post_id: str | None) -> str:
         line = f"- `{_escape_md_text(tag.name)}`"
         if tag.notes:
             line += f" — {_escape_md_text(tag.notes)}"
+        elif tag.description:
+            line += f" — {_escape_md_text(tag.description)}"
         lines.append(line)
     return "\n".join(lines)
+
+
+def load_current_tag_note(post_id: str, selected_tag: str | None):
+    from basedbench.db import queries
+    from basedbench.db.connection import Database
+
+    if not post_id or not selected_tag:
+        return gr.update(value="")
+
+    db = Database.open(_DB_PATH)
+    try:
+        note = queries.meme_tag_note(db, post_id, selected_tag)
+    finally:
+        db.close()
+    return gr.update(value=note or "")
 
 
 def add_current_tag(
@@ -424,6 +478,8 @@ def add_current_tag(
         return (
             gr.update(value="_No meme loaded._"),
             gr.update(choices=_tag_choices(), value=None),
+            gr.update(choices=_tag_choices()),
+            gr.update(),
             "Load a meme before tagging.",
         )
 
@@ -432,6 +488,8 @@ def add_current_tag(
         return (
             gr.update(value=_tag_markdown(post_id)),
             gr.update(choices=_tag_choices(), value=selected_tag or None),
+            gr.update(choices=_tag_choices()),
+            gr.update(),
             "Pick an existing tag or type a new one.",
         )
 
@@ -445,9 +503,12 @@ def add_current_tag(
     finally:
         db.close()
 
+    choices = _tag_choices()
     return (
         gr.update(value=_tag_markdown(post_id)),
-        gr.update(choices=_tag_choices(), value=tag_name),
+        gr.update(choices=choices, value=tag_name),
+        gr.update(choices=choices),
+        gr.update(value=""),
         feedback,
     )
 
@@ -460,12 +521,16 @@ def remove_current_tag(post_id: str, selected_tag: str | None):
         return (
             gr.update(value="_No meme loaded._"),
             gr.update(choices=_tag_choices(), value=None),
+            gr.update(choices=_tag_choices()),
+            gr.update(),
             "Load a meme before removing tags.",
         )
     if not selected_tag:
         return (
             gr.update(value=_tag_markdown(post_id)),
             gr.update(choices=_tag_choices(), value=None),
+            gr.update(choices=_tag_choices()),
+            gr.update(),
             "Pick a tag to remove.",
         )
 
@@ -475,10 +540,195 @@ def remove_current_tag(post_id: str, selected_tag: str | None):
     finally:
         db.close()
     feedback = f"Removed tag `{selected_tag}`." if removed else "Tag was not on this meme."
+    choices = _tag_choices()
     return (
         gr.update(value=_tag_markdown(post_id)),
-        gr.update(choices=_tag_choices(), value=None),
+        gr.update(choices=choices, value=None),
+        gr.update(choices=choices),
+        gr.update(value=""),
         feedback,
+    )
+
+
+def _tag_table_rows() -> list[list[object]]:
+    from basedbench.db import queries
+    from basedbench.db.connection import Database
+
+    db = Database.open(_DB_PATH)
+    try:
+        summaries = queries.list_tag_summaries(db)
+    finally:
+        db.close()
+    return [
+        [
+            tag.name,
+            tag.description or "",
+            tag.meme_count,
+            tag.created_at[:19].replace("T", " "),
+        ]
+        for tag in summaries
+    ]
+
+
+def refresh_tag_manager():
+    choices = _tag_choices()
+    return (
+        gr.update(value=_tag_table_rows()),
+        gr.update(choices=choices, value=None),
+        gr.update(value=""),
+        gr.update(value=""),
+        "_Pick a tag to edit or delete._",
+        "",
+        gr.update(value=False),
+    )
+
+
+def load_tag_for_edit(selected_tag: str | None):
+    from basedbench.db import queries
+    from basedbench.db.connection import Database
+
+    if not selected_tag:
+        return (
+            gr.update(value=""),
+            gr.update(value=""),
+            "_Pick a tag to edit or delete._",
+            "",
+            gr.update(value=False),
+        )
+
+    db = Database.open(_DB_PATH)
+    try:
+        summary = queries.tag_summary_by_name(db, selected_tag)
+    finally:
+        db.close()
+
+    if summary is None:
+        return (
+            gr.update(value=""),
+            gr.update(value=""),
+            f"_Tag `{_escape_md_text(selected_tag)}` no longer exists._",
+            "",
+            gr.update(value=False),
+        )
+
+    usage = "meme" if summary.meme_count == 1 else "memes"
+    return (
+        gr.update(value=summary.name),
+        gr.update(value=summary.description or ""),
+        f"**Usage:** {summary.meme_count:,} {usage} tagged.",
+        "",
+        gr.update(value=False),
+    )
+
+
+def save_tag_edit(
+    selected_tag: str | None,
+    new_name: str | None,
+    description: str | None,
+):
+    from basedbench.db import queries
+    from basedbench.db.connection import Database
+
+    if not selected_tag:
+        return (
+            gr.update(value=_tag_table_rows()),
+            gr.update(choices=_tag_choices(), value=None),
+            gr.update(),
+            gr.update(),
+            "_Pick a tag to edit first._",
+            "Pick a tag to edit first.",
+            gr.update(value=False),
+        )
+
+    db = Database.open(_DB_PATH)
+    try:
+        try:
+            updated = queries.update_tag(db, selected_tag, new_name or "", description)
+        except ValueError as e:
+            summary = queries.tag_summary_by_name(db, selected_tag)
+            current_name = summary.name if summary else selected_tag
+            current_description = summary.description if summary else ""
+            return (
+                gr.update(value=_tag_table_rows()),
+                gr.update(choices=_tag_choices(), value=selected_tag),
+                gr.update(value=current_name),
+                gr.update(value=current_description or ""),
+                f"_Could not save tag: {_escape_md_text(str(e))}._",
+                f"Could not save tag: {e}",
+                gr.update(value=False),
+            )
+        summary = queries.tag_summary_by_name(db, new_name or selected_tag)
+    finally:
+        db.close()
+
+    if not updated or summary is None:
+        return (
+            gr.update(value=_tag_table_rows()),
+            gr.update(choices=_tag_choices(), value=None),
+            gr.update(value=""),
+            gr.update(value=""),
+            "_That tag no longer exists._",
+            "That tag no longer exists.",
+            gr.update(value=False),
+        )
+
+    usage = "meme" if summary.meme_count == 1 else "memes"
+    choices = _tag_choices()
+    return (
+        gr.update(value=_tag_table_rows()),
+        gr.update(choices=choices, value=summary.name),
+        gr.update(value=summary.name),
+        gr.update(value=summary.description or ""),
+        f"**Usage:** {summary.meme_count:,} {usage} tagged.",
+        f"Saved `{summary.name}`.",
+        gr.update(value=False),
+    )
+
+
+def delete_selected_tag(selected_tag: str | None, confirmed: bool):
+    from basedbench.db import queries
+    from basedbench.db.connection import Database
+
+    if not selected_tag:
+        return (
+            gr.update(value=_tag_table_rows()),
+            gr.update(choices=_tag_choices(), value=None),
+            gr.update(),
+            gr.update(),
+            "_Pick a tag to delete first._",
+            "Pick a tag to delete first.",
+            gr.update(value=False),
+        )
+    if not confirmed:
+        return (
+            gr.update(value=_tag_table_rows()),
+            gr.update(choices=_tag_choices(), value=selected_tag),
+            gr.update(),
+            gr.update(),
+            "_Check the confirmation box before deleting._",
+            "Check the confirmation box before deleting.",
+            gr.update(value=False),
+        )
+
+    db = Database.open(_DB_PATH)
+    try:
+        deleted = queries.delete_tag(db, selected_tag)
+    finally:
+        db.close()
+
+    feedback = (
+        f"Deleted `{selected_tag}` everywhere."
+        if deleted
+        else f"Tag `{selected_tag}` no longer exists."
+    )
+    return (
+        gr.update(value=_tag_table_rows()),
+        gr.update(choices=_tag_choices(), value=None),
+        gr.update(value=""),
+        gr.update(value=""),
+        "_Pick a tag to edit or delete._",
+        feedback,
+        gr.update(value=False),
     )
 
 
@@ -739,6 +989,8 @@ def _inspect_where(
     model_id: str = "all",
     evaluation_filter: str = "all",
     verdict_filter: str = "all",
+    tag_filter: str = "all",
+    tag_names: str | list[str] | tuple[str, ...] | None = None,
 ) -> tuple[str, list[object]]:
     conds: list[str] = []
     params: list[object] = []
@@ -763,9 +1015,82 @@ def _inspect_where(
     if status in state_conds:
         conds.append(state_conds[status])
 
-    if search:
-        conds.append("m.title LIKE ?")
-        params.append(f"%{search}%")
+    search_text = search.strip()
+    if search_text:
+        search_like = f"%{search_text}%"
+        conds.append(
+            """(
+                m.post_id LIKE ?
+                OR m.title LIKE ?
+                OR m.subreddit LIKE ?
+                OR m.image_url LIKE ?
+                OR m.local_image_path LIKE ?
+                OR m.permalink LIKE ?
+                OR gt.explanation LIKE ?
+                OR gt.source_comment_ids LIKE ?
+                OR gt.consensus_model LIKE ?
+                OR gt.consensus_prompt_version LIKE ?
+                OR r.status LIKE ?
+                OR r.reason LIKE ?
+                OR EXISTS (
+                    SELECT 1 FROM comments c
+                    WHERE c.post_id = m.post_id
+                      AND (
+                        c.comment_id LIKE ?
+                        OR c.author LIKE ?
+                        OR c.body LIKE ?
+                        OR CAST(c.score AS TEXT) LIKE ?
+                      )
+                )
+                OR EXISTS (
+                    SELECT 1 FROM predictions ps
+                    WHERE ps.post_id = m.post_id
+                      AND (
+                        ps.model_id LIKE ?
+                        OR ps.prediction LIKE ?
+                        OR ps.error LIKE ?
+                        OR ps.dataset_version LIKE ?
+                      )
+                )
+                OR EXISTS (
+                    SELECT 1 FROM predictions pj
+                    JOIN judgments js ON js.prediction_id = pj.id
+                    WHERE pj.post_id = m.post_id
+                      AND (
+                        pj.model_id LIKE ?
+                        OR js.judge_model LIKE ?
+                        OR js.verdict LIKE ?
+                        OR js.judge_reasoning LIKE ?
+                        OR js.judge_prompt_version LIKE ?
+                      )
+                )
+                OR EXISTS (
+                    SELECT 1 FROM meme_tags mts
+                    JOIN tags ts ON ts.tag_id = mts.tag_id
+                    WHERE mts.post_id = m.post_id
+                      AND (
+                        ts.name LIKE ?
+                        OR ts.description LIKE ?
+                        OR mts.notes LIKE ?
+                      )
+                )
+                OR EXISTS (
+                    SELECT 1 FROM llm_calls lc
+                    WHERE lc.post_id = m.post_id
+                      AND (
+                        lc.session_id LIKE ?
+                        OR lc.role LIKE ?
+                        OR lc.model LIKE ?
+                        OR lc.response LIKE ?
+                        OR lc.error LIKE ?
+                        OR lc.verdict LIKE ?
+                        OR lc.reasoning LIKE ?
+                        OR lc.prompt_version LIKE ?
+                      )
+                )
+            )"""
+        )
+        params.extend([search_like] * 36)
 
     model_clause = ""
     model_params: list[object] = []
@@ -853,6 +1178,45 @@ def _inspect_where(
         params.extend(model_params)
         params.extend(model_params)
 
+    selected_tags = _tag_names(tag_names)
+    tag_match = ""
+    if selected_tags:
+        placeholders = ",".join("?" * len(selected_tags))
+        tag_match = (
+            "SELECT 1 FROM meme_tags mt "
+            "JOIN tags t ON t.tag_id = mt.tag_id "
+            "WHERE mt.post_id = m.post_id "
+            f"AND t.name COLLATE NOCASE IN ({placeholders})"
+        )
+    if tag_filter == "tagged":
+        if selected_tags:
+            conds.append(f"EXISTS ({tag_match})")
+            params.extend(selected_tags)
+        else:
+            conds.append(
+                "EXISTS (SELECT 1 FROM meme_tags mt WHERE mt.post_id = m.post_id)"
+            )
+    elif tag_filter == "untagged":
+        conds.append(
+            "NOT EXISTS (SELECT 1 FROM meme_tags mt WHERE mt.post_id = m.post_id)"
+        )
+    elif selected_tags and tag_filter in {"any", "all_tags", "exclude"}:
+        if tag_filter == "any":
+            conds.append(f"EXISTS ({tag_match})")
+            params.extend(selected_tags)
+        elif tag_filter == "exclude":
+            conds.append(f"NOT EXISTS ({tag_match})")
+            params.extend(selected_tags)
+        elif tag_filter == "all_tags":
+            conds.append(
+                "(SELECT COUNT(DISTINCT t.tag_id) FROM meme_tags mt "
+                "JOIN tags t ON t.tag_id = mt.tag_id "
+                "WHERE mt.post_id = m.post_id "
+                f"AND t.name COLLATE NOCASE IN ({placeholders})) = ?"
+            )
+            params.extend(selected_tags)
+            params.append(len(selected_tags))
+
     where = " AND ".join(conds) if conds else "1=1"
     return where, params
 
@@ -862,6 +1226,17 @@ def _inspect_where(
 _INSPECT_CAP = 3000
 
 
+def _inspect_order(search: str) -> tuple[str, list[object]]:
+    search_text = search.strip()
+    if not search_text:
+        return "ORDER BY m.post_id DESC", []
+    return (
+        "ORDER BY CASE WHEN lower(m.post_id) = lower(?) THEN 0 ELSE 1 END, "
+        "m.post_id DESC",
+        [search_text],
+    )
+
+
 def _inspect_ids(
     status: str,
     search: str,
@@ -869,6 +1244,8 @@ def _inspect_ids(
     model_id: str,
     evaluation_filter: str,
     verdict_filter: str,
+    tag_filter: str = "all",
+    tag_names: str | list[str] | tuple[str, ...] | None = None,
 ) -> tuple[list[str], int]:
     """Return (post_ids matching the filter, total matches before the cap)."""
     where, params = _inspect_where(
@@ -878,15 +1255,17 @@ def _inspect_ids(
         model_id,
         evaluation_filter,
         verdict_filter,
+        tag_filter,
+        tag_names,
     )
     conn = _get_conn()
     total = conn.execute(
         f"SELECT COUNT(*) AS cnt {_INSPECT_FROM} WHERE {where}", params
     ).fetchone()["cnt"]
+    order_sql, order_params = _inspect_order(search)
     rows = conn.execute(
-        f"SELECT m.post_id {_INSPECT_FROM} WHERE {where} "
-        f"ORDER BY m.post_id DESC LIMIT ?",
-        [*params, _INSPECT_CAP],
+        f"SELECT m.post_id {_INSPECT_FROM} WHERE {where} {order_sql} LIMIT ?",
+        [*params, *order_params, _INSPECT_CAP],
     ).fetchall()
     conn.close()
     return [r["post_id"] for r in rows], total
@@ -1124,6 +1503,34 @@ def _position_text(idx: int, ids: list[str], total: int) -> str:
     return f"{idx + 1} / {shown}{suffix}"
 
 
+def _queue_index(idx: int | float | str | None, size: int) -> int:
+    if size <= 0:
+        return 0
+    try:
+        parsed = int(float(idx if idx is not None else 0))
+    except (TypeError, ValueError):
+        parsed = 0
+    return max(0, min(parsed, size - 1))
+
+
+def _queue_step_index(idx: int | float | str | None, delta: int, size: int) -> int:
+    return _queue_index(_queue_index(idx, size) + delta, size)
+
+
+def _queue_position_index(
+    position: int | float | str | None,
+    fallback_idx: int | float | str | None,
+    size: int,
+) -> int:
+    if position in (None, ""):
+        return _queue_index(fallback_idx, size)
+    try:
+        one_based = int(float(position))
+    except (TypeError, ValueError):
+        return _queue_index(fallback_idx, size)
+    return _queue_index(one_based - 1, size)
+
+
 def inspect_apply(
     status: str,
     search: str,
@@ -1131,6 +1538,8 @@ def inspect_apply(
     model_id: str,
     evaluation_filter: str,
     verdict_filter: str,
+    tag_filter: str,
+    tag_names: list[str] | None,
     try_it_yourself: bool = False,
 ):
     ids, total = _inspect_ids(
@@ -1140,6 +1549,8 @@ def inspect_apply(
         model_id,
         evaluation_filter,
         verdict_filter,
+        tag_filter,
+        tag_names,
     )
     first = ids[0] if ids else None
     return (
@@ -1148,6 +1559,35 @@ def inspect_apply(
         False,
         *_render_inspect(first, try_it_yourself, False),
         _position_text(0, ids, total),
+    )
+
+
+def inspect_refresh_choices_and_apply(
+    status: str,
+    search: str,
+    prediction_filter: str,
+    model_id: str,
+    evaluation_filter: str,
+    verdict_filter: str,
+    tag_filter: str,
+    tag_names: list[str] | None,
+    try_it_yourself: bool = False,
+):
+    return (
+        gr.update(choices=_inspect_prediction_model_choices()),
+        gr.update(choices=_tag_choices()),
+        gr.update(choices=_tag_choices()),
+        *inspect_apply(
+            status,
+            search,
+            prediction_filter,
+            model_id,
+            evaluation_filter,
+            verdict_filter,
+            tag_filter,
+            tag_names,
+            try_it_yourself,
+        ),
     )
 
 
@@ -1164,7 +1604,29 @@ def inspect_step(
             *_render_inspect(None, try_it_yourself, False),
             _position_text(idx, ids, len(ids)),
         )
-    new_idx = max(0, min(int(idx) + delta, len(ids) - 1))
+    new_idx = _queue_step_index(idx, delta, len(ids))
+    return (
+        new_idx,
+        False,
+        *_render_inspect(ids[new_idx], try_it_yourself, False),
+        _position_text(new_idx, ids, len(ids)),
+    )
+
+
+def inspect_jump_to(
+    ids: list[str],
+    idx: int,
+    position: int | float | str | None,
+    try_it_yourself: bool = False,
+):
+    if not ids:
+        return (
+            idx,
+            False,
+            *_render_inspect(None, try_it_yourself, False),
+            _position_text(idx, ids, len(ids)),
+        )
+    new_idx = _queue_position_index(position, idx, len(ids))
     return (
         new_idx,
         False,
@@ -1992,9 +2454,12 @@ def build_app(read_only: bool = False) -> gr.Blocks:
                 inspect_ids_state = gr.State([])
                 inspect_idx_state = gr.State(0)
                 inspect_revealed_state = gr.State(False)
-                inspect_status_default = "validated" if read_only else "all"
-                inspect_prediction_default = "with_predictions" if read_only else "all"
-                inspect_evaluation_default = "with_evaluations" if read_only else "all"
+                (
+                    inspect_status_default,
+                    inspect_prediction_default,
+                    inspect_evaluation_default,
+                    inspect_tag_default,
+                ) = _inspect_filter_defaults(read_only)
 
                 if not read_only:
                     with gr.Row(elem_classes="inspect-top-nav inspect-inline-nav"):
@@ -2011,6 +2476,26 @@ def build_app(read_only: bool = False) -> gr.Blocks:
                             min_width=64,
                             scale=0,
                         )
+                        inspect_jump_position = gr.Number(
+                            value=None,
+                            label="Go to",
+                            placeholder="#",
+                            show_label=False,
+                            container=False,
+                            precision=0,
+                            minimum=1,
+                            step=1,
+                            min_width=64,
+                            scale=0,
+                            elem_classes="inspect-jump-position",
+                        )
+                        btn_inspect_jump = gr.Button(
+                            "Go",
+                            size="sm",
+                            min_width=44,
+                            scale=0,
+                            elem_classes="inspect-jump-button",
+                        )
                         btn_inspect_next = gr.Button(
                             "Next →",
                             size="sm",
@@ -2019,7 +2504,10 @@ def build_app(read_only: bool = False) -> gr.Blocks:
                             elem_classes="inspect-next",
                         )
 
-                with gr.Row(variant="compact", elem_classes="inspect-toolbar"):
+                with gr.Row(
+                    variant="compact",
+                    elem_classes="inspect-toolbar inspect-primary-toolbar",
+                ):
                     inspect_status = gr.Dropdown(
                         choices=[(label, key) for key, label in _INSPECT_STATES],
                         value=inspect_status_default,
@@ -2027,7 +2515,7 @@ def build_app(read_only: bool = False) -> gr.Blocks:
                         show_label=False,
                         container=False,
                         filterable=False,
-                        min_width=150,
+                        min_width=136,
                         scale=1,
                     )
                     inspect_search = gr.Textbox(
@@ -2035,9 +2523,22 @@ def build_app(read_only: bool = False) -> gr.Blocks:
                         placeholder="Search",
                         show_label=False,
                         container=True,
-                        min_width=220,
-                        scale=2,
+                        min_width=260,
+                        scale=3,
                     )
+                    inspect_try_it_yourself = gr.Checkbox(
+                        label="Try it yourself (hide ground truth)",
+                        value=False,
+                        container=False,
+                        min_width=244,
+                        scale=0,
+                        elem_classes="inspect-try-toggle",
+                    )
+
+                with gr.Row(
+                    variant="compact",
+                    elem_classes="inspect-toolbar inspect-filter-toolbar",
+                ):
                     inspect_prediction_filter = gr.Dropdown(
                         choices=[
                             ("Any pred", "all"),
@@ -2093,19 +2594,33 @@ def build_app(read_only: bool = False) -> gr.Blocks:
                         min_width=116,
                         scale=1,
                     )
-                    inspect_try_it_yourself = gr.Checkbox(
-                        label="Try it yourself",
-                        value=False,
+                    inspect_tag_filter = gr.Dropdown(
+                        choices=[
+                            ("Any tag state", "all"),
+                            ("Has any tag", "tagged"),
+                            ("Has any selected tag", "any"),
+                            ("Has all selected tags", "all_tags"),
+                            ("Exclude selected tags", "exclude"),
+                            ("Has no tags", "untagged"),
+                        ],
+                        value=inspect_tag_default,
+                        label="Tag filter",
+                        show_label=False,
                         container=False,
-                        min_width=132,
-                        scale=0,
+                        filterable=False,
+                        min_width=160,
+                        scale=1,
                     )
-                    btn_inspect_apply = gr.Button(
-                        "Apply",
-                        variant="primary",
-                        size="sm",
-                        min_width=64,
-                        scale=0,
+                    inspect_tag_names = gr.Dropdown(
+                        choices=_tag_choices() if _DB_PATH.exists() else [],
+                        value=[],
+                        label="Tags",
+                        show_label=False,
+                        container=False,
+                        multiselect=True,
+                        min_width=300,
+                        scale=2,
+                        elem_classes="inspect-tag-names",
                     )
 
                 with gr.Row():
@@ -2118,6 +2633,7 @@ def build_app(read_only: bool = False) -> gr.Blocks:
                         )
                     with gr.Column(scale=1):
                         inspect_info = gr.Markdown()
+                        inspect_tags = gr.Markdown(visible=False)
                         inspect_answer_mask = gr.Markdown(visible=False)
                         btn_inspect_show_answer = gr.Button(
                             "Show me the answer",
@@ -2133,8 +2649,7 @@ def build_app(read_only: bool = False) -> gr.Blocks:
 
                 inspect_post_id = gr.Textbox(visible=False)
 
-                with gr.Accordion("🏷️ Tags", open=False, visible=not read_only):
-                    inspect_tags = gr.Markdown()
+                with gr.Accordion("🏷️ Edit tags", open=False, visible=not read_only):
                     with gr.Row():
                         tag_select = gr.Dropdown(
                             choices=_tag_choices() if _DB_PATH.exists() else [],
@@ -2153,7 +2668,7 @@ def build_app(read_only: bool = False) -> gr.Blocks:
                         lines=2,
                     )
                     with gr.Row():
-                        btn_add_tag = gr.Button("Add tag", variant="primary")
+                        btn_add_tag = gr.Button("Add / update tag", variant="primary")
                         btn_remove_tag = gr.Button("Remove selected tag")
                     tag_feedback = gr.Markdown()
 
@@ -2199,25 +2714,48 @@ def build_app(read_only: bool = False) -> gr.Blocks:
                     inspect_post_id,
                     misfire_gate,
                 ]
-                btn_inspect_apply.click(
+                inspect_apply_inputs = [
+                    inspect_status,
+                    inspect_search,
+                    inspect_prediction_filter,
+                    inspect_model,
+                    inspect_evaluation_filter,
+                    inspect_verdict_filter,
+                    inspect_tag_filter,
+                    inspect_tag_names,
+                    inspect_try_it_yourself,
+                ]
+                inspect_apply_outputs = [
+                    inspect_ids_state,
+                    inspect_idx_state,
+                    inspect_revealed_state,
+                    *inspect_render_outputs,
+                    inspect_position,
+                ]
+                inspect_search.submit(
                     inspect_apply,
-                    inputs=[
-                        inspect_status,
-                        inspect_search,
-                        inspect_prediction_filter,
-                        inspect_model,
-                        inspect_evaluation_filter,
-                        inspect_verdict_filter,
-                        inspect_try_it_yourself,
-                    ],
-                    outputs=[
-                        inspect_ids_state,
-                        inspect_idx_state,
-                        inspect_revealed_state,
-                        *inspect_render_outputs,
-                        inspect_position,
-                    ],
+                    inputs=inspect_apply_inputs,
+                    outputs=inspect_apply_outputs,
                 )
+                inspect_search.change(
+                    inspect_apply,
+                    inputs=inspect_apply_inputs,
+                    outputs=inspect_apply_outputs,
+                )
+                for inspect_filter_control in (
+                    inspect_status,
+                    inspect_prediction_filter,
+                    inspect_model,
+                    inspect_evaluation_filter,
+                    inspect_verdict_filter,
+                    inspect_tag_filter,
+                    inspect_tag_names,
+                ):
+                    inspect_filter_control.change(
+                        inspect_apply,
+                        inputs=inspect_apply_inputs,
+                        outputs=inspect_apply_outputs,
+                    )
                 btn_inspect_prev.click(
                     lambda ids, idx, try_it_yourself: inspect_step(
                         ids, idx, -1, try_it_yourself
@@ -2234,6 +2772,22 @@ def build_app(read_only: bool = False) -> gr.Blocks:
                         inspect_position,
                     ],
                 )
+                if not read_only:
+                    btn_inspect_jump.click(
+                        inspect_jump_to,
+                        inputs=[
+                            inspect_ids_state,
+                            inspect_idx_state,
+                            inspect_jump_position,
+                            inspect_try_it_yourself,
+                        ],
+                        outputs=[
+                            inspect_idx_state,
+                            inspect_revealed_state,
+                            *inspect_render_outputs,
+                            inspect_position,
+                        ],
+                    )
                 btn_inspect_next.click(
                     lambda ids, idx, try_it_yourself: inspect_step(
                         ids, idx, 1, try_it_yourself
@@ -2266,28 +2820,48 @@ def build_app(read_only: bool = False) -> gr.Blocks:
                         inputs=[inspect_post_id, misfire_gate, misfire_correct, misfire_notes],
                         outputs=[misfire_feedback, misfire_correct, misfire_notes],
                     )
-                # Refresh model options + load the first page on tab activation.
+                # Refresh model/tag options + load the first page on tab activation.
                 inspect_tab.select(
-                    lambda: (
-                        gr.update(choices=_inspect_prediction_model_choices()),
-                        gr.update(choices=_tag_choices()),
-                    ),
-                    outputs=[inspect_model, tag_select],
+                    inspect_refresh_choices_and_apply,
+                    inputs=inspect_apply_inputs,
+                    outputs=[
+                        inspect_model,
+                        inspect_tag_names,
+                        tag_select,
+                        *inspect_apply_outputs,
+                    ],
                 )
                 if not read_only:
+                    tag_select.change(
+                        load_current_tag_note,
+                        inputs=[inspect_post_id, tag_select],
+                        outputs=[tag_notes],
+                    )
                     btn_add_tag.click(
                         add_current_tag,
                         inputs=[inspect_post_id, tag_select, tag_new, tag_notes],
-                        outputs=[inspect_tags, tag_select, tag_feedback],
+                        outputs=[
+                            inspect_tags,
+                            tag_select,
+                            inspect_tag_names,
+                            tag_new,
+                            tag_feedback,
+                        ],
                     )
                     btn_remove_tag.click(
                         remove_current_tag,
                         inputs=[inspect_post_id, tag_select],
-                        outputs=[inspect_tags, tag_select, tag_feedback],
+                        outputs=[
+                            inspect_tags,
+                            tag_select,
+                            inspect_tag_names,
+                            tag_notes,
+                            tag_feedback,
+                        ],
                     )
                 if read_only:
                     app.load(
-                        inspect_apply,
+                        inspect_refresh_choices_and_apply,
                         inputs=[
                             inspect_status,
                             inspect_search,
@@ -2295,9 +2869,14 @@ def build_app(read_only: bool = False) -> gr.Blocks:
                             inspect_model,
                             inspect_evaluation_filter,
                             inspect_verdict_filter,
+                            inspect_tag_filter,
+                            inspect_tag_names,
                             inspect_try_it_yourself,
                         ],
                         outputs=[
+                            inspect_model,
+                            inspect_tag_names,
+                            tag_select,
                             inspect_ids_state,
                             inspect_idx_state,
                             inspect_revealed_state,
@@ -2305,6 +2884,81 @@ def build_app(read_only: bool = False) -> gr.Blocks:
                             inspect_position,
                         ],
                     )
+
+            with gr.Tab("Tags", visible=not read_only) as tag_manager_tab:
+                tag_table = gr.Dataframe(
+                    headers=["Tag", "Description", "Memes", "Created"],
+                    datatype=["str", "str", "number", "str"],
+                    value=_tag_table_rows() if _DB_PATH.exists() else [],
+                    interactive=False,
+                    label="Tag overview",
+                )
+                with gr.Row():
+                    tag_manager_select = gr.Dropdown(
+                        choices=_tag_choices() if _DB_PATH.exists() else [],
+                        label="Tag",
+                        filterable=False,
+                        scale=1,
+                    )
+                    btn_tag_refresh = gr.Button("Refresh", scale=0, min_width=96)
+                with gr.Row():
+                    tag_edit_name = gr.Textbox(label="Name", scale=1)
+                    tag_edit_description = gr.Textbox(
+                        label="Description",
+                        lines=2,
+                        scale=2,
+                    )
+                tag_manager_usage = gr.Markdown("_Pick a tag to edit or delete._")
+                tag_delete_confirm = gr.Checkbox(
+                    label="Confirm delete everywhere",
+                    value=False,
+                )
+                with gr.Row():
+                    btn_tag_save = gr.Button("Save changes", variant="primary")
+                    btn_tag_delete = gr.Button("Delete tag everywhere", variant="stop")
+                tag_manager_feedback = gr.Markdown()
+                tag_manager_outputs = [
+                    tag_table,
+                    tag_manager_select,
+                    tag_edit_name,
+                    tag_edit_description,
+                    tag_manager_usage,
+                    tag_manager_feedback,
+                    tag_delete_confirm,
+                ]
+                tag_manager_tab.select(
+                    refresh_tag_manager,
+                    outputs=tag_manager_outputs,
+                )
+                btn_tag_refresh.click(
+                    refresh_tag_manager,
+                    outputs=tag_manager_outputs,
+                )
+                tag_manager_select.change(
+                    load_tag_for_edit,
+                    inputs=[tag_manager_select],
+                    outputs=[
+                        tag_edit_name,
+                        tag_edit_description,
+                        tag_manager_usage,
+                        tag_manager_feedback,
+                        tag_delete_confirm,
+                    ],
+                )
+                btn_tag_save.click(
+                    save_tag_edit,
+                    inputs=[
+                        tag_manager_select,
+                        tag_edit_name,
+                        tag_edit_description,
+                    ],
+                    outputs=tag_manager_outputs,
+                )
+                btn_tag_delete.click(
+                    delete_selected_tag,
+                    inputs=[tag_manager_select, tag_delete_confirm],
+                    outputs=tag_manager_outputs,
+                )
 
             with gr.Tab("Leaderboard" if read_only else "Stats & Leaderboard") as stats_tab:
                 gr.Markdown(
@@ -2538,6 +3192,7 @@ CSS = """
     gap: 10px !important;
     margin: 0 !important;
     padding: 0 !important;
+    flex-wrap: wrap !important;
     flex: 0 0 auto !important;
     min-width: 296px !important;
 }
@@ -2565,15 +3220,48 @@ CSS = """
     border-radius: 6px !important;
 }
 
+.inspect-top-nav .block {
+    min-width: 0 !important;
+}
+
+.inspect-jump-position {
+    flex: 0 0 64px !important;
+    max-width: 64px !important;
+}
+
+.inspect-jump-position input {
+    min-height: 32px !important;
+    height: 32px !important;
+    padding: 0 8px !important;
+    text-align: center !important;
+    font-size: 14px !important;
+}
+
 .inspect-toolbar {
     gap: 6px !important;
     margin: 0 0 10px 0 !important;
     padding: 6px !important;
     align-items: center !important;
+    flex-wrap: wrap !important;
     border-radius: 6px !important;
     overflow: visible !important;
     position: relative !important;
     z-index: 30 !important;
+}
+
+.inspect-primary-toolbar {
+    z-index: 50 !important;
+    margin-bottom: 8px !important;
+}
+
+.inspect-try-toggle {
+    flex: 0 0 304px !important;
+    max-width: 304px !important;
+}
+
+.inspect-filter-toolbar {
+    z-index: 40 !important;
+    margin-bottom: 28px !important;
 }
 
 .inspect-toolbar .block {
@@ -2630,6 +3318,28 @@ CSS = """
 
 .inspect-toolbar textarea::placeholder {
     color: var(--body-text-color-subdued) !important;
+}
+
+.inspect-tag-names {
+    position: relative !important;
+}
+
+.inspect-tag-names:not(:has(.token)):not(:has([data-testid="token"]))::before {
+    content: "Tag";
+    position: absolute;
+    left: 12px;
+    top: 50%;
+    transform: translateY(-50%);
+    color: var(--body-text-color-subdued);
+    font-style: italic;
+    font-size: 14px;
+    line-height: 20px;
+    pointer-events: none;
+    z-index: 1;
+}
+
+.inspect-tag-names:focus-within::before {
+    opacity: 0.55;
 }
 
 .inspect-toolbar button {

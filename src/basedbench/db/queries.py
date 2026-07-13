@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import sqlite3
 from dataclasses import dataclass
 from datetime import datetime, timezone
 
@@ -265,6 +266,15 @@ class MemeTag:
     description: str | None
     notes: str | None
     created_at: str
+
+
+@dataclass
+class TagSummary:
+    tag_id: int
+    name: str
+    description: str | None
+    created_at: str
+    meme_count: int
 
 
 def _now() -> str:
@@ -1934,6 +1944,31 @@ def list_tags(db: Database) -> list[Tag]:
     return [Tag(*r) for r in rows]
 
 
+def list_tag_summaries(db: Database) -> list[TagSummary]:
+    rows = db.conn.execute(
+        """SELECT t.tag_id, t.name, t.description, t.created_at,
+                  COUNT(mt.post_id) AS meme_count
+           FROM tags t
+           LEFT JOIN meme_tags mt ON mt.tag_id = t.tag_id
+           GROUP BY t.tag_id
+           ORDER BY lower(t.name)"""
+    ).fetchall()
+    return [TagSummary(*r) for r in rows]
+
+
+def tag_summary_by_name(db: Database, name: str) -> TagSummary | None:
+    rows = db.conn.execute(
+        """SELECT t.tag_id, t.name, t.description, t.created_at,
+                  COUNT(mt.post_id) AS meme_count
+           FROM tags t
+           LEFT JOIN meme_tags mt ON mt.tag_id = t.tag_id
+           WHERE t.name = ? COLLATE NOCASE
+           GROUP BY t.tag_id""",
+        (_clean_tag_name(name),),
+    ).fetchall()
+    return TagSummary(*rows[0]) if rows else None
+
+
 def tags_for_meme(db: Database, post_id: str) -> list[MemeTag]:
     rows = db.conn.execute(
         """SELECT t.tag_id, t.name, t.description, mt.notes, mt.created_at
@@ -1944,6 +1979,17 @@ def tags_for_meme(db: Database, post_id: str) -> list[MemeTag]:
         (post_id,),
     ).fetchall()
     return [MemeTag(*r) for r in rows]
+
+
+def meme_tag_note(db: Database, post_id: str, tag_name: str) -> str | None:
+    row = db.conn.execute(
+        """SELECT mt.notes
+           FROM meme_tags mt
+           JOIN tags t ON t.tag_id = mt.tag_id
+           WHERE mt.post_id = ? AND t.name = ? COLLATE NOCASE""",
+        (post_id, _clean_tag_name(tag_name)),
+    ).fetchone()
+    return row[0] if row else None
 
 
 def add_meme_tag(
@@ -1969,6 +2015,53 @@ def remove_meme_tag(db: Database, post_id: str, tag_name: str) -> bool:
                SELECT tag_id FROM tags WHERE name = ? COLLATE NOCASE
              )""",
         (post_id, _clean_tag_name(tag_name)),
+    )
+    return cursor.rowcount > 0
+
+
+def update_tag(
+    db: Database,
+    old_name: str,
+    new_name: str,
+    description: str | None = None,
+) -> bool:
+    """Rename/update a reusable tag while preserving meme associations."""
+    old_cleaned = _clean_tag_name(old_name)
+    new_cleaned = _clean_tag_name(new_name)
+    description_value = description.strip() if description and description.strip() else None
+
+    current = db.conn.execute(
+        "SELECT tag_id FROM tags WHERE name = ? COLLATE NOCASE",
+        (old_cleaned,),
+    ).fetchone()
+    if current is None:
+        return False
+
+    tag_id = int(current[0])
+    duplicate = db.conn.execute(
+        """SELECT tag_id FROM tags
+           WHERE name = ? COLLATE NOCASE AND tag_id <> ?""",
+        (new_cleaned, tag_id),
+    ).fetchone()
+    if duplicate is not None:
+        raise ValueError(f"tag `{new_cleaned}` already exists")
+
+    try:
+        db.conn.execute(
+            """UPDATE tags
+               SET name = ?, description = ?
+               WHERE tag_id = ?""",
+            (new_cleaned, description_value, tag_id),
+        )
+    except sqlite3.IntegrityError as e:
+        raise ValueError(f"tag `{new_cleaned}` already exists") from e
+    return True
+
+
+def delete_tag(db: Database, name: str) -> bool:
+    cursor = db.conn.execute(
+        "DELETE FROM tags WHERE name = ? COLLATE NOCASE",
+        (_clean_tag_name(name),),
     )
     return cursor.rowcount > 0
 
