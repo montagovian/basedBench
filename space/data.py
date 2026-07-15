@@ -108,7 +108,7 @@ class BenchmarkData:
         self,
         search: str = "",
         model_id: str = "all",
-        result: str = "all",
+        outcome: str = "all",
     ) -> list[str]:
         needle = search.strip().casefold()
         matches: list[str] = []
@@ -127,24 +127,16 @@ class BenchmarkData:
             predictions = self.predictions(post_id, model_id)
             if model_id != "all" and not predictions:
                 continue
-            if result == "correct" and not any(
-                row.get("consensus_verdict") == "correct" for row in predictions
-            ):
-                continue
-            if result == "incorrect" and not any(
-                row.get("consensus_verdict") == "incorrect" for row in predictions
-            ):
-                continue
-            if result == "disagreement" and not any(
-                len(
-                    {
-                        judgment.get("verdict")
-                        for judgment in self.judgments(int(row["prediction_id"]))
-                    }
-                )
-                > 1
+            verdicts = {
+                row.get("consensus_verdict")
                 for row in predictions
-            ):
+                if row.get("consensus_verdict") in {"correct", "incorrect"}
+            }
+            if outcome == "all_correct" and verdicts != {"correct"}:
+                continue
+            if outcome == "all_incorrect" and verdicts != {"incorrect"}:
+                continue
+            if outcome == "mixed" and verdicts != {"correct", "incorrect"}:
                 continue
             matches.append(post_id)
         return matches

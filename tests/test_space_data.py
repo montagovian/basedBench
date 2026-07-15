@@ -111,14 +111,14 @@ def test_indexes_only_latest_judgments() -> None:
     assert data.snapshot_id == "snapshot-1"
 
 
-def test_filters_search_model_result_and_disagreement() -> None:
+def test_filters_search_model_and_outcome() -> None:
     data = _data()
 
     assert data.filtered_ids(search="song") == ["p1"]
     assert data.filtered_ids(model_id="model-b") == ["p1"]
-    assert data.filtered_ids(model_id="model-a", result="correct") == ["p1"]
-    assert data.filtered_ids(result="incorrect") == ["p1", "p2"]
-    assert data.filtered_ids(result="disagreement") == ["p1"]
+    assert data.filtered_ids(model_id="model-a", outcome="all_correct") == ["p1"]
+    assert data.filtered_ids(outcome="all_incorrect") == ["p2"]
+    assert data.filtered_ids(outcome="mixed") == ["p1"]
 
 
 def test_leaderboard_rows_are_ranked_and_formatted() -> None:

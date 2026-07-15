@@ -103,9 +103,9 @@ def _render(
 
 
 def apply_filters(
-    search: str, model_id: str, result: str, hide_ground_truth: bool
+    search: str, model_id: str, outcome: str, hide_ground_truth: bool
 ) -> tuple[Any, ...]:
-    ids = DATA.filtered_ids(search, model_id, result)
+    ids = DATA.filtered_ids(search, model_id, outcome)
     return (ids, *_render(ids, 0, hide_ground_truth, model_id))
 
 
@@ -255,15 +255,15 @@ def build_app() -> gr.Blocks:
                         min_width=210,
                         scale=2,
                     )
-                    result = gr.Dropdown(
+                    outcome = gr.Dropdown(
                         choices=[
-                            ("Any result", "all"),
-                            ("Consensus correct", "correct"),
-                            ("Consensus incorrect", "incorrect"),
-                            ("Judge disagreement", "disagreement"),
+                            ("Any outcome", "all"),
+                            ("All got it right", "all_correct"),
+                            ("All got it wrong", "all_incorrect"),
+                            ("Mixed", "mixed"),
                         ],
                         value="all",
-                        label="Result",
+                        label="Outcome",
                         show_label=False,
                         min_width=180,
                         scale=2,
@@ -307,12 +307,16 @@ def build_app() -> gr.Blocks:
                     predictions,
                 ]
                 filter_outputs = [ids_state, *render_outputs]
-                filter_inputs = [search, model, result, hide_ground_truth]
+                filter_inputs = [search, model, outcome, hide_ground_truth]
 
                 demo.load(apply_filters, inputs=filter_inputs, outputs=filter_outputs)
                 search.submit(apply_filters, inputs=filter_inputs, outputs=filter_outputs)
                 model.change(apply_filters, inputs=filter_inputs, outputs=filter_outputs)
-                result.change(apply_filters, inputs=filter_inputs, outputs=filter_outputs)
+                outcome.change(
+                    apply_filters,
+                    inputs=filter_inputs,
+                    outputs=filter_outputs,
+                )
                 previous.click(
                     lambda ids, idx, hidden, selected: step_item(
                         ids, idx, -1, hidden, selected
