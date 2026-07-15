@@ -3,6 +3,7 @@ name = "basedbench"
 version = "5.0.0"
 description = "Benchmark VLMs on meme understanding"
 readme = "README.md"
+license = "MIT"
 authors = [
     { name = "Alex Anthony", email = "alex.orion.anthony@gmail.com" }
 ]

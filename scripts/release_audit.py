@@ -386,9 +386,17 @@ def check_export(
         audit.fail(f"export directory does not exist: {export_dir}")
         return
     memes_path = export_dir / "data" / "memes.jsonl"
-    leaderboard_path = export_dir / "data" / "leaderboard.json"
+    predictions_path = export_dir / "data" / "predictions.jsonl"
+    judgments_path = export_dir / "data" / "judgments.jsonl"
+    leaderboard_path = export_dir / "data" / "leaderboard.jsonl"
     readme_path = export_dir / "README.md"
-    for path in (memes_path, leaderboard_path, readme_path):
+    for path in (
+        memes_path,
+        predictions_path,
+        judgments_path,
+        leaderboard_path,
+        readme_path,
+    ):
         if not path.exists():
             audit.fail(f"export missing {path.relative_to(export_dir)}")
             return
@@ -416,28 +424,43 @@ def check_export(
     else:
         audit.ok("export image count matches meme row count")
 
-    for pred_path in sorted((export_dir / "data" / "predictions").glob("*.jsonl")):
-        try:
-            rows = _load_jsonl(pred_path)
-        except (OSError, ValueError, json.JSONDecodeError) as exc:
-            audit.fail(f"could not parse {pred_path}: {exc}")
-            continue
-        for row in rows:
-            _check_forbidden_keys(audit, pred_path, row)
-            if "error" in row:
-                audit.fail(f"{pred_path.relative_to(ROOT)} contains failed prediction")
-        audit.ok(f"prediction file checked: {pred_path.name} ({len(rows)} rows)")
-
     try:
-        leaderboard = _load_json(leaderboard_path)
-    except (OSError, json.JSONDecodeError) as exc:
-        audit.fail(f"could not parse leaderboard.json: {exc}")
+        prediction_rows = _load_jsonl(predictions_path)
+        judgment_rows = _load_jsonl(judgments_path)
+        leaderboard_rows = _load_jsonl(leaderboard_path)
+    except (OSError, ValueError, json.JSONDecodeError) as exc:
+        audit.fail(f"could not parse normalized export tables: {exc}")
         return
-    _check_forbidden_keys(audit, leaderboard_path, leaderboard)
-    audit.ok("leaderboard schema contains no forbidden fields")
+
+    for path, rows in (
+        (predictions_path, prediction_rows),
+        (judgments_path, judgment_rows),
+        (leaderboard_path, leaderboard_rows),
+    ):
+        for row in rows:
+            _check_forbidden_keys(audit, path, row)
+
+    meme_ids = {row.get("post_id") for row in meme_rows}
+    prediction_ids = {row.get("prediction_id") for row in prediction_rows}
+    if any(row.get("post_id") not in meme_ids for row in prediction_rows):
+        audit.fail("predictions table contains post IDs absent from memes table")
+    elif any(row.get("prediction_id") is None for row in prediction_rows):
+        audit.fail("predictions table contains a null prediction ID")
+    else:
+        audit.ok(f"predictions table checked ({len(prediction_rows)} rows)")
+
+    if any(row.get("prediction_id") not in prediction_ids for row in judgment_rows):
+        audit.fail("judgments table contains prediction IDs absent from predictions table")
+    else:
+        audit.ok(f"judgments table checked ({len(judgment_rows)} rows)")
+    audit.ok(f"leaderboard table checked ({len(leaderboard_rows)} rows)")
 
     readme = readme_path.read_text().lower()
-    required_note_terms = ("raw comments", "authors", "intentionally omitted")
+    required_note_terms = (
+        "raw reddit comments",
+        "reddit authors",
+        "intentionally omitted",
+    )
     if all(term in readme for term in required_note_terms):
         audit.ok("dataset card includes privacy note")
     else:

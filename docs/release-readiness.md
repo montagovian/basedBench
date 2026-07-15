@@ -39,7 +39,33 @@ Public dataset exports may include:
 - `ground_truth`
 - copied image files
 - model predictions
-- judge verdict summaries and leaderboard totals
+- individual judge verdicts and reasoning, including historical rejudgments
+- derived consensus fields, judge agreement statistics, and leaderboard totals
+
+## Dataset Rights Statement
+
+Generated dataset cards must keep the Hugging Face metadata license as `other`
+because public exports contain mixed-rights material.
+
+The card should state that maintainer-created materials are available under the
+MIT License, including the benchmark code, schema, export format, evaluation
+prompts where applicable, benchmark-specific metadata, leaderboard tables, judge
+verdicts and reasoning, and maintainer-authored documentation/annotations to the
+extent the maintainers own or control them.
+
+The card should separately state that meme images, Reddit titles, subreddit
+names, post IDs, cultural references, logos, characters, screenshots, and other
+source artifacts may be owned by third parties; BasedBench does not claim
+ownership of those materials; and the MIT License for this repository does not
+apply to those third-party materials.
+
+The card should explain the publication rationale: third-party meme/source
+materials are included for research, criticism, commentary, and benchmark
+evaluation under a fair-use rationale. The use is transformative because the
+images are test stimuli for evaluating whether models understand the intended
+joke, not substitutes for the original posts or images. The export should keep
+omitting raw comments, authors, internal prompts/responses, local paths, and
+operational logs.
 
 ## Current Findings
 

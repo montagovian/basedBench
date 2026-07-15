@@ -189,4 +189,13 @@ paths, and LLM call logs.
 
 ## License
 
-MIT
+The root basedBench repository is MIT licensed. This covers the code and
+maintainer-authored project documentation.
+
+Generated public dataset exports are separate mixed-rights artifacts and use
+`license: other` in their Hugging Face dataset cards. Maintainer-created dataset
+materials are released under MIT to the extent the maintainers own or control
+them. Third-party meme images, Reddit titles/source identifiers, logos,
+characters, screenshots, and cultural references are not owned by basedBench and
+are not covered by the repository's MIT License; they are included in dataset
+exports under the fair-use rationale described in the generated dataset card.

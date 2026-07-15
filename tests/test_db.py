@@ -1142,6 +1142,62 @@ def test_snapshot_export_helpers(db: Database):
     assert lb[0].accuracy == 0.5
 
 
+def test_normalized_snapshot_export_preserves_judgment_history(db: Database):
+    _setup_validated_meme(db, "post1")
+    q.insert_prediction(
+        db,
+        ModelPrediction.success(
+            "post1", "dataset-v1", "target-model", "cats", 120, 40
+        ),
+    )
+    q.insert_llm_call(
+        db,
+        LlmCallRecord(
+            role="prediction",
+            post_id="post1",
+            model="target-model",
+            system_prompt="system",
+            user_prompt="user",
+            prompt_version="prediction-prompt-v1",
+            session_id="session-1",
+            latency_ms=120,
+            response="cats",
+        ),
+    )
+    q.register_prompt(db, "judge-prompt-v1", "judge", "system", "user", "1.0")
+    q.register_prompt(db, "judge-prompt-v2", "judge", "system", "user", "2.0")
+
+    prediction_id = q.find_prediction_id(db, "post1", "target-model")
+    assert prediction_id is not None
+    q.insert_judgment(
+        db, prediction_id, "incorrect", "old vote", "judge-a", "judge-prompt-v1"
+    )
+    q.insert_judgment(
+        db, prediction_id, "correct", "new vote", "judge-a", "judge-prompt-v2"
+    )
+    q.insert_judgment(
+        db, prediction_id, "correct", "agrees", "judge-b", "judge-prompt-v2"
+    )
+    snapshot_id = q.create_snapshot(db, "normalized-export")
+
+    predictions = q.snapshot_predictions(db, snapshot_id)
+    assert len(predictions) == 1
+    prediction = predictions[0]
+    assert prediction.prediction_id == prediction_id
+    assert prediction.prediction_prompt_id == "prediction-prompt-v1"
+    assert prediction.consensus_verdict == "correct"
+    assert prediction.judge_count == 2
+    assert prediction.correct_votes == 2
+    assert prediction.incorrect_votes == 0
+
+    judgments = q.snapshot_judgments(db, snapshot_id)
+    assert len(judgments) == 3
+    judge_a = [j for j in judgments if j.judge_model == "judge-a"]
+    assert [j.reasoning for j in judge_a] == ["old vote", "new vote"]
+    assert [j.is_latest for j in judge_a] == [False, True]
+    assert all(j.prediction_id == prediction_id for j in judgments)
+
+
 def test_snapshot_export_helpers_exclude_failed_predictions(db: Database):
     _setup_validated_meme(db, "post1")
     _setup_validated_meme(db, "post2")

@@ -125,6 +125,39 @@ class ExportPrediction:
 
 
 @dataclass
+class SnapshotPrediction:
+    prediction_id: int
+    snapshot_id: str
+    post_id: str
+    model_id: str
+    prediction: str
+    dataset_version: str | None
+    prediction_prompt_id: str | None
+    latency_ms: int | None
+    token_count: int | None
+    created_at: str
+    consensus_verdict: str | None
+    judge_count: int
+    correct_votes: int
+    incorrect_votes: int
+
+
+@dataclass
+class SnapshotJudgment:
+    judgment_id: int
+    snapshot_id: str
+    prediction_id: int
+    post_id: str
+    model_id: str
+    judge_model: str
+    verdict: str
+    reasoning: str | None
+    judge_prompt_id: str | None
+    judged_at: str
+    is_latest: bool
+
+
+@dataclass
 class LeaderboardEntry:
     model_id: str
     judge_model: str
@@ -1289,6 +1322,127 @@ def snapshot_model_ids(db: Database, snapshot_id: str) -> list[str]:
         (snapshot_id,),
     ).fetchall()
     return [r[0] for r in rows]
+
+
+def snapshot_predictions(
+    db: Database, snapshot_id: str
+) -> list[SnapshotPrediction]:
+    """Return every successful prediction in a snapshot as normalized rows.
+
+    Consensus convenience fields use the same rule as the leaderboard: only
+    the latest judgment from each judge counts, and at least two matching votes
+    are required. Raw and historical judgments are exported separately.
+    """
+    rows = db.conn.execute(
+        """WITH latest_per_judge AS (
+               SELECT j.prediction_id, j.judge_model, j.verdict
+               FROM judgments j
+               WHERE j.id = (
+                   SELECT MAX(j2.id) FROM judgments j2
+                   WHERE j2.prediction_id = j.prediction_id
+                     AND j2.judge_model = j.judge_model
+               )
+           ),
+           vote_counts AS (
+               SELECT prediction_id,
+                      COUNT(DISTINCT judge_model) AS judge_count,
+                      SUM(CASE WHEN verdict = 'correct' THEN 1 ELSE 0 END)
+                          AS correct_votes,
+                      SUM(CASE WHEN verdict = 'incorrect' THEN 1 ELSE 0 END)
+                          AS incorrect_votes
+               FROM latest_per_judge
+               GROUP BY prediction_id
+           )
+           SELECT p.id, p.post_id, p.model_id, p.prediction,
+                  p.dataset_version,
+                  (
+                      SELECT lc.prompt_version
+                      FROM llm_calls lc
+                      WHERE lc.role = 'prediction'
+                        AND lc.post_id = p.post_id
+                        AND lc.model = p.model_id
+                        AND lc.response = p.prediction
+                        AND lc.error IS NULL
+                      ORDER BY lc.id DESC
+                      LIMIT 1
+                  ) AS prediction_prompt_id,
+                  p.latency_ms, p.token_count, p.created_at,
+                  CASE
+                    WHEN COALESCE(v.correct_votes, 0) >= 2
+                     AND v.correct_votes > v.incorrect_votes THEN 'correct'
+                    WHEN COALESCE(v.incorrect_votes, 0) >= 2
+                     AND v.incorrect_votes > v.correct_votes THEN 'incorrect'
+                    ELSE NULL
+                  END AS consensus_verdict,
+                  COALESCE(v.judge_count, 0),
+                  COALESCE(v.correct_votes, 0),
+                  COALESCE(v.incorrect_votes, 0)
+           FROM predictions p
+           JOIN snapshot_memes sm ON p.post_id = sm.post_id
+           LEFT JOIN vote_counts v ON v.prediction_id = p.id
+           WHERE sm.snapshot_id = ?
+             AND p.error IS NULL
+           ORDER BY p.model_id, p.post_id""",
+        (snapshot_id,),
+    ).fetchall()
+    return [
+        SnapshotPrediction(
+            prediction_id=r[0],
+            snapshot_id=snapshot_id,
+            post_id=r[1],
+            model_id=r[2],
+            prediction=r[3],
+            dataset_version=r[4],
+            prediction_prompt_id=r[5],
+            latency_ms=r[6],
+            token_count=r[7],
+            created_at=r[8],
+            consensus_verdict=r[9],
+            judge_count=r[10],
+            correct_votes=r[11],
+            incorrect_votes=r[12],
+        )
+        for r in rows
+    ]
+
+
+def snapshot_judgments(
+    db: Database, snapshot_id: str
+) -> list[SnapshotJudgment]:
+    """Return every judgment for successful predictions in a snapshot."""
+    rows = db.conn.execute(
+        """SELECT j.id, j.prediction_id, p.post_id, p.model_id,
+                  j.judge_model, j.verdict, j.judge_reasoning,
+                  j.judge_prompt_version, j.judged_at,
+                  j.id = (
+                      SELECT MAX(j2.id) FROM judgments j2
+                      WHERE j2.prediction_id = j.prediction_id
+                        AND j2.judge_model = j.judge_model
+                  ) AS is_latest
+           FROM judgments j
+           JOIN predictions p ON p.id = j.prediction_id
+           JOIN snapshot_memes sm ON sm.post_id = p.post_id
+           WHERE sm.snapshot_id = ?
+             AND p.error IS NULL
+           ORDER BY p.model_id, p.post_id, j.judge_model, j.id""",
+        (snapshot_id,),
+    ).fetchall()
+    return [
+        SnapshotJudgment(
+            judgment_id=r[0],
+            snapshot_id=snapshot_id,
+            prediction_id=r[1],
+            post_id=r[2],
+            model_id=r[3],
+            judge_model=r[4] or "(unknown)",
+            verdict=r[5],
+            reasoning=r[6],
+            judge_prompt_id=r[7],
+            judged_at=r[8],
+            is_latest=bool(r[9]),
+        )
+        for r in rows
+    ]
 
 
 def snapshot_predictions_for_model(
