@@ -1,9 +1,13 @@
 # BasedBench next major version: automated curation and backfill
 
 Prepared September 18, 2026. Status: approved; execution started. The historical
-corpus builder, common decision contract, and first local baseline are implemented.
+corpus builder, common decision contract, word-count baseline, and first frozen
+encoder comparison are implemented.
 See the [curation evaluation workflow](curation-evaluation.md). Corpus provenance
 and semantic joke-family grouping remain provisional; no new backfill has run.
+The cross-run history audit also corrects an earlier holdout claim: 244 of the
+286 currently reserved examples were used in the first smoke test. Only 42 stayed
+unused across both versions. A qualified final evaluation is still outstanding.
 
 Companion plans for separate review:
 
@@ -300,9 +304,12 @@ Judge replacement, richer diagnostic tags, and recurring ingestion follow the
 curation milestone. A successful bounded backfill provides the foundation for
 later scheduled runs using the same admission policy and reporting.
 
-The initial corpus builder and calibration harness are implemented. Next, resolve
-the remaining label provenance, strengthen semantic joke-family grouping, and
-compare a frozen encoder with the lexical baseline before adding more backends.
-Use these results to decide which classifiers and which automated admission
-workflow earn a place in the backfill pipeline. The final-test partition stays
-unscored until corpus qualification and model/threshold selection are complete.
+The initial corpus builder, comparison harness, word-count baseline, and first
+frozen encoder experiment are implemented. Neither classifier is reliable enough
+for automated admission. Next, test a model given explicit inclusion criteria,
+with an image-aware comparison to investigate the value of visual evidence.
+Resolve rejection provenance and semantic joke families alongside that work.
+
+Keep the current split fixed for practice comparisons and preserve the remaining
+unused examples. The history audit records prior exposure; it does not undo it.
+Settle the final evaluation design before making claims about unattended curation.

@@ -67,15 +67,54 @@ def curation_baseline(
     output: Path = typer.Option(..., help="New results directory under data/."),
     accept_threshold: float = typer.Option(0.9, min=0.0, max=1.0),
     reject_threshold: float = typer.Option(0.1, min=0.0, max=1.0),
+    history_audit: Path | None = typer.Option(None, help="Audit of prior use across corpus versions."),
 ) -> None:
     """Train TF-IDF/logistic on development and evaluate calibration only."""
     from basedbench.pipeline.curation_eval import run_baseline
 
     try:
-        result = run_baseline(corpus, output, accept_threshold=accept_threshold, reject_threshold=reject_threshold)
+        result = run_baseline(corpus, output, accept_threshold=accept_threshold,
+                              reject_threshold=reject_threshold, history_audit=history_audit)
     except (ValueError, OSError, RuntimeError) as exc:
         raise typer.BadParameter(str(exc)) from exc
     Console().print({"metrics": result["metrics"], "final_test_evaluated": False, "output": str(output)})
+
+
+@curation_app.command("audit-history")
+def curation_audit_history(
+    corpus: Path = typer.Argument(..., help="Current frozen corpus; its split will not change."),
+    history: Path = typer.Option(..., help="JSON list of {corpus, run} paths, relative to this file."),
+    output: Path = typer.Option(..., help="New JSON audit file under data/."),
+) -> None:
+    """Check whether reserved examples were used in earlier experiments."""
+    from basedbench.pipeline.curation_history import audit_history
+
+    try:
+        result = audit_history(corpus, history, output)
+    except (ValueError, OSError, KeyError, TypeError) as exc:
+        raise typer.BadParameter(str(exc)) from exc
+    Console().print({"audit_id": result["audit_id"], "counts": result["counts"], "status": result["status"]})
+
+
+@curation_app.command("encoder")
+def curation_encoder(
+    corpus: Path = typer.Argument(..., help="Frozen corpus directory."),
+    output: Path = typer.Option(..., help="New results directory under data/."),
+    history_audit: Path = typer.Option(..., help="Verified audit of previous experiments on this corpus."),
+    model_cache: Path = typer.Option(Path("data/curation/models"), help="Local pretrained model cache."),
+    batch_size: int = typer.Option(32, min=1, help="Number of text pieces to encode at once."),
+    accept_threshold: float = typer.Option(0.9, min=0.0, max=1.0),
+    reject_threshold: float = typer.Option(0.1, min=0.0, max=1.0),
+) -> None:
+    """Compare a frozen MiniLM encoder using the existing practice split."""
+    from basedbench.pipeline.curation_encoder import run_encoder
+
+    try:
+        result = run_encoder(corpus, output, history_audit=history_audit, model_cache=model_cache,
+                             batch_size=batch_size, accept_threshold=accept_threshold, reject_threshold=reject_threshold)
+    except (ValueError, OSError, RuntimeError) as exc:
+        raise typer.BadParameter(str(exc)) from exc
+    Console().print({"metrics": result["metrics"], "history_audit": result["history_audit"], "output": str(output)})
 
 
 def _load() -> tuple[Database, Config]:

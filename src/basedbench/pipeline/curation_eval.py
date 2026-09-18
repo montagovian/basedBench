@@ -13,6 +13,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from basedbench.pipeline.curation_corpus import digest, file_hash, load_corpus, write_json, write_jsonl
+from basedbench.pipeline.curation_history import history_status
 
 RESULT_VERSION = "curation-decision-v1"
 FEATURE_VERSION = "historical-explanation-comments-v1"
@@ -102,7 +103,8 @@ def metrics(rows: list[dict], decisions: list[Decision]) -> dict:
     }
 
 
-def run_baseline(corpus: Path, output: Path, *, accept_threshold: float = 0.9, reject_threshold: float = 0.1) -> dict:
+def run_baseline(corpus: Path, output: Path, *, accept_threshold: float = 0.9,
+                 reject_threshold: float = 0.1, history_audit: Path | None = None) -> dict:
     """Fit once on development; score calibration only. Never score final test."""
     decide(None, accept_threshold, reject_threshold)
     if output.exists():
@@ -118,6 +120,7 @@ def run_baseline(corpus: Path, output: Path, *, accept_threshold: float = 0.9, r
     except ImportError as exc:
         raise RuntimeError("Install the optional baseline dependencies with: uv sync --extra curation") from exc
     manifest, rows = load_corpus(corpus)
+    exposure = history_status(history_audit, manifest, rows)
     train = [r for r in rows if r["split"] == "development"]
     evaluation = [r for r in rows if r["split"] == "calibration"]
     if {r["label"] for r in train} != {"accept", "reject"} or not evaluation:
@@ -134,22 +137,43 @@ def run_baseline(corpus: Path, output: Path, *, accept_threshold: float = 0.9, r
     started = time.perf_counter()
     scores = model.predict_proba([feature_text(r["input"]) for r in evaluation])[:, list(model.classes_).index(1)]
     predict_ms = (time.perf_counter() - started) * 1000
+    return write_evaluation(
+        manifest, train, evaluation, output, model=model, scores=scores.tolist(),
+        model_name="tfidf-logistic-v1", feature_version=FEATURE_VERSION, parameters=parameters,
+        versions={"sklearn": sklearn.__version__, "numpy": numpy.__version__, "scipy": scipy.__version__,
+                  "joblib": joblib.__version__, "python": platform.python_version()},
+        timing_ms={"training": train_ms, "calibration_prediction": predict_ms}, exposure=exposure,
+        accept_threshold=accept_threshold, reject_threshold=reject_threshold,
+        limitations=["The word-count model reads explanations/comments, not image pixels; its scores are not measured probabilities."],
+    )
+
+
+def write_evaluation(
+    manifest: dict, train: list[dict], evaluation: list[dict], output: Path, *,
+    model, scores: list[float], model_name: str, feature_version: str, parameters: dict,
+    versions: dict, timing_ms: dict, exposure: dict, accept_threshold: float, reject_threshold: float,
+    limitations: list[str], details: dict | None = None, feature_matrix=None, packing: list[dict] | None = None,
+) -> dict:
+    """Save the same measurements and artifacts for each classifier backend."""
+    import joblib
+
+    if output.exists():
+        raise FileExistsError(f"Refusing to replace classifier run: {output}")
 
     def results(name: str, values: list[float], accept: float, reject: float) -> list[Decision]:
         return [Decision(post_id=r["post_id"], input_sha256=r["input_sha256"], model=name,
                          score=float(score), decision=decide(float(score), accept, reject), cost_usd=0.0)
                 for r, score in zip(evaluation, values, strict=True)]
 
-    predictions = results("tfidf-logistic-v1", scores.tolist(), accept_threshold, reject_threshold)
+    predictions = results(model_name, scores, accept_threshold, reject_threshold)
     accept_all = results("accept-all-v1", [1.0] * len(evaluation), accept_threshold, reject_threshold)
     reject_all = results("reject-all-v1", [0.0] * len(evaluation), accept_threshold, reject_threshold)
     report = {
         "schema_version": "curation-baseline-v1", "corpus_id": manifest["corpus_id"],
-        "created_at": datetime.now(timezone.utc).isoformat(), "feature_version": FEATURE_VERSION,
-        "model": "tfidf-logistic-v1", "parameters": parameters,
-        "versions": {"sklearn": sklearn.__version__, "numpy": numpy.__version__, "scipy": scipy.__version__,
-                     "joblib": joblib.__version__, "python": platform.python_version(),
-                     "evaluator_source_sha256": file_hash(Path(__file__))},
+        "created_at": datetime.now(timezone.utc).isoformat(), "feature_version": feature_version,
+        "model": model_name, "parameters": parameters, "model_details": details or {},
+        "versions": {**versions, "evaluator_source_sha256": file_hash(Path(__file__))},
+        "history_audit": exposure,
         "training_examples": len(train), "evaluation_split": "calibration", "final_test_evaluated": False,
         "training_ids_sha256": digest([r["post_id"] for r in train]),
         "evaluation_ids_sha256": digest([r["post_id"] for r in evaluation]),
@@ -158,15 +182,15 @@ def run_baseline(corpus: Path, output: Path, *, accept_threshold: float = 0.9, r
         "controls": {"accept_all": metrics(evaluation, accept_all), "reject_all": metrics(evaluation, reject_all)},
         "threshold_sweep": [
             {"accept_threshold": threshold, "reject_threshold": reject_threshold,
-             **metrics(evaluation, results("tfidf-logistic-v1", scores.tolist(), threshold, reject_threshold))}
+             **metrics(evaluation, results(model_name, scores, threshold, reject_threshold))}
             for threshold in (0.5, 0.7, 0.8, 0.9, 0.95, 0.99) if threshold > reject_threshold
         ],
-        "timing_ms": {"training": train_ms, "calibration_prediction": predict_ms},
+        "timing_ms": timing_ms,
         "api_cost_usd": 0.0,
-        "limitations": manifest["limitations"] + [
-            "TF-IDF sees original explanations/comments, not image pixels; scores are uncalibrated.",
-            "Threshold sweep is exploratory calibration, not an independent performance estimate.",
-            "Wilson intervals assume independent items; they do not account for remaining family dependence or threshold selection.",
+        "limitations": manifest["limitations"] + limitations + [
+            "We are trying different settings on practice examples. These results do not prove how the chosen setting will perform on fresh examples.",
+            "A rule that admits nothing finds no good memes; we cannot judge the quality of selections it never makes.",
+            "Uncertainty ranges assume independent examples and do not account for related jokes or trying multiple settings.",
         ],
     }
     output.parent.mkdir(parents=True, exist_ok=True)
@@ -176,16 +200,30 @@ def run_baseline(corpus: Path, output: Path, *, accept_threshold: float = 0.9, r
         report["model_sha256"] = file_hash(staging / "model.joblib")
         write_jsonl(staging / "decisions.jsonl", [asdict(r) for r in predictions + accept_all + reject_all])
         report["decisions_sha256"] = file_hash(staging / "decisions.jsonl")
+        if feature_matrix is not None:
+            import numpy as np
+
+            np.savez_compressed(staging / "features.npz", features=feature_matrix,
+                                post_ids=np.asarray([r["post_id"] for r in train + evaluation]))
+            report["features_sha256"] = file_hash(staging / "features.npz")
+        if packing is not None:
+            write_jsonl(staging / "packing.jsonl", packing)
+            report["packing_sha256"] = file_hash(staging / "packing.jsonl")
         write_json(staging / "report.json", report)
-        lines = ["# Historical curation baseline", "",
+        lines = ["# Historical curation experiment", "",
+                 f"Model: `{model_name}`", "",
                  f"Corpus: `{manifest['corpus_id']}`", "",
-                 f"Trained on {len(train)} development examples; evaluated on {len(evaluation)} calibration examples. Final test was not scored.", "",
-                 "| Accept threshold | Accepted | Precision | Positive retention | Deferred |", "|---|---:|---:|---:|---:|"]
+                 f"Learned from {len(train)} examples and checked its choices on {len(evaluation)} different examples.", "",
+                 f"Reserved examples were not scored in this run. Earlier-use status: {exposure['status']}. This is a practice comparison, not a final exam.", "",
+                 "The cutoff controls how selective the model is. It is a model score, not a measured probability.", "",
+                 "| Score needed to select | Memes selected | Selections you approved | Share of your good memes found | Left undecided |", "|---|---:|---:|---:|---:|"]
         for result in report["threshold_sweep"]:
             precision = result["accept_precision"]
             retention = result["positive_retention"]
+            quality = (f"{result['true_accepts']}/{result['accepted']} ({precision:.1%})"
+                       if precision is not None else "No selections to assess")
             lines.append(f"| {result['accept_threshold']:.2f} | {result['accepted']} | "
-                         f"{f'{precision:.1%}' if precision is not None else 'N/A'} | "
+                         f"{quality} | "
                          f"{f'{retention:.1%}' if retention is not None else 'N/A'} | {result['deferred']} |")
         lines.extend(["", "Limitations:", "", *[f"- {s}" for s in report["limitations"]], ""])
         (staging / "report.md").write_text("\n".join(lines))

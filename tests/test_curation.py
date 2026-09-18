@@ -209,3 +209,109 @@ def test_cli_build_does_not_load_credentials_or_migrate_database(tmp_path, sourc
     monkeypatch.setattr("basedbench.cli._load", forbidden)
     result = CliRunner().invoke(app, ["curation", "build", "--db", str(save()), "--output", str(tmp_path / "corpus")])
     assert result.exit_code == 0, result.output
+
+
+def test_history_tracks_prior_use_without_rewriting_current_split(tmp_path, source):
+    pytest.importorskip("sklearn")
+    from basedbench.pipeline.curation_history import audit_history, history_status
+
+    add, save, _ = source
+    for i in range(50):
+        add(f"item{i}", positive=i % 2 == 0)
+    db_path = save()
+    old, current = tmp_path / "old", tmp_path / "current"
+    build_corpus(db_path, old, project_root=tmp_path, seed="first")
+    build_corpus(db_path, current, project_root=tmp_path, seed="second")
+    run_baseline(old, tmp_path / "old-run")
+    history = tmp_path / "history.json"
+    history.write_text(json.dumps([{"corpus": "old", "run": "old-run"}]))
+    before = file_hash(current / "examples.jsonl")
+    audit_path = tmp_path / "audit.json"
+    audit = audit_history(current, history, audit_path)
+    assert file_hash(current / "examples.jsonl") == before
+    _, old_rows = load_corpus(old)
+    manifest, rows = load_corpus(current)
+    used = {r["post_id"] for r in old_rows if r["split"] != "test"}
+    reserved = {r["post_id"] for r in rows if r["split"] == "test"}
+    assert audit["counts"]["exposed_including_group"] == len(used & reserved) > 0
+    assert audit["counts"]["unexposed_in_declared_history"] == len(reserved - used)
+    assert history_status(audit_path, manifest, rows)["status"] == "exploratory_only"
+    assert history_status(None, manifest, rows)["status"] == "unaudited"
+    old_manifest, old_rows = load_corpus(old)
+    with pytest.raises(ValueError, match="does not match"):
+        history_status(audit_path, old_manifest, old_rows)
+    with pytest.raises(FileExistsError):
+        audit_history(current, history, audit_path)
+    # A report cannot merely claim to have used a different membership.
+    report_path = tmp_path / "old-run" / "report.json"
+    report = json.loads(report_path.read_text())
+    report["training_ids_sha256"] = "wrong"
+    report_path.write_text(json.dumps(report))
+    with pytest.raises(ValueError, match="membership"):
+        audit_history(current, history, tmp_path / "bad-audit.json")
+
+
+def test_encoder_uses_same_allowed_evidence_and_never_encodes_reserved_rows(tmp_path, source, monkeypatch):
+    pytest.importorskip("sentence_transformers")
+    import numpy as np
+    from types import SimpleNamespace
+    from sklearn.linear_model import LogisticRegression
+    from basedbench.pipeline import curation_encoder
+    from basedbench.pipeline.curation_history import audit_history
+
+    add, save, _ = source
+    for i in range(50):
+        add(f"item{i}", positive=i % 2 == 0)
+    corpus = tmp_path / "corpus"
+    build_corpus(save(), corpus, project_root=tmp_path)
+    _, rows = load_corpus(corpus)
+    train = [r for r in rows if r["split"] == "development"]
+    evaluation = [r for r in rows if r["split"] == "calibration"]
+    run_baseline(corpus, tmp_path / "prior-run")
+    history = tmp_path / "history.json"
+    history.write_text(json.dumps([{"corpus": "corpus", "run": "prior-run"}]))
+    audit = tmp_path / "audit.json"
+    audit_history(corpus, history, audit)
+    seen = {}
+
+    class FakeEncoder:
+        max_seq_length = 256
+
+        def __getitem__(self, _index):
+            return SimpleNamespace(auto_model=SimpleNamespace(config=SimpleNamespace(model_type="bert")))
+
+    def load(*args, **kwargs):
+        assert kwargs["revision"] == curation_encoder.MODEL_REVISION
+        assert kwargs["trust_remote_code"] is False
+        return FakeEncoder()
+
+    def encode(inputs, _encoder, **kwargs):
+        seen["inputs"] = inputs
+        features = np.asarray([[i, i % 3] for i in range(len(inputs))], dtype=np.float32)
+        packing = [{field: {"tokens": 10, "chunks": 1, "omitted_tokens": 0}
+                    for field in curation_encoder.FIELDS} for _ in inputs]
+        return features, packing
+
+    original_fit, original_predict = LogisticRegression.fit, LogisticRegression.predict_proba
+
+    def fit(self, features, labels, **kwargs):
+        seen["training_rows"] = len(features)
+        assert labels == [int(r["label"] == "accept") for r in train]
+        return original_fit(self, features, labels, **kwargs)
+
+    def predict(self, features, **kwargs):
+        seen["scoring_rows"] = len(features)
+        return original_predict(self, features, **kwargs)
+
+    monkeypatch.setattr("sentence_transformers.SentenceTransformer", load)
+    monkeypatch.setattr(curation_encoder, "encode_evidence", encode)
+    monkeypatch.setattr(LogisticRegression, "fit", fit)
+    monkeypatch.setattr(LogisticRegression, "predict_proba", predict)
+    report = curation_encoder.run_encoder(corpus, tmp_path / "encoder-run", history_audit=audit)
+    assert seen["inputs"] == [r["input"] for r in train + evaluation]
+    assert seen["training_rows"] == len(train)
+    assert seen["scoring_rows"] == len(evaluation)
+    assert report["history_audit"]["status"] == "exploratory_only"
+    assert report["model_details"]["omitted_tokens"] == 0
+    with np.load(tmp_path / "encoder-run" / "features.npz", allow_pickle=False) as arrays:
+        assert arrays["post_ids"].tolist() == [r["post_id"] for r in train + evaluation]

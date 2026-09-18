@@ -37,6 +37,9 @@ basedbench = "basedbench.cli:app"
 curation = [
     "scikit-learn>=1.6",
 ]
+encoder = [
+    "sentence-transformers>=5",
+]
 
 [build-system]
 requires = ["uv_build>=0.9.18,<0.10.0"]
