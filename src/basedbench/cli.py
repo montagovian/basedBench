@@ -36,6 +36,46 @@ consensus_eval_app = typer.Typer(
 )
 app.add_typer(snapshot_app, name="snapshot")
 app.add_typer(consensus_eval_app, name="consensus-eval")
+curation_app = typer.Typer(help="Freeze historical curation evidence and run local baselines.", no_args_is_help=True)
+app.add_typer(curation_app, name="curation")
+
+
+@curation_app.command("build")
+def curation_build(
+    output: Path = typer.Option(..., help="New frozen corpus directory under data/."),
+    db: Path = typer.Option(Path("data/basedbench.db"), help="Existing database, opened read-only."),
+    project_root: Path = typer.Option(Path("."), help="Root for relative image paths."),
+    seed: str = typer.Option("basedbench-curation-v1", help="Stable group split seed."),
+    other_confirmed_manual: bool = typer.Option(False, help="Use only after confirming the provenance of 'other' reviews."),
+    families: Path | None = typer.Option(None, help="JSON mapping of post ID to joke-family ID."),
+) -> None:
+    """Freeze original generation logs, labels, image bytes, groups, and splits."""
+    from basedbench.pipeline.curation_corpus import build_corpus
+
+    try:
+        result = build_corpus(db, output, project_root=project_root, seed=seed,
+                              other_provenance="confirmed_manual" if other_confirmed_manual else "inferred_manual",
+                              family_file=families)
+    except (ValueError, OSError) as exc:
+        raise typer.BadParameter(str(exc)) from exc
+    Console().print({"corpus_id": result["corpus_id"], "counts": result["counts"], "output": str(output)})
+
+
+@curation_app.command("baseline")
+def curation_baseline(
+    corpus: Path = typer.Argument(..., help="Frozen corpus directory."),
+    output: Path = typer.Option(..., help="New results directory under data/."),
+    accept_threshold: float = typer.Option(0.9, min=0.0, max=1.0),
+    reject_threshold: float = typer.Option(0.1, min=0.0, max=1.0),
+) -> None:
+    """Train TF-IDF/logistic on development and evaluate calibration only."""
+    from basedbench.pipeline.curation_eval import run_baseline
+
+    try:
+        result = run_baseline(corpus, output, accept_threshold=accept_threshold, reject_threshold=reject_threshold)
+    except (ValueError, OSError, RuntimeError) as exc:
+        raise typer.BadParameter(str(exc)) from exc
+    Console().print({"metrics": result["metrics"], "final_test_evaluated": False, "output": str(output)})
 
 
 def _load() -> tuple[Database, Config]:

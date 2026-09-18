@@ -90,6 +90,11 @@ uv run python scripts/release_audit.py --db data/basedbench.db
 
 ## Feedback loops
 
+Historical admission decisions can also be frozen for classifier experiments:
+see the [curation evaluation workflow](docs/curation-evaluation.md) and the
+[automated backfill plan](docs/automated-backfill-plan.md). These local experiments
+do not change the live review or ingestion pipeline.
+
 The pipeline's automated decisions — the gates, consensus, and the consensus
 *gloss* itself — are wrong sometimes. Two feedback loops turn those mistakes into
 a labelled corpus you use to improve the prompts, instead of tuning from intuition.

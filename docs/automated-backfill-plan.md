@@ -1,8 +1,9 @@
 # BasedBench next major version: automated curation and backfill
 
-Prepared September 18, 2026. Status: agreed direction and proposed implementation
-plan. No classifier experiments or new backfill runs have been performed for
-this proposal.
+Prepared September 18, 2026. Status: approved; execution started. The historical
+corpus builder, common decision contract, and first local baseline are implemented.
+See the [curation evaluation workflow](curation-evaluation.md). Corpus provenance
+and semantic joke-family grouping remain provisional; no new backfill has run.
 
 Companion plans for separate review:
 
@@ -299,6 +300,9 @@ Judge replacement, richer diagnostic tags, and recurring ingestion follow the
 curation milestone. A successful bounded backfill provides the foundation for
 later scheduled runs using the same admission policy and reporting.
 
-The next implementation task is to build the frozen historical curation corpus
-and common evaluation harness. Use its results to decide which classifiers and
-which automated admission workflow earn a place in the backfill pipeline.
+The initial corpus builder and calibration harness are implemented. Next, resolve
+the remaining label provenance, strengthen semantic joke-family grouping, and
+compare a frozen encoder with the lexical baseline before adding more backends.
+Use these results to decide which classifiers and which automated admission
+workflow earn a place in the backfill pipeline. The final-test partition stays
+unscored until corpus qualification and model/threshold selection are complete.

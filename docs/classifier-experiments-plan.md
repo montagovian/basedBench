@@ -1,6 +1,8 @@
 # Companion plan: classifier experiments
 
-Prepared September 18, 2026. Status: proposal; no experiments have been run.
+Prepared September 18, 2026. Status: approved; first local TF-IDF baseline run.
+See the [curation evaluation workflow](curation-evaluation.md) for implementation
+and preliminary results. Encoder and API comparisons remain pending.
 Parent: [automated curation and backfill](automated-backfill-plan.md).
 Related: [tag vocabulary and assignment](tagging-taxonomy-plan.md).
 
