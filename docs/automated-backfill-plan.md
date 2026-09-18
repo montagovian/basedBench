@@ -4,6 +4,13 @@ Prepared September 18, 2026. Status: agreed direction and proposed implementatio
 plan. No classifier experiments or new backfill runs have been performed for
 this proposal.
 
+Companion plans for separate review:
+
+- [Classifier experiments](classifier-experiments-plan.md): staged comparisons
+  of encoders, label-conditioned classifiers, LLMs, and multimodal approaches.
+- [Tag vocabulary and assignment](tagging-taxonomy-plan.md): discover useful
+  categories, apply them consistently, and evolve them across releases.
+
 ## Objective
 
 Build the next major BasedBench release primarily from content accumulated
