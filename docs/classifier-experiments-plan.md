@@ -10,7 +10,9 @@ Determine which model approaches can reproduce historical admission decisions
 well enough to support the hands-off backfill. Compare specialized classifiers,
 general classifiers such as Jev, and LLMs through the same evaluation contract.
 Select a backend for each demonstrated use case rather than assume one model
-should own every decision.
+should own every decision. Ground-truth construction is one task with diagnostic
+checks for agreement, claim support, and image/source consistency. Separate
+classifiers or API calls for these checks are experimental options, not requirements.
 
 This expands milestone 2 of the main plan. It depends on milestone 1's frozen
 corpus, label provenance, and development/calibration/test partitions. Tagging
@@ -111,7 +113,9 @@ from the same labels; otherwise the combined model can inherit training leakage.
 [CatBoost](https://catboost.ai/docs/en/features/categorical-features)
 
 Pairwise support labels, image-consistency labels, and tag labels are distinct
-from the overall curation label. Where only weak or model-generated labels exist,
+from the overall curation label. The first two can be diagnostics within a joint
+ground-truth task. Reconcile contradictory historical regression references before
+using them as gold labels. Where only weak or model-generated labels exist,
 report that provenance. Distillation transfers a teacher's behavior and errors;
 teacher agreement is not independent validation.
 

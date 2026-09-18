@@ -71,10 +71,23 @@ score.
 | Decision | Question | Evidence |
 | --- | --- | --- |
 | Publication suitability | Does it satisfy the existing publication policy? | Text and image-aware checks |
-| Consensus | Do qualifying comments support the same interpretation? | Comment roles, supporting IDs, contradictions, deterministic counts |
-| Explanation fidelity | Does the proposed ground truth accurately express that interpretation? | Source comments, claim support, consistency with the image |
+| Ground-truth construction and validation | Can we recover a supported interpretation and express it accurately? | Claim-specific comment support, contradictions, deterministic counts, image/source consistency |
 | Benchmark suitability | Does it present a meaningful, nontrivial, fairly scorable understanding task? | Image, grounded explanation, supplied-context requirements |
 | Contribution to the set | Does it add useful coverage without excessive repetition? | Accepted corpus, duplicate candidates, content categories |
+
+Ground-truth construction is one task with diagnostic checks, not a requirement
+for separate consensus and fidelity classifiers. Return an explanation,
+supporting evidence, a usability decision, and reasons such as insufficient
+agreement, unsupported additions, competing interpretations, or image mismatch.
+If consensus means support for every material claim in the proposed explanation,
+fidelity overlaps with that judgment. Compare a joint call with a generate-and-
+verify workflow empirically.
+
+The corpus contains shared-core explanations contaminated by comment-side jokes
+or minority elaborations. These motivate different repair actions, not necessarily
+different model calls. Existing regression references also need reconciliation:
+a flagged bad gloss may have been copied into the expected explanation, and
+Boolean-only consensus tests can pass an explanation that contradicts the reference.
 
 Benchmark suitability should expose at least these dimensions:
 
@@ -106,8 +119,8 @@ The proposed runtime flow is:
 ```text
 Collect and validate assets
   -> publication checks
-  -> recover consensus and draft a grounded explanation
-  -> verify evidence and image consistency
+  -> construct and validate a grounded explanation
+     (agreement, claim support, and image/source consistency)
   -> assess benchmark suitability
   -> apply duplication and corpus-selection rules
   -> accept / reject / defer
@@ -189,8 +202,9 @@ descriptions are additional model contributions that must be measured, including
 their errors and cost.
 
 Use a generative model where interpretation proposals or explanation writing
-are necessary. Classify whether comments support those proposals, validate IDs,
-and count eligible support in code. Verify the final explanation after writing;
+are necessary. Ground-truth construction may evaluate support and write the
+explanation jointly. Validate IDs and count eligible support in code. Check the
+final explanation's material claims, within the joint task or a verification pass;
 selecting the right evidence does not prevent unsupported additions during
 generation. Jev's documented limitations make precise questions and direct
 evidence particularly important. [Jev limitations](https://docs.typesafe.ai/model-jaggedness/jev-1.13)
