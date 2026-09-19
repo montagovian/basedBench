@@ -262,7 +262,7 @@ async def collect_calls(client, rows: list[dict], corpus: Path, output: Path, pl
                                jev_request(row, plan) if arm == "jev" else request_content(row, arm, corpus))
                     call["request_content_sha256"] = digest(content)
                     if budget is not None:
-                        allowance = budget.reserve(row["post_id"], arm)
+                        allowance = await budget.acquire(row["post_id"], arm)
                         call["cost_reservation_usd"] = allowance
                         if allowance is None:
                             raise ValueError("Not attempted: experiment cost limit reached")

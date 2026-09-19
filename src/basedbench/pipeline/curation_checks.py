@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
 import math
 import re
@@ -167,6 +168,8 @@ class Budget:
         self.bounds = plan["request_bounds_usd"]
         self.charges: dict[str, float] = {}
         self.violated = False
+        self.active: set[str] = set()
+        self.changed = asyncio.Event()
         for path in (output / "calls").glob("*.json"):
             call = json.loads(path.read_text())
             if call["experiment_id"] != plan["experiment_id"]:
@@ -182,7 +185,18 @@ class Budget:
         if self.violated or sum(self.charges.values()) + amount > self.limit + 1e-12:
             return None
         self.charges[key] = amount
+        self.active.add(key)
         return amount
+
+    async def acquire(self, pid: str, arm: str) -> float | None:
+        # Pending maximum-cost reservations can temporarily fill the budget.
+        # Wait for those calls to settle before permanently skipping a new one.
+        while True:
+            self.changed.clear()
+            allowance = self.reserve(pid, arm)
+            if allowance is not None or self.violated or not self.active:
+                return allowance
+            await self.changed.wait()
 
     def settle(self, pid: str, arm: str, call: dict) -> None:
         key = f"{pid}.{arm}"
@@ -190,6 +204,8 @@ class Budget:
         self.charges[key] = self.bounds[key] if value is None else value
         # If provider usage ever breaks the allowance, stop further dispatch.
         self.violated |= self.charges[key] > self.bounds[key] + 1e-12
+        self.active.discard(key)
+        self.changed.set()
 
 
 def parse(row: dict, arm: str, call: dict) -> tuple[Decision, dict]:

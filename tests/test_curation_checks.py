@@ -128,6 +128,27 @@ def test_budget_accounts_cache_writes_and_stops_on_broken_allowance(tmp_path):
     assert budget.violated and budget.reserve("p1", "luna_checks") is None
 
 
+def test_budget_waits_for_pending_allowances_instead_of_skipping(tmp_path):
+    (tmp_path / "calls").mkdir()
+    plan = {"experiment_id": "e", "budget_usd": .025,
+            "request_bounds_usd": {"p0.luna_checks": .02, "p1.luna_checks": .02}}
+
+    async def experiment():
+        budget = checks.Budget(plan, tmp_path)
+
+        async def call(pid):
+            amount = await budget.acquire(pid, "luna_checks")
+            assert amount == .02
+            assert sum(budget.charges.values()) <= .025
+            await asyncio.sleep(.01)
+            budget.settle(pid, "luna_checks", {"usage": {"input_tokens": 100, "output_tokens": 100}})
+
+        await asyncio.wait_for(asyncio.gather(call("p0"), call("p1")), timeout=1)
+        assert not budget.active and sum(budget.charges.values()) < .001
+
+    asyncio.run(experiment())
+
+
 def test_budget_skips_all_requests_when_allowance_wont_fit(corpus):
     path, _ = corpus
     luna, jev = LunaStub(), JevStub()
