@@ -54,8 +54,10 @@ Do not interpret the overall historical labels as labels for individual checks.
 
 ## Decision this work should produce
 
-Determine which model approaches can reproduce historical admission decisions
-well enough to support the hands-off backfill. Compare specialized classifiers,
+Determine which model approaches implement the clarified admission standard
+well enough to support the hands-off backfill. Historical decisions remain a
+diagnostic baseline; explicit reassessments take precedence for future targets.
+Compare specialized classifiers,
 general classifiers such as Jev, and LLMs through the same evaluation contract.
 Select a backend for each demonstrated use case rather than assume one model
 should own every decision. Ground-truth construction is one task with diagnostic
@@ -67,6 +69,29 @@ corpus, label provenance, and development/calibration/test partitions. Tagging
 can reuse the infrastructure, but requires its own targets and evaluation.
 
 ## Working hypotheses
+
+### Partial feedback and task value
+
+The detailed [curator review](curation-research.md) distinguishes reference
+unfamiliarity, insufficient task value, wrong ground truth and publication
+boundaries. Record unfamiliarity or lack of context without converting it to a
+negative quality label. Preserve tentative decisions, missing judgments and
+explicit component labels; do not fill unreviewed components from an overall
+accept/reject decision. This applies in particular to the Mario/Gojo, yo/gurt
+and square-hole cases, which do not yet have final admission reassessments.
+
+Test a concrete diagnostic for what the viewer must infer beyond the literal
+statement, including whether multiple references form a supported connection
+and whether the supplied text already explains the intended point. Do not make
+"is this a meme?" a rigid genre filter: text screenshots and observational humor
+can still be valid. Curator examples must define the desired level of task value.
+
+Pass/fail/borderline content labels remain a proposal, not an approved policy
+change. For annotation, distinguish an understood policy boundary case from
+unclear evidence. The existing pass/fail/uncertain classifier questions do not
+automatically represent that distinction. Clarify how these observations should
+affect admission before changing prompts, labels or thresholds. Apply this
+policy consistently to the examples before optimizing it with JEV or GEPA.
 
 ### Difficulty as a separate target
 

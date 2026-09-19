@@ -62,6 +62,12 @@ no explicit actor field. Confirm provenance before treating all those rows as
 human labels. Preserve uncertainty rather than reconstructing an authoritative
 reason from a model's guess.
 
+Subsequent [curator feedback](curation-research.md) establishes that unfamiliarity
+with references was also a common reason for rejection. Historical negatives
+therefore do not all mean intrinsically unsuitable tasks. Preserve explicit
+reassessments and partial reasons separately, including unresolved cases, before
+using those records as classifier targets.
+
 The existing code also mixes some suitability rules into consensus: a post can
 be marked as having no consensus because it is only one-step decoding or pure
 scrambled nonsense. The new design should represent agreement and suitability

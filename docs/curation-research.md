@@ -40,6 +40,104 @@ separate from answer quality and admission. Later, compare those impressions
 with measured success across a specified panel of models. Familiarity with a
 reference can make a meme easy for one audience and difficult for another.
 
+### Detailed feedback on the remaining gallery cases
+
+Alex then reviewed the remaining 16 cases. The local feedback log preserves his
+wording, partial component judgments, tentative decisions and unanswered
+questions. It does not turn every comment into a definitive binary label.
+
+| Case | Recorded feedback |
+| --- | --- |
+| Chromium browsers | Accept. |
+| Mario / Gojo | Past rejection may reflect not understanding the reference; no explicit final verdict yet. |
+| Harry Potter's greatest achievement | Stored ground truth fails; repair the answer. Suitability of the underlying meme is not thereby rejected. |
+| Cobain | Reject on benchmark value: insufficient meaningful punchline; the dark-photo framing also muddles the answer. |
+| Spicy ramen | Content-policy fail due to the racial slur. |
+| Evangelion | A content boundary case, leaning toward fail. |
+| Yo / gurt | Unresolved: recognizing the word split does not yet make the joke feel meaningful; missing context remains possible. |
+| Neck / back | Lean accept; content now seems fine. This does not separately endorse the answer's Quagmire embellishment. |
+| Superpowered partners | Borderline content; no final admission verdict. |
+| Dr. Now | Lean accept; past unfamiliarity may explain rejection. This does not separately certify the existing answer's specificity. |
+| Childhood photo | Borderline content; no final admission verdict. |
+| Sneed / Chuck | Lean content fail, but possibly borderline; retain the uncertainty. |
+| Moron / L | Lean reject on benchmark value: too weak or nearly nonsensical. |
+| Jersey Shore / grenades | Reject on benchmark value: the quote-tweet reads as an observation, while the original founding-fathers layer might be a joke. |
+| Warhammer fantasy | Lean accept. |
+| Triangle factory / square hole | Unresolved: unsure the references combine into a joke; missing context remains possible. |
+
+This feedback changes the working diagnosis. Some historical negatives reflect
+reference unfamiliarity, some reflect publication boundaries, and others reflect
+the value of the task even after the intended meaning is understood. Those
+cannot all be represented by one negative label with an inferred reason.
+The four positive/lean-positive judgments and five negative/lean-negative
+judgments are not nine equally certain training labels. Seven cases have no
+final overall verdict, including Harry Potter, which has a clear answer defect
+but no final judgment on the underlying task. Keep tentative overall decisions
+out of definitive binary training targets until confirmed. Use the explicit
+component feedback only for the component it addresses.
+
+### Borderline content is a policy question, not just missing evidence
+
+Alex floated pass/fail/borderline as an idea and explicitly did **not** instruct
+us to adopt it. The current classifier and production publication policy remain
+unchanged. The feedback log can still faithfully record that a particular item
+feels borderline.
+
+For a future design, distinguish:
+
+- **Boundary case:** the content is understood, but where the policy draws the
+  line is unsettled. Implied sexual references in this batch illustrate this.
+- **Insufficient evidence:** we cannot establish what the content contains, for
+  example because text evidence omits relevant image text.
+
+These require different remedies: clarify the standard versus obtain better
+evidence. An annotation can record both the policy assessment and evidence
+certainty. A later operational rule can decide which cases pass, fail or remain
+pending; an observation of borderline content must not silently authorize
+publication or turn into a permanent, unexplained human-review requirement.
+
+### Test what understanding adds, rather than a rigid meme genre
+
+A proposed worthwhile-task diagnostic is: **what does a viewer have to recover
+beyond the literal statement, and does that account explain this whole image?**
+Ask for the setup, implication, wordplay or connected reference, and identify
+when the supplied text already states the entire intended point. Recognition
+alone may be sufficient for some accepted reference tasks; the classifier needs
+contrasting examples to learn when it is sufficient here.
+
+This is more useful to test than whether the object belongs to an internet genre
+called a meme. A screenshot of text can contain an excellent joke. An observation
+can also be comic. For the Jersey Shore case, Alex distinguishes the quoted
+founding-fathers joke from the outer comment that mostly spells out an observation.
+The classifier should inspect the complete composition and the remaining
+understanding task, not automatically reject quote-tweets or observations.
+
+Reference familiarity, task value, difficulty, publication suitability and
+answer correctness remain separate observations. In particular, Cobain now
+illustrates a curator value rejection even if the explanation could be repaired.
+Conversely, Harry Potter illustrates an answer defect without establishing that
+the meme is a bad task. None of this asks for a theory of why humans laugh.
+
+### Context for the two unresolved reference cases
+
+The established yo/gurt template treats the word as a greeting to an imaginary
+person called Gurt, who greets the speaker back. The carton invokes that exchange
+through its typography. This supplies the reference Alex may have been missing;
+it does not settle whether the photo offers enough benchmark value.
+[Reference context](https://knowyourmeme.com/memes/yogurt-gurt-yo)
+
+The triangle-factory reference makes an unexpected circle a production problem;
+the square-hole reference sends differently shaped blocks through one opening.
+My reading of the combined image is that the problem becomes irrelevant to a
+worker who puts every shape through the square hole anyway. That is a proposed
+connection, not a new ground truth or evidence of curator approval. Keep the
+item unresolved while discussing the connection and the value of the task.
+[Triangle factory](https://knowyourmeme.com/memes/a-circle-in-the-triangle-factory-i-guess-we-doin-circles-now),
+[square hole](https://knowyourmeme.com/memes/the-square-hole)
+
+These context notes are shown separately in the gallery. They are not inserted
+into the original evidence or used to rescore saved classifier calls.
+
 ## Are the models agreeing?
 
 All comparisons below use the same 80 calibration examples: 23 historical
