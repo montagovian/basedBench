@@ -38,10 +38,23 @@ def audit_history(corpus: Path, history: Path, output: Path) -> dict:
         report = json.loads((run / "report.json").read_text())
         if report["corpus_id"] != old_manifest["corpus_id"]:
             raise ValueError("Historical run/corpus mismatch")
-        if report["evaluation_split"] != "calibration" or report["final_test_evaluated"] is not False:
+        is_llm = report.get("schema_version") == "curation-llm-v1"
+        allowed_splits = {"development", "calibration"} if is_llm else {"calibration"}
+        if report["evaluation_split"] not in allowed_splits or report["final_test_evaluated"] is not False:
             raise ValueError("Unsupported historical run; exposure must be checked explicitly")
-        training = [r["post_id"] for r in old_rows if r["split"] == "development"]
-        evaluation = [r["post_id"] for r in old_rows if r["split"] == "calibration"]
+        development = [r["post_id"] for r in old_rows if r["split"] == "development"]
+        eligible = [r["post_id"] for r in old_rows if r["split"] == report["evaluation_split"]]
+        training = report["training_ids"] if is_llm else development
+        evaluation = report["evaluation_ids"] if is_llm else eligible
+        references = report["reference_ids"] if is_llm else []
+        if not set(training + references) <= set(development) or not set(evaluation) <= set(eligible):
+            raise ValueError("Historical run exposed examples outside its declared allowed split")
+        if any(len(ids) != len(set(ids)) for ids in (training, evaluation, references)):
+            raise ValueError("Historical run has duplicate membership IDs")
+        if set(training + references) & set(evaluation):
+            raise ValueError("Historical learning/reference examples overlap its evaluation")
+        if is_llm and digest(references) != report["reference_ids_sha256"]:
+            raise ValueError("Historical reference membership hash mismatch")
         if digest(training) != report["training_ids_sha256"] or digest(evaluation) != report["evaluation_ids_sha256"]:
             raise ValueError("Historical run membership does not match its corpus")
         if file_hash(run / "decisions.jsonl") != report["decisions_sha256"]:
@@ -56,8 +69,10 @@ def audit_history(corpus: Path, history: Path, output: Path) -> dict:
             used[pid].add("training")
         for pid in evaluation:
             used[pid].add("evaluation")
+        for pid in references:
+            used[pid].add("reference")
         verified.append({"corpus_id": old_manifest["corpus_id"], "report_sha256": file_hash(run / "report.json"),
-                         "training_ids": training, "evaluation_ids": evaluation})
+                         "training_ids": training, "evaluation_ids": evaluation, "reference_ids": references})
 
     exposed_groups = {r["group_id"] for r in rows if used[r["post_id"]]}
     reserved = [r for r in rows if r["split"] == "test"]
@@ -71,6 +86,7 @@ def audit_history(corpus: Path, history: Path, output: Path) -> dict:
         "counts": {"reserved": len(reserved),
                    "previously_trained": sum("training" in d["prior_uses"] for d in details),
                    "previously_scored": sum("evaluation" in d["prior_uses"] for d in details),
+                   "previously_used_as_reference": sum("reference" in d["prior_uses"] for d in details),
                    "exposed_including_group": sum(d["group_exposed"] for d in details),
                    "unexposed_in_declared_history": sum(not d["group_exposed"] for d in details)},
         "status": "exploratory_only",

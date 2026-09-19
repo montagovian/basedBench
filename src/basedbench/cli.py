@@ -117,6 +117,37 @@ def curation_encoder(
     Console().print({"metrics": result["metrics"], "history_audit": result["history_audit"], "output": str(output)})
 
 
+@curation_app.command("llm")
+def curation_llm(
+    corpus: Path = typer.Argument(..., help="Frozen corpus directory."),
+    output: Path = typer.Option(..., help="Experiment directory; identical interrupted runs can resume."),
+    history_audit: Path = typer.Option(..., help="Verified history audit for this corpus."),
+    split: str = typer.Option("calibration", help="development or calibration; reserved examples cannot be selected."),
+    limit: int = typer.Option(80, min=1, help="Target sample size; whole groups may exceed it slightly."),
+    concurrency: int = typer.Option(4, min=1, max=8, help="Maximum simultaneous API requests."),
+    baseline_run: list[Path] | None = typer.Option(None, help="Existing baseline run to compare on the same selected examples."),
+    include_jev: bool = typer.Option(False, help="Add JEV with the same text and reference examples."),
+) -> None:
+    """Compare one model with text alone and with the same text plus the image."""
+    import os
+    from dotenv import dotenv_values
+    from basedbench.pipeline.curation_llm import run_llm
+
+    key = os.getenv("OPENAI_API_KEY") or dotenv_values(".env").get("OPENAI_API_KEY")
+    if not key:
+        raise typer.BadParameter("OPENAI_API_KEY is required for this paid API experiment")
+    jev_key = os.getenv("JEV_API_KEY") or os.getenv("TYPESAFE_API_KEY") or dotenv_values(".env").get("JEV_API_KEY") or dotenv_values(".env").get("TYPESAFE_API_KEY")
+    if include_jev and not jev_key:
+        raise typer.BadParameter("JEV_API_KEY or TYPESAFE_API_KEY is required for --include-jev")
+    try:
+        result = asyncio.run(run_llm(corpus, output, history_audit=history_audit, api_key=key,
+                                    split=split, limit=limit, concurrency=concurrency,
+                                    baseline_runs=baseline_run or [], jev_api_key=jev_key if include_jev else None))
+    except (ValueError, OSError, RuntimeError) as exc:
+        raise typer.BadParameter(str(exc)) from exc
+    Console().print({"metrics": result["metrics"], "cost": result["cost"], "output": str(output)})
+
+
 def _load() -> tuple[Database, Config]:
     config = Config()  # type: ignore[call-arg]
     config.ensure_dirs()
