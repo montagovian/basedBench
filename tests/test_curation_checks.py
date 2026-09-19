@@ -156,6 +156,10 @@ def test_end_to_end_same_inputs_luna_only_no_repeated_spend_and_history(corpus, 
     for index in range(0, 9, 3):
         assert luna.requests[index]["input"] == luna.requests[index + 1]["input"]
         assert luna.requests[index + 1]["input"][0]["content"] == luna.requests[index + 2]["input"][0]["content"][:1]
+        direct_schema = luna.requests[index]["text"]["format"]["schema"]
+        check_schema = luna.requests[index + 1]["text"]["format"]["schema"]
+        assert direct_schema["properties"]["evidence_comment_ids"]["items"]["enum"] == ["c1"]
+        assert check_schema["$defs"]["Check"]["properties"]["evidence_comment_ids"]["items"]["enum"] == ["c1"]
     again = asyncio.run(checks.run_checks(path, output, **args))
     assert len(luna.requests) == 9 and len(jev.requests) == 3
     assert again["cost"] == report["cost"]

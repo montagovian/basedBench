@@ -90,10 +90,25 @@ def request(row: dict, arm: str, corpus: Path, plan: dict) -> dict:
                 "questions": {name: {"type": "choice", "instructions": COMMON + "\n" + spec["instructions"],
                                      "criteria": spec["criteria"]} for name, spec in CHECKS.items()}}
     direct = arm == "luna_direct"
+    schema = replay.Assessment.model_json_schema() if direct else Assessment.model_json_schema()
+    candidate_ids = sorted(set(re.findall(r"(?m)^ID: (\S+) \| Score:", row["input"]["comment_evidence"])))
+
+    def constrain_citations(value):
+        if not isinstance(value, dict):
+            return
+        for key, child in value.items():
+            if key == "evidence_comment_ids":
+                if candidate_ids:
+                    child["items"]["enum"] = candidate_ids
+                else:
+                    child["maxItems"] = 0
+            constrain_citations(child)
+
+    constrain_citations(schema)
     return {"model": MODEL, "instructions": plan["direct_instructions"] if direct else plan["check_instructions"],
             "input": [{"role": "user", "content": replay.request_content(row, "image" if arm == "luna_image_checks" else "text", corpus)}],
             "text": {"format": {"type": "json_schema", "name": "curation_assessment", "strict": True,
-                                "schema": replay.Assessment.model_json_schema() if direct else Assessment.model_json_schema()}, "verbosity": "low"},
+                                "schema": schema}, "verbosity": "low"},
             "reasoning": {"effort": "medium"}, "max_output_tokens": replay.MAX_OUTPUT_TOKENS,
             "store": False, "service_tier": "default", "truncation": "disabled",
             "prompt_cache_key": "basedbench-checks-" + plan["policy_sha256"][:24]}
@@ -293,6 +308,7 @@ async def run_checks(corpus: Path, output: Path, *, history_audit: Path, api_key
             "input_hashes": {r["post_id"]: r["input_sha256"] for r in references + selected},
             "reference_evidence": refs, "direct_instructions": replay.instructions(references), "check_instructions": instruction,
             "checks": CHECKS, "policy_sha256": digest(instruction), "aggregation": "any fail -> reject; else any uncertain -> defer; else accept",
+            "citation_schema": "Candidate comment IDs are enumerated in each request's response schema.",
             "response_schema": Assessment.model_json_schema(), "history_audit": exposure,
             "prices": {"luna": PRICES, "jev": replay.JEV_PRICES}, "max_output_tokens": replay.MAX_OUTPUT_TOKENS,
             "reasoning_effort": "medium", "automatic_retries": 0, "image_detail": "high",
