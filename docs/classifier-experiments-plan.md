@@ -12,6 +12,13 @@ historical approvals while selecting 74 and 73 items respectively, with JEV abou
 six times cheaper. Prioritize JEV development, while retaining Luna for cheap
 comparisons and visual checks. Neither workflow has established useful admission
 quality. Further adaptation and diagnostic comparisons remain pending.
+An [offline research pass](curation-research.md) now identifies opposite labels
+for copies of the same meme, two missed families spanning prompt references and
+calibration targets, and a benchmark-value check that passes every sampled
+historical reject. The immediate next step is a small, reasoned reassessment of
+examples and family accounting before more prompt optimization. Historical
+admission is a useful baseline, but is not yet a complete definition of intrinsic
+task suitability or collection-level selection.
 Parent: [automated curation and backfill](automated-backfill-plan.md).
 Related: [tag vocabulary and assignment](tagging-taxonomy-plan.md).
 

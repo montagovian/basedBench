@@ -241,6 +241,15 @@ the final evaluation design before claiming readiness for unattended admission.
 
 ## What comes next
 
+The [offline research pass](curation-research.md) supplies agreement counts,
+inspected image examples and a proposed feedback/GEPA sequence. It found three
+same-meme pairs with opposite historical labels; two also cross from development
+references to calibration targets under different recorded groups. Group-based
+checks did not catch those overlaps. Preserve the existing results as practice
+comparisons, record the discovered families, and clarify whether rejections mean
+unsuitable tasks, repairable answers or collection-specific exclusions before
+using them as an optimization target.
+
 Prioritize **JEV** for the next iterations and use **Luna** for inexpensive
 comparisons and checks that need pixels. The immediate target is the ineffective
 worthwhile-task check: use contrasting accepted and rejected development examples
