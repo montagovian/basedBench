@@ -19,6 +19,7 @@ const storageKey = (c) => `basedbench-review:${data.packet_id}:${c.post_id}`;
 const savedDraft = (c) => ({fields: {...(c.latest?.fields || {})}, notes: c.latest?.notes || "", base_revision: c.latest?.event_id || null});
 const currentDraft = (c) => drafts.get(c.post_id) || savedDraft(c);
 const dirty = (c) => JSON.stringify(currentDraft(c)) !== JSON.stringify(savedDraft(c));
+const fieldSpec = (key) => ({...data.rubric.fields[key], ...(data.question_copy?.fields[key] || {})});
 function persistDraft() {
   if (!active) return;
   const draft = currentDraft(active);
@@ -94,7 +95,7 @@ function openCase(c) {
   $("#save-next").disabled = index === cases.length - 1;
   $("#fields").replaceChildren();
   for (const key of fieldOrder) {
-    const spec = data.rubric.fields[key];
+    const spec = fieldSpec(key);
     const fieldset = make("fieldset", undefined, "question");
     fieldset.append(make("legend", spec.label), make("p", spec.hint, "help"));
     const options = make("div", undefined, "choices");
@@ -129,7 +130,7 @@ function openCase(c) {
   if (c.latest) {
     $("#history").append(make("p", `${c.save_count} revision(s) preserved. Latest saved judgment:`));
     for (const [key, value] of Object.entries(c.latest.fields)) {
-      $("#history").append(make("p", `${data.rubric.fields[key].label} ${data.rubric.fields[key].options[value]}`));
+      $("#history").append(make("p", `${fieldSpec(key).label} ${fieldSpec(key).options[value]}`));
     }
     if (c.latest.notes) $("#history").append(make("p", c.latest.notes));
   }
@@ -178,6 +179,7 @@ async function record(kind, reveal = null) {
   const c = active;
   const draft = currentDraft(c);
   const body = {post_id: c.post_id, input_sha256: c.input_sha256, packet_id: data.packet_id, ...draft, kind, reveal};
+  if (data.question_copy) body.question_copy_sha256 = data.question_copy.sha256;
   const signature = JSON.stringify(body);
   if (!retries.has(signature)) retries.set(signature, crypto.randomUUID());
   body.request_id = retries.get(signature);

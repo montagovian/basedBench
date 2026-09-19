@@ -122,6 +122,31 @@ def test_reveal_preserves_before_and_after_context_without_forcing_verdict(packe
     assert len(restarted.events()) == 2
 
 
+def test_wording_revision_preserves_frozen_rubric_and_legacy_feedback(packet):
+    store = review.ReviewStore(packet)
+    rubric_hash = file_hash(packet / "rubric.json")
+    request = request_for(store)
+    old = store.append(request)["event"]
+    legacy_payload = request.model_dump(exclude={"question_copy_sha256"})
+    assert old["request_sha256"] == digest(legacy_payload)
+    # Reproduce the original event shape and ensure a retry remains idempotent.
+    old.pop("question_copy_sha256")
+    old.pop("question_copy")
+    write_jsonl(packet / "events.jsonl", [old])
+    assert store.append(request)["event"] == old
+    copy = store.catalog()["question_copy"]
+    updated = request.model_copy(update={"request_id": "clearer-wording", "base_revision": old["event_id"],
+                                         "question_copy_sha256": copy["sha256"]})
+    saved = store.append(updated)["event"]
+    assert saved["question_copy"] == copy
+    assert saved["fields"] == old["fields"]
+    assert store.events()[0] == old
+    assert file_hash(packet / "rubric.json") == rubric_hash
+    with pytest.raises(review.ConflictError, match="wording changed"):
+        store.append(updated.model_copy(update={"request_id": "unknown-wording", "base_revision": saved["event_id"],
+                                                "question_copy_sha256": "0" * 64}))
+
+
 @pytest.mark.parametrize("changes", [
     {"input_sha256": "wrong"}, {"packet_id": "wrong"}, {"post_id": "test-case"},
     {"fields": {"content": "accept"}}, {"fields": {"invented": "yes"}},

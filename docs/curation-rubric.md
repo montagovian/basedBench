@@ -12,16 +12,21 @@ for a theory of why people find something funny.
 
 | Question | Choices | What the answer means |
 | --- | --- | --- |
-| Is the content suitable? | Pass / fail / policy boundary / need more context | Judge what is shown and what the joke refers to. A policy boundary means you understand the content but the publication rule needs a decision; needing context means you cannot yet tell what it means. Neither becomes an automatic pass or fail. |
+| Does this meme pass our content rules? | Pass / fail / policy boundary / need more context | Check the image and intended joke for explicit sexual acts, exposed sexual anatomy, hate/slurs, doxxing or graphic gore. Mild innuendo and dark humor can pass. A policy boundary means you understand it but are unsure whether our rules should allow it; needing context means you do not yet understand it well enough to judge. |
 | Is the stored answer good enough to grade against? | Ready / repair needed / insufficient evidence | One ground-truth judgment covers agreement in the evidence, support, completeness and consistency with the image. An answer must capture the actual joke, not merely name a related reference. |
-| Would this be a useful understanding task with a correct answer? | Yes / no / unsure | Identify what a viewer must recover beyond a literal description. Does that interpretation account for the whole item? Judge this separately from the quality of its current answer. |
-| Would you include this copy? | Accept / reject / repair answer first / undecided | Your overall judgment, including collection-specific issues such as a duplicate or an unreadable image. This is an explicit choice, never calculated from the other fields. |
+| Is this a worthwhile test of getting the joke? | Yes / no / unsure | Set content restrictions aside and assume we can fix the answer. Is there a meaningful joke or reference here for a model to understand, such as an implied punchline, contrast or wordplay? Simple or easy jokes can still count. |
+| Overall, should we add this item to BasedBench? | Accept / reject / repair answer first / undecided | Bring together content rules, answer correctness, whether the joke is worth testing, and known duplication or image-quality issues. Choose repair answer first if you would include it once its explanation is fixed. This is an explicit choice, never calculated from the other fields. |
 | Did you know the reference? | Yes / needed context / still unclear | Unfamiliarity is useful diagnostic feedback, not a rejection criterion. |
 | How difficult does it seem? | Easy / medium / hard / unsure | Optional human impression. Keep it separate from measured model success rates and from validity. An easy item can still be useful. |
 
 Every field is optional. A partial judgment stays partial. Free text can explain
 the reason, missing clue, disputed interpretation or desired answer repair.
 Accepting a meme does not silently certify every sentence in its stored answer.
+
+For example, a meme can have a clear, worthwhile joke (question 3: yes) and
+still contain an excluded slur (question 1: fail), leading to an overall reject
+(question 4). A good, suitable meme with a flawed explanation can instead get
+an overall “repair answer first.”
 
 The current content rule excludes explicit sexual acts, exposed sexual anatomy,
 hate or slurs, doxxing and graphic gore. Mild innuendo, dark humor and politics are not blanket
@@ -106,3 +111,7 @@ manifest live in the packet. New feedback and reveal checkpoints are appended to
 `events.jsonl` there, with the packet, corpus, input and rubric identities. Copy
 the entire directory to back up the packet and its feedback. No API key or live
 database is needed. The server binds only to the local computer.
+
+Question wording can be clarified independently of the frozen rubric. Saves
+from the clarified UI include its wording version, hash and text; older feedback
+and its original rubric identity remain intact.

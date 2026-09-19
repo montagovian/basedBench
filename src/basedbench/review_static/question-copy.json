@@ -1,0 +1,18 @@
+{
+  "version": "curation-question-copy-v2",
+  "rubric_version": "curation-feedback-rubric-v1",
+  "fields": {
+    "content": {
+      "label": "Does this meme pass our content rules?",
+      "hint": "Check the image and intended joke for explicit sexual acts, exposed sexual anatomy, hate/slurs, doxxing or graphic gore. Mild innuendo and dark humor can pass. ‘Policy boundary’ means you understand it but are unsure whether our rules should allow it. ‘Need more context’ means you do not yet understand it well enough to judge."
+    },
+    "value": {
+      "label": "Is this a worthwhile test of getting the joke?",
+      "hint": "Set content restrictions aside and assume we can fix the answer. Is there a meaningful joke or reference here for a model to understand—for example, an implied punchline, contrast or wordplay? Simple or easy jokes can still count."
+    },
+    "admission": {
+      "label": "Overall, should we add this item to BasedBench?",
+      "hint": "Bring everything together: content rules, answer correctness, whether the joke is worth testing, and any duplication or image-quality issues you know about. Choose ‘Repair answer first’ if you would include it once its explanation is fixed."
+    }
+  }
+}

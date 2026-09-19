@@ -155,6 +155,7 @@ class ReviewRequest(BaseModel):
     notes: str = Field(default="", max_length=12000)
     kind: str = "feedback"
     reveal: str | None = None
+    question_copy_sha256: str | None = Field(default=None, pattern=r"^[0-9a-f]{64}$")
 
 
 class ConflictError(ValueError):
@@ -210,10 +211,18 @@ class ReviewStore:
     def catalog(self) -> dict:
         events = self.events()
         return {"packet_id": self.manifest["packet_id"], "rubric": self.rubric, "token": self.token,
+            "question_copy": self.question_copy(),
             "cases": [{"post_id": c["post_id"], "input_sha256": c["input_sha256"],
                 "image_url": f"/image/{c['post_id']}", "explanation": c["input"]["explanation"],
                 "collection": "previous" if c["previous_feedback"] else "fresh",
                 **self.state(c["post_id"], events)} for c in self.cases.values()]}
+
+    def question_copy(self) -> dict | None:
+        """Clarify display wording without rewriting the frozen rubric or prior events."""
+        copy = json.loads((STATIC / "question-copy.json").read_text())
+        if copy["rubric_version"] != self.rubric["version"]:
+            return None
+        return {**copy, "sha256": digest(copy)}
 
     def context(self, pid: str, reveal: str) -> dict:
         case = self.cases[pid]
@@ -236,7 +245,11 @@ class ReviewStore:
                 raise ValueError("Unknown feedback choice")
         if request.kind == "feedback" and not request.fields and not request.notes.strip():
             raise ValueError("Choose a judgment or add a note before saving.")
-        request_hash = digest(request.model_dump())
+        request_payload = request.model_dump()
+        if request.question_copy_sha256 is None:
+            # Preserve retries sent by a page opened before the wording update.
+            request_payload.pop("question_copy_sha256")
+        request_hash = digest(request_payload)
         with self.lock, (self.packet / "events.jsonl").open("a+") as handle:
             fcntl.flock(handle, fcntl.LOCK_EX)
             events = self._read_events(handle)
@@ -250,13 +263,16 @@ class ReviewStore:
             revision = state["latest"]["event_id"] if state["latest"] else None
             if revision != request.base_revision:
                 raise ConflictError("Feedback changed in another window. Your draft is kept here; copy it before reloading to compare.")
+            copy = self.question_copy() if request.question_copy_sha256 else None
+            if request.question_copy_sha256 and (copy is None or copy["sha256"] != request.question_copy_sha256):
+                raise ConflictError("Question wording changed. Reload to see the current wording; your draft stays in this browser.")
             event = {**request.model_dump(), "schema_version": "curation-gallery-feedback-v1",
                 "event_id": str(uuid.uuid4()), "request_sha256": request_hash,
                 "recorded_at": datetime.now(timezone.utc).isoformat(),
                 "corpus_id": self.manifest["corpus_id"], "rubric_version": self.rubric["version"],
                 "rubric_sha256": self.manifest["rubric_sha256"],
                 "exposed_before": state["revealed"], "previously_discussed": state["previously_discussed"],
-                "purpose": "development_feedback"}
+                "purpose": "development_feedback", "question_copy": copy}
             handle.write(canonical_json(event) + "\n")
             handle.flush()
             os.fsync(handle.fileno())
