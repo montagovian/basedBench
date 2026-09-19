@@ -13,7 +13,32 @@ The local image packet is at
 [`data/curation/research-v1/casebook.html`](../data/curation/research-v1/casebook.html).
 It contains the images, original explanations, source comments, current model
 decisions and my provisional assessments. It is read-only and remains local.
-This document records findings and the next experiment design, not new labels.
+The research findings retain the original labels; subsequent explicit curator
+reassessments are recorded separately below.
+
+## Curator feedback after this research pass
+
+Alex explicitly approved **both copies of all three opposite-label pairs**:
+the teapot riddle, number-plate prank and Clarkson/Porsche meme. The six items
+now have accepted reassessments in the local, append-only
+`data/curation/feedback/reassessments.jsonl`, tied to their frozen input hashes.
+Three reassessments change a historical rejection; three reaffirm an approval.
+The gallery displays current curator decisions alongside the historical ones.
+All metrics below still describe the original labels and saved calls. A revised
+label score would be a separate analysis, not an improvement to the models.
+
+For Top Gear, Alex tentatively recalled thinking it was too easy. Record this as
+a **curator difficulty impression**, not a measured solve rate or a certain
+reconstruction of the old decision. It remains accepted. This gives us a useful
+distinction: a task can be correct, scorable and desirable while also being easy.
+Difficulty can inform the composition of the benchmark without making every easy
+item a rejection. The same-meme grouping overlaps still need to be repaired for
+future evaluation, even though the curator has resolved these label conflicts.
+
+Future feedback should include optional perceived difficulty and its reason,
+separate from answer quality and admission. Later, compare those impressions
+with measured success across a specified panel of models. Familiarity with a
+reference can make a meme easy for one audience and difficult for another.
 
 ## Are the models agreeing?
 
@@ -222,6 +247,10 @@ to be implemented. The important change is what the feedback records:
    insufficient evidence. Record what is missing when repair is needed.
 3. **Would this particular copy enter this collection?** Yes / no / unsure,
    with reasons such as duplicate, poor image, publication boundary or low value.
+4. **How difficult does it seem, and why?** Optional easy / medium / hard /
+   unsure, with a reason such as familiar reference, subtle visual clue or
+   multiple references that must be combined. Keep this impression separate from
+   measured model performance; it does not override the admission decision.
 
 Keep the original decision and add a dated, versioned reassessment, with optional
 free text. Show the image and stored answer before revealing historical/model

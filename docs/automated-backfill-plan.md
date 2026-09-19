@@ -99,8 +99,14 @@ Benchmark suitability should expose at least these dimensions:
 - **Meaningful understanding:** a specific reference, implication, relationship,
   or mechanism must be recovered to get the joke.
 - **Nontrivial understanding:** the item meets the intended curation standard
-  for humans; reproduce the distinctions present in historical decisions before
-  inventing a new hardness threshold.
+  for humans; clarify the standard with explicit feedback rather than assume
+  historical rejection implies triviality. Alex has approved all three
+  opposite-label meme pairs found in the research pass, including Top Gear,
+  which he tentatively recalls previously considering too easy.
+- **Difficulty and coverage:** record perceived challenge separately from
+  validity and answer quality. An easy, valid item can still contribute useful
+  coverage. Compare curator impressions with measured model performance before
+  choosing the desired mix; no automatic difficulty cutoff is established.
 - **Answerability:** the supplied image contains the necessary setup. Cultural
   knowledge is allowed; a missing caption, missing panel, or unavailable private
   backstory is a different issue.

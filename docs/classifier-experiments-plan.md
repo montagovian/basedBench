@@ -19,6 +19,11 @@ historical reject. The immediate next step is a small, reasoned reassessment of
 examples and family accounting before more prompt optimization. Historical
 admission is a useful baseline, but is not yet a complete definition of intrinsic
 task suitability or collection-level selection.
+Alex subsequently approved all three opposite-label pairs and tentatively
+identified ease as the old concern for Top Gear. Record these explicit
+reassessments as a versioned overlay, not edits to frozen experiment labels.
+Treat difficulty as an additional, optional benchmark-composition dimension;
+the Top Gear examples remain accepted.
 Parent: [automated curation and backfill](automated-backfill-plan.md).
 Related: [tag vocabulary and assignment](tagging-taxonomy-plan.md).
 
@@ -62,6 +67,23 @@ corpus, label provenance, and development/calibration/test partitions. Tagging
 can reuse the infrastructure, but requires its own targets and evaluation.
 
 ## Working hypotheses
+
+### Difficulty as a separate target
+
+Distinguish whether an item is a valid, scorable understanding task from how
+challenging it is and how much of that difficulty band the collection needs.
+Collect curator impressions with a short explanation, then compare them with
+measured solve rates across a named, fixed panel of models. A classifier's
+difficulty prediction is an estimate, not a measured solve rate. Familiarity,
+visual subtlety and the need to connect several references may be useful
+diagnostics; none is yet a validated difficulty label.
+
+Use this information to study a deliberate mix of easy and challenging items
+or report results by difficulty. Do not infer that an old rejection means
+"too easy," use one target model's failures as the admission rule, or reject
+the newly approved Top Gear cases. No difficulty threshold has been approved.
+
+### Learned representations
 
 A pretrained encoder may already represent much of what predicts curation:
 specificity, relationships between statements, and whether an explanation
