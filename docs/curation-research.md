@@ -336,9 +336,11 @@ policy, relabel examples or include item-specific shortcuts.
 
 ## Recommended next step: a short, informative feedback round
 
-Build a website-style review view around the frozen evidence and images. The
-research packet is a read-only preview of the cases; a feedback workflow remains
-to be implemented. The important change is what the feedback records:
+The local feedback gallery now implements this next round; see the
+[working rubric and launch instructions](curation-rubric.md). It preserves the
+original read-only research packet and adds a separate review packet with image
+previews, partial judgments, answer-repair routing, draft checkpoints before
+context reveals, and append-only saves. The important change is what the feedback records:
 
 1. **Would this be a useful task if its answer were correct?** Yes / no / unsure.
 2. **Is the stored answer good enough to grade against?** Yes / repair needed /
@@ -357,9 +359,11 @@ to inspect; capture whether the reviewer changed their judgment after seeing
 them. Human component feedback can stay partial rather than filling every field
 from the final accept/reject decision.
 
-A first batch of roughly 30–40 cases should mix unanimous disagreements, model
-disagreements, approved controls and duplicate pairs. Include some randomly
-sampled controls; do not build all future evaluation data from disputed cases.
+The prepared batch has 28 cases: 16 randomly sampled controls and 12 cases with
+model disagreements or non-acceptances. Known groups from the first discussion
+are excluded, and the earlier 22 cases remain available for revisiting. Random
+controls exclude the saved API targets and references. Do not build all future
+evaluation data from disputed cases.
 The present 80 cases are already development feedback in practice. Keep their
 history, resolve discovered family overlaps, and establish genuinely fresh,
 family-separated validation before estimating unattended admission quality.

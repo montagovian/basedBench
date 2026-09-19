@@ -40,6 +40,37 @@ curation_app = typer.Typer(help="Freeze historical curation evidence and run loc
 app.add_typer(curation_app, name="curation")
 
 
+@curation_app.command("review-prepare")
+def curation_review_prepare(
+    corpus: Path = typer.Argument(..., help="Frozen historical corpus."),
+    run: Path = typer.Option(..., help="Saved decomposed Luna/JEV run; no API calls are made."),
+    prior_feedback: Path = typer.Option(..., help="Append-only conversational reassessments."),
+    output: Path = typer.Option(..., help="New local review packet directory under data/."),
+) -> None:
+    """Prepare 28 mixed review cases and preserve the previous feedback round."""
+    from basedbench.curation_review import prepare_packet
+
+    try:
+        result = prepare_packet(corpus, run, prior_feedback, output)
+    except (ValueError, OSError, KeyError) as exc:
+        raise typer.BadParameter(str(exc)) from exc
+    Console().print({"packet_id": result["packet_id"], "counts": result["counts"], "output": str(output)})
+
+
+@curation_app.command("review-serve")
+def curation_review_serve(
+    packet: Path = typer.Argument(..., help="Prepared local review packet."),
+    port: int = typer.Option(8766, min=1024, max=65535),
+) -> None:
+    """Open a local gallery that saves versioned feedback without editing the corpus."""
+    from basedbench.curation_review import serve
+
+    try:
+        serve(packet, port)
+    except (ValueError, OSError, KeyError) as exc:
+        raise typer.BadParameter(str(exc)) from exc
+
+
 @curation_app.command("build")
 def curation_build(
     output: Path = typer.Option(..., help="New frozen corpus directory under data/."),
