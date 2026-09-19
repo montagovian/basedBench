@@ -305,17 +305,24 @@ curation milestone. A successful bounded backfill provides the foundation for
 later scheduled runs using the same admission policy and reporting.
 
 The corpus builder, comparison harness, word-count and frozen encoder baselines,
-and first matched JEV/GPT-5.5 text/image experiments are implemented. The API
-comparison used 80 practice examples and found that all three variants accepted
-mostly historical rejections. JEV was much cheaper, but no tested method has
-established reliable automated admission.
+and matched JEV/GPT comparisons are implemented. The latest round uses GPT-5.6
+Luna and three explicit checks for content policy, the existing explanation, and
+benchmark value. On 80 practice items, JEV and Luna's text checks each found 21
+historical approvals while selecting 74 and 73 items, respectively. JEV cost about
+six times less. No tested method has established reliable automated admission.
 
-Next, address the observed tendency to approve an item after mentally repairing
-its reference explanation. Check the explanation as written within the joint
-ground-truth task, and require any proposed repair to pass verification before
-admission. Compare that improvement across backends. Task adaptation using the
-full development corpus also remains untested. Resolve rejection provenance and
-semantic joke families alongside that work. See the
+Prioritize JEV development with Luna as the inexpensive comparison and visual
+model; do not make further GPT-5.5 curation calls without an explicit request.
+The latest round cost approximately $0.38 under a $1 cap. Further experiments
+require explicit spending limits and saved responses.
+
+Next, make the benchmark-value criteria more concrete using contrasting
+development examples: that check passed almost everything in the latest run.
+Test narrower JEV questions with relevant evidence, and target material explanation
+omissions within the joint ground-truth task. Any proposed explanation repair still
+needs verification before admission. Task adaptation using the full development
+corpus remains untested. Resolve rejection provenance and semantic joke families
+alongside that work. See the
 [plain-English results](curation-evaluation.md) for counts, examples, and costs.
 
 Keep the current split fixed for practice comparisons and preserve the remaining

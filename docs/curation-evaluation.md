@@ -3,8 +3,10 @@
 We are testing whether a classifier can make useful choices about which memes
 belong in BasedBench, using your earlier approvals and rejections as examples.
 The models tried so far have not demonstrated reliable automatic admission.
-JEV is now connected and very cheap to run, but neither it nor GPT-5.5 reproduced
-your historical choices well in the first comparison.
+JEV and GPT-5.6 Luna are now the focus. In the latest comparison their text-based
+three-check workflows made similar choices, with JEV about six times cheaper.
+Both still selected mostly historical rejections. The earlier GPT-5.5 results
+remain below as a record; no more GPT-5.5 calls were made in this round.
 
 ## What we have done
 
@@ -147,6 +149,75 @@ This was one direct JEV admission question, with eight references. It does not
 settle whether narrower questions, better examples, or a classifier trained on
 the full corpus could work well.
 
+## The cheaper, decomposed comparison
+
+Following your cost preference, we switched to **GPT-5.6 Luna** and gave both Luna
+and JEV three explicit checks: publication content, whether the existing
+explanation gets the supported joke, and whether the meme offers a worthwhile
+benchmark task. Code combines them: any failure rejects the item; an unresolved
+check defers it; all passes accept it. Historical rejections were still used only
+as overall labels, not invented labels for those individual checks.
+
+The same 80 practice examples contain 23 historical approvals. A Luna version
+using the earlier overall-decision prompt lets us compare the workflows without
+confusing every difference with a model change. The decomposed prompts also make
+the criteria more explicit, so this is a workflow comparison, not a pure test of
+changing only the output format.
+
+| Method | Selected | Historically approved | Approved memes found | Estimated cost for 80 |
+| --- | ---: | ---: | ---: | ---: |
+| Luna, one overall decision, text | 67 | 20 (29.9%) | 20/23 | $0.115 |
+| Luna, three checks, text | 73 | 21 (28.8%) | 21/23 | $0.124 |
+| Luna, three checks, text and image | 68 | 21 (30.9%) | 21/23 | $0.076 |
+| JEV, three checks, text | 74 | 21 (28.4%) | 21/23 | $0.022 |
+
+**JEV was in the same ballpark as Luna at almost the same selection volume.**
+Their text-based three-check versions found the same number of historical
+approvals, and agreed on the overall decision for 73 of 80 items. JEV averaged
+about 0.15 seconds per request; Luna's text checks averaged 2.9 seconds. This
+supports prioritizing JEV development on cost grounds. It does not establish
+statistical equivalence or reliable curation: both still admitted most rejections.
+
+**This first decomposition did not improve overall selection quality.** It did
+make the weak points easier to see:
+
+| Check | JEV failed | Luna text failed | Luna with image failed |
+| --- | ---: | ---: | ---: |
+| Publication content | 5 | 3 | 2 |
+| Existing explanation gets the supported joke | 1 | 3 | 10 |
+| Worthwhile benchmark task | 0 | 1 | 0 |
+
+These are model judgments, not independently verified defect counts. In
+particular, the worthwhile-task check passed almost everything, including all
+57 historical rejections for every variant. Our current wording mostly establishes
+that there is some recoverable joke. It has not captured the additional standard
+behind your historical curation choices.
+
+The explanation check did identify concrete problems. Luna rejected the Kurt
+Cobain reference explanation discussed above because it omits the setup, while
+still marking the meme itself as a potentially worthwhile task. Its image version
+also identified the ramen image's slur separately from the validity of the joke
+explanation. JEV caught the inadequate Freddie Mercury explanation, but still
+passed the Cobain explanation. That makes targeted work on JEV's explanation
+checking worthwhile; it is not a claim that all its other passes are correct.
+
+This entire round cost approximately **$0.38**, including both development trials.
+The spending guard accounted for **$0.44** under its more conservative cache-write
+assumption, comfortably below the **$1 cap**. All attempted requests reported
+usage. The image variant happened to cost less than the text-check variant in
+this run because of their realized token usage and caching; that is not a general
+claim that adding an image lowers cost.
+
+The development trials found two implementation issues. Luna shortened a comment
+ID, so the response schema now restricts citations to the supplied IDs. The budget
+guard initially skipped seven calls while other calls held temporary allowances;
+it now waits for those costs to settle. Those trial outcomes remain recorded.
+Two JEV probability distributions in the main run rounded to 0.99 or 1.01. We
+revalidated the saved responses locally with a rounding-aware validator, preserving
+the raw probabilities and original reports; this made no new API calls. The main
+comparison above has no remaining technical errors. Luna's direct variant deferred
+two items on judgment grounds; the three-check variants deferred none.
+
 ## Correction about the reserved examples
 
 The first smoke test used one division of examples. I then changed that division
@@ -170,20 +241,27 @@ the final evaluation design before claiming readiness for unattended admission.
 
 ## What comes next
 
-The next useful experiment should target the observed failure: require a model
-to judge the supplied explanation as written, and distinguish approval from an
-item that needs an explanation repair. That remains a diagnostic inside the joint
-ground-truth task; it does not require inventing independent historical labels
-for consensus and explanation fidelity. Apply the clearer task to both JEV and
-the LLM so a workflow improvement is not confused with a model improvement.
+Prioritize **JEV** for the next iterations and use **Luna** for inexpensive
+comparisons and checks that need pixels. The immediate target is the ineffective
+worthwhile-task check: use contrasting accepted and rejected development examples
+to make the actual curation standard more concrete. Test narrower JEV questions
+and smaller, relevant evidence packages, rather than merely repeat the same broad
+question or raise a confidence cutoff. Its explanation check also needs targeted
+tests for material omissions. Consensus and explanation fidelity remain parts of
+the joint ground-truth task.
 
-Separately, the overall admission standard is still poorly captured. A classifier
-adapted to the full set of historical decisions is an untested option; eight
-reference examples are a small sample of that standard. Confirm what the `other`
-rejections represent and examine contrasting development examples before treating
-those labels as a complete specification. These are follow-up experiments, not
-established fixes. Keep joke-family grouping and final evaluation design on the
-critical path, and preserve the remaining unused examples.
+Eight reference examples are a small sample of the historical standard; adapting
+a classifier to the full development corpus remains untested. Confirm what the
+`other` rejections represent before treating those labels as a complete
+specification. A model agreement or a high score is not an independent quality
+guarantee. Even the meaning of Luna's component scores needs validation: a few
+failed checks returned high pass scores, so the final policy uses explicit
+verdicts and does not treat those scores as calibrated probabilities.
+
+Keep joke-family grouping and final evaluation design on the critical path, and
+preserve the remaining unused examples. Further experiments need explicit cost
+limits; matching another weak model is a reason to investigate cheaply, not a
+reason to start unattended admission.
 
 No new backfill has run, and these experiments do not change live review decisions.
 The software tests check that evidence is preserved and experiments stay within
@@ -265,7 +343,9 @@ uv run basedbench curation llm data/curation/historical-v2 \
   --output data/curation/runs/new-api-calibration
 ```
 
-These commands make paid requests. The adapter reads `OPENAI_API_KEY` and either
+The commands above reproduce the **legacy GPT-5.5 comparison**. For current work,
+use the budgeted Luna/JEV command below. Both commands make paid requests.
+The adapter reads `OPENAI_API_KEY` and either
 `JEV_API_KEY` or `TYPESAFE_API_KEY` from the environment or local `.env`. It does
 not write credentials into the run artifacts. Omitting `--include-jev` runs just
 the two GPT variants.
@@ -289,6 +369,51 @@ disabled. Usage-based costs include reported reasoning tokens; calls without
 usage remain explicitly unknown. Failure to produce a valid response leaves an
 item undecided. The history auditor records both scored targets and reference
 examples, including runs that scored only a subset of a partition.
+
+The current experiment command pins `gpt-5.6-luna` and `jev-1.13.0`, uses the same
+four accepted/four rejected development references, and defaults to eight
+development targets. It never falls back to another model. The official Luna
+catalog exposes that model ID without a dated snapshot; returned model IDs are
+stored. Add `--jev-only` for further JEV experiments without an OpenAI request.
+[Luna model and pricing](https://developers.openai.com/api/docs/models/gpt-5.6-luna),
+[TypeSafe advice on precise questions](https://docs.typesafe.ai/model-jaggedness/jev-1.13).
+
+```bash
+uv run basedbench curation checks data/curation/historical-v2 \
+  --history-audit data/curation/history-audit-v3.json \
+  --split development --limit 8 --budget-usd 0.10 \
+  --output data/curation/runs/new-checks-development
+uv run basedbench curation checks data/curation/historical-v2 \
+  --history-audit data/curation/history-audit-v3.json \
+  --split calibration --limit 80 --budget-usd 0.90 \
+  --output data/curation/runs/new-checks-calibration
+```
+
+Every run freezes its budget and checks source/input identities on resume. Before
+dispatch, it reserves a conservative input allowance and the full possible output
+cost. Pending requests retain that allowance until reported usage arrives; an
+interrupted or failed request with unknown usage keeps its allowance. Concurrent
+requests wait for temporary allowances to settle. New dispatch stops if the
+remaining budget cannot cover another request. The calculation uses standard
+service, the higher cache-write rate for uncached Luna tokens, UTF-8 byte counts
+plus protocol slack for text, and the documented high-detail image maximum of
+2,500 patches at 1.2 tokens per patch. The provider's invoice remains authoritative.
+[Vision accounting](https://developers.openai.com/api/docs/guides/images-vision).
+
+Components are stored separately from combined decisions. A failed response
+defers the item; it never becomes a negative component label. The minimum of the
+three pass scores is recorded only as a ranking aid, with no multiplication of
+probabilities or claim of calibration. Component correctness cannot be measured
+from the overall historical labels alone.
+
+Latest raw run IDs are `luna-jev-checks-dev-v1`, `luna-jev-checks-dev-v2`, and
+`luna-jev-checks-cal-v1`. The main collector ran at commit `3ab038d`. The separate
+`luna-jev-checks-cal-v1-normalized` artifact reprocesses exactly the same saved
+responses, records source hashes and the new normalizer hash, and incurs no new
+cost. All original files remain intact. There were 377 attempted API calls across
+the three raw runs, and seven additional calls skipped in development before the
+budget-wait fix. `history-v3.json` / `history-audit-v3.json` cover all runs and the
+derived report; the remaining unexposed count is still 42.
 
 Both classifiers use logistic regression with balanced class weights, `C=1`, and
 fixed random seed 0. The word-count baseline fits unigram/bigram TF-IDF on the

@@ -97,6 +97,21 @@ def test_model_mismatch_and_missing_component_never_become_rejections(corpus):
     assert d.decision == "defer" and d.error
 
 
+def test_rounded_jev_distributions_keep_raw_values_but_reject_large_discrepancies(corpus):
+    _, rows = corpus
+    body = {"model": checks.replay.JEV_MODEL, "answers": {
+        name: {"type": "choice", "choice": "pass", "probabilities": {"pass": .81, "fail": .16, "uncertain": .02}}
+        for name in checks.CHECKS}}
+    call = {"status": "completed", "response": body, "usage": {"input_tokens": 500, "output_tokens": 0}}
+    d, parts = checks.parse(rows[24], "jev", call)
+    assert not d.error and d.decision == "accept"
+    assert parts["ground_truth"]["probabilities_sum"] == pytest.approx(.99)
+    assert parts["ground_truth"]["pass_score"] == .81
+    body["answers"]["ground_truth"]["probabilities"]["pass"] = .75
+    d, _ = checks.parse(rows[24], "jev", call)
+    assert d.error and d.decision == "defer"
+
+
 def test_budget_reserves_concurrent_calls_and_keeps_unknown_cost(tmp_path):
     (tmp_path / "calls").mkdir()
     bounds = {f"p{i}.luna_checks": .1 for i in range(4)}
@@ -191,6 +206,13 @@ def test_end_to_end_same_inputs_luna_only_no_repeated_spend_and_history(corpus, 
     audit = curation_history.audit_history(path, path / "history.json", path / "history-audit.json")
     assert audit["verified_runs"][0]["evaluation_ids"] == report["evaluation_ids"]
     assert audit["counts"]["unexposed_in_declared_history"] == 4
+    # Offline normalization produces a separate artifact, preserving paid outputs.
+    saved_report = (output / "report.json").read_bytes()
+    rescored = checks.rescore_checks(path, output, path / "rescored")
+    assert rescored["postprocessing"]["new_api_calls"] == 0
+    assert rescored["metrics"] == report["metrics"]
+    assert (output / "report.json").read_bytes() == saved_report
+    assert len(luna.requests) == 9 and len(jev.requests) == 3
 
 
 def test_jev_only_needs_no_openai_client_or_key(corpus, monkeypatch):

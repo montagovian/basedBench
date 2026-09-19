@@ -159,8 +159,8 @@ def request_bound(body: dict, arm: str) -> float:
 class Budget:
     """Reserve before dispatch, including concurrent and interrupted requests.
 
-    Methods contain no await, so reservations are atomic within this event loop.
-    The caller also holds the existing cross-process experiment lock.
+    Reservation/settlement mutations contain no await; acquisition may wait for
+    another request to settle. The caller also holds the cross-process run lock.
     """
 
     def __init__(self, plan: dict, output: Path):
@@ -227,9 +227,14 @@ def parse(row: dict, arm: str, call: dict) -> tuple[Decision, dict]:
                         raise ValueError("Invalid JEV check options")
                     if not all(isinstance(v, (int, float)) and math.isfinite(v) and 0 <= v <= 1 for v in p.values()):
                         raise ValueError("Invalid JEV check probabilities")
-                    if not math.isclose(sum(p.values()), 1, abs_tol=1e-4) or p[answer["choice"]] < max(p.values()):
+                    # The live API sometimes rounds each option to two decimals,
+                    # giving a total of .99 or 1.01. Retain those raw scores.
+                    two_decimal = all(math.isclose(v * 100, round(v * 100), abs_tol=1e-8) for v in p.values())
+                    tolerance = len(p) * .005 + 1e-9 if two_decimal else 1e-4
+                    if not math.isclose(sum(p.values()), 1, abs_tol=tolerance) or p[answer["choice"]] < max(p.values()):
                         raise ValueError("Inconsistent JEV choice/probabilities")
-                    checks[name] = {"verdict": answer["choice"], "pass_score": p["pass"], "probabilities": p}
+                    checks[name] = {"verdict": answer["choice"], "pass_score": p["pass"], "probabilities": p,
+                                    "probabilities_sum": sum(p.values())}
             else:
                 if returned_model != MODEL and not returned_model.startswith(MODEL + "-"):
                     raise ValueError("Unexpected Luna model; no silent fallback")
@@ -299,6 +304,47 @@ def summarize(plan: dict, rows: list[dict], output: Path, budget: Budget) -> dic
     lines += ["", f"Estimated cost: ${report['cost']['estimated_usd']:.4f}. Budget: ${budget.limit:.2f}.", "",
               *[f"- {note}" for note in report["limitations"]], ""]
     (output / "report.md").write_text("\n".join(lines))
+    return report
+
+
+def rescore_checks(corpus: Path, source: Path, output: Path) -> dict:
+    """Revalidate saved responses into a new artifact, with zero provider calls."""
+    import shutil
+
+    if output.exists():
+        raise FileExistsError("Rescoring requires a new output directory")
+    manifest, rows = load_corpus(corpus)
+    plan = json.loads((source / "plan.json").read_text())
+    original = json.loads((source / "report.json").read_text())
+    if manifest["corpus_id"] != plan["corpus_id"] or original["experiment_id"] != plan["experiment_id"]:
+        raise ValueError("Rescoring source corpus/experiment mismatch")
+    if original["decisions_sha256"] != file_hash(source / "decisions.jsonl"):
+        raise ValueError("Rescoring source decisions failed integrity check")
+    by_id = {r["post_id"]: r for r in rows}
+    selected = [by_id[pid] for pid in plan["evaluation_ids"]]
+    if any(r["input_sha256"] != plan["input_hashes"][r["post_id"]] for r in selected):
+        raise ValueError("Rescoring source inputs differ")
+    calls = []
+    for row in selected:
+        for arm in plan["arms"]:
+            path = source / "calls" / f"{row['post_id']}.{arm}.json"
+            call = json.loads(path.read_text())
+            if call["experiment_id"] != plan["experiment_id"] or call["input_sha256"] != row["input_sha256"]:
+                raise ValueError("Rescoring source call failed integrity check")
+            calls.append(path)
+    (output / "calls").mkdir(parents=True)
+    shutil.copyfile(source / "plan.json", output / "plan.json")
+    for path in calls:
+        shutil.copyfile(path, output / "calls" / path.name)
+    report = summarize(plan, selected, output, Budget(plan, output))
+    report["postprocessing"] = {"source_report_sha256": file_hash(source / "report.json"),
+                                "normalizer_code_sha256": file_hash(Path(__file__)),
+                                "source_calls_sha256": digest({p.name: file_hash(p) for p in calls}),
+                                "new_api_calls": 0,
+                                "note": "Allow rounding to two decimals in JEV distributions; raw probabilities and choices are unchanged."}
+    replay._atomic_json(output / "report.json", report)
+    with (output / "report.md").open("a") as handle:
+        handle.write("\nRevalidated existing responses locally; no new API calls. Costs above belong to the original run.\n")
     return report
 
 

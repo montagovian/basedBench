@@ -1,13 +1,17 @@
 # Companion plan: classifier experiments
 
 Prepared September 18, 2026. Status: approved; first TF-IDF, frozen MiniLM, JEV,
-and paired GPT-5.5 text/image runs complete.
+GPT-5.5, and decomposed Luna/JEV comparisons complete.
 See the [curation evaluation workflow](curation-evaluation.md) for implementation
 and preliminary results. The current split is fixed for practice comparisons;
 earlier use of reserved examples is recorded in a history audit. No tested method
 has established readiness for unattended admission. JEV was much cheaper, but its
 first direct admission question and both GPT variants selected mostly historical
-rejections. Further adaptation and diagnostic comparisons remain pending.
+rejections. The decomposed JEV and Luna text workflows both recovered 21 of 23
+historical approvals while selecting 74 and 73 items respectively, with JEV about
+six times cheaper. Prioritize JEV development, while retaining Luna for cheap
+comparisons and visual checks. Neither workflow has established useful admission
+quality. Further adaptation and diagnostic comparisons remain pending.
 Parent: [automated curation and backfill](automated-backfill-plan.md).
 Related: [tag vocabulary and assignment](tagging-taxonomy-plan.md).
 
@@ -118,11 +122,18 @@ Choose follow-up experiments based on round 1 failures:
 
 The first API run exposed a concrete problem: the image model could understand a
 joke better than the supplied explanation, then approve the pair without requiring
-the explanation to be fixed. The next diagnostic comparison should explicitly
-distinguish a valid current explanation from an item requiring repair, while
-keeping consensus, support, and image consistency within the joint ground-truth
-task. Apply the change to multiple backends. A repair proposal is not acceptance
-until the repaired explanation has been checked.
+the explanation to be fixed. The subsequent three-check Luna/JEV comparison made
+this distinction explicit while keeping consensus, support, and image consistency
+within the joint ground-truth task. It caught some explanation defects but did not
+improve overall admission quality. A repair proposal is still not acceptance until
+the repaired explanation has been checked.
+
+The next priority is JEV with more concrete curation criteria and relevant evidence.
+Its benchmark-value check passed all 80 items; Luna passed 79 with text and all 80
+with images. This check has not captured the historical inclusion standard. Use
+contrasting development examples to refine that standard and test smaller, more
+direct JEV questions. Target known explanation omissions as diagnostics; do not
+turn general historical rejections into ground-truth-failure labels.
 
 Overall historical admission agreement also remains weak. Testing adaptation to
 the full development corpus remains useful, alongside confirmation of rejection
