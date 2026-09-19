@@ -304,11 +304,19 @@ Judge replacement, richer diagnostic tags, and recurring ingestion follow the
 curation milestone. A successful bounded backfill provides the foundation for
 later scheduled runs using the same admission policy and reporting.
 
-The initial corpus builder, comparison harness, word-count baseline, and first
-frozen encoder experiment are implemented. Neither classifier is reliable enough
-for automated admission. Next, test a model given explicit inclusion criteria,
-with an image-aware comparison to investigate the value of visual evidence.
-Resolve rejection provenance and semantic joke families alongside that work.
+The corpus builder, comparison harness, word-count and frozen encoder baselines,
+and first matched JEV/GPT-5.5 text/image experiments are implemented. The API
+comparison used 80 practice examples and found that all three variants accepted
+mostly historical rejections. JEV was much cheaper, but no tested method has
+established reliable automated admission.
+
+Next, address the observed tendency to approve an item after mentally repairing
+its reference explanation. Check the explanation as written within the joint
+ground-truth task, and require any proposed repair to pass verification before
+admission. Compare that improvement across backends. Task adaptation using the
+full development corpus also remains untested. Resolve rejection provenance and
+semantic joke families alongside that work. See the
+[plain-English results](curation-evaluation.md) for counts, examples, and costs.
 
 Keep the current split fixed for practice comparisons and preserve the remaining
 unused examples. The history audit records prior exposure; it does not undo it.

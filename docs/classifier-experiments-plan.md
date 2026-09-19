@@ -1,10 +1,13 @@
 # Companion plan: classifier experiments
 
-Prepared September 18, 2026. Status: approved; first TF-IDF and frozen MiniLM runs complete.
+Prepared September 18, 2026. Status: approved; first TF-IDF, frozen MiniLM, JEV,
+and paired GPT-5.5 text/image runs complete.
 See the [curation evaluation workflow](curation-evaluation.md) for implementation
 and preliminary results. The current split is fixed for practice comparisons;
-earlier use of reserved examples is recorded in a history audit. Neither model
-is ready for unattended admission. Further training and API comparisons remain pending.
+earlier use of reserved examples is recorded in a history audit. No tested method
+has established readiness for unattended admission. JEV was much cheaper, but its
+first direct admission question and both GPT variants selected mostly historical
+rejections. Further adaptation and diagnostic comparisons remain pending.
 Parent: [automated curation and backfill](automated-backfill-plan.md).
 Related: [tag vocabulary and assignment](tagging-taxonomy-plan.md).
 
@@ -88,6 +91,19 @@ patterns, and whether more specialized training is warranted.
 
 Choose follow-up experiments based on round 1 failures:
 
+The first API run exposed a concrete problem: the image model could understand a
+joke better than the supplied explanation, then approve the pair without requiring
+the explanation to be fixed. The next diagnostic comparison should explicitly
+distinguish a valid current explanation from an item requiring repair, while
+keeping consensus, support, and image consistency within the joint ground-truth
+task. Apply the change to multiple backends. A repair proposal is not acceptance
+until the repaired explanation has been checked.
+
+Overall historical admission agreement also remains weak. Testing adaptation to
+the full development corpus remains useful, alongside confirmation of rejection
+provenance. The eight references used for the API comparison do not exhaust the
+historical curation standard. None of these follow-ups should use reserved items.
+
 | Observed limitation | Follow-up |
 | --- | --- |
 | Frozen representations miss task-specific distinctions | Fine-tune one ModernBERT or DeBERTa classifier and compare with SetFit |
@@ -129,7 +145,9 @@ including preparation and inference costs.
 ### Round 3: test the complete admission policy
 
 Freeze a candidate workflow and thresholds using development and calibration
-data. Evaluate the full accept/reject/defer behavior on the untouched test set.
+data. First establish a qualified final evaluation set: the existing reserved
+partition is not entirely untouched across the experiment history. Evaluate the
+full accept/reject/defer behavior on that qualified set.
 Test the actual escalated population, including fallback errors and costs.
 
 An uncertain item can receive a bounded automated second assessment or remain
