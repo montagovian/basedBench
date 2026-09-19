@@ -38,7 +38,7 @@ def audit_history(corpus: Path, history: Path, output: Path) -> dict:
         report = json.loads((run / "report.json").read_text())
         if report["corpus_id"] != old_manifest["corpus_id"]:
             raise ValueError("Historical run/corpus mismatch")
-        is_llm = report.get("schema_version") == "curation-llm-v1"
+        is_llm = report.get("schema_version") in {"curation-llm-v1", "curation-checks-v1"}
         allowed_splits = {"development", "calibration"} if is_llm else {"calibration"}
         if report["evaluation_split"] not in allowed_splits or report["final_test_evaluated"] is not False:
             raise ValueError("Unsupported historical run; exposure must be checked explicitly")

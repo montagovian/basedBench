@@ -223,7 +223,8 @@ def _atomic_json(path: Path, value: dict) -> None:
     os.replace(temporary, path)
 
 
-async def collect_calls(client, rows: list[dict], corpus: Path, output: Path, plan: dict, *, concurrency: int = 4, jev_client=None) -> None:
+async def collect_calls(client, rows: list[dict], corpus: Path, output: Path, plan: dict, *, concurrency: int = 4,
+                        jev_client=None, request_factory=None, budget=None) -> None:
     """Checkpoint every response; resumptions never repeat finished/uncertain calls.
 
     Automatic SDK retries must be disabled. Transport failures have unknown cost
@@ -257,8 +258,14 @@ async def collect_calls(client, rows: list[dict], corpus: Path, output: Path, pl
             else:
                 started = time.perf_counter()
                 try:
-                    content = jev_request(row, plan) if arm == "jev" else request_content(row, arm, corpus)
+                    content = (request_factory(row, arm, corpus, plan) if request_factory else
+                               jev_request(row, plan) if arm == "jev" else request_content(row, arm, corpus))
                     call["request_content_sha256"] = digest(content)
+                    if budget is not None:
+                        allowance = budget.reserve(row["post_id"], arm)
+                        call["cost_reservation_usd"] = allowance
+                        if allowance is None:
+                            raise ValueError("Not attempted: experiment cost limit reached")
                     with marker.open("x") as handle:
                         handle.write(plan["experiment_id"])
                     if arm == "jev":
@@ -267,7 +274,7 @@ async def collect_calls(client, rows: list[dict], corpus: Path, output: Path, pl
                         body = response.json()
                         call.update(response=body, status="completed", usage=body.get("usage"))
                     else:
-                        response = await client.responses.create(
+                        parameters = content if request_factory else dict(
                             model=MODEL, instructions=plan["instructions"],
                             input=[{"role": "user", "content": content}],
                             text={"format": {"type": "json_schema", "name": "curation_assessment", "strict": True,
@@ -276,6 +283,7 @@ async def collect_calls(client, rows: list[dict], corpus: Path, output: Path, pl
                             store=False, service_tier="default", truncation="disabled",
                             prompt_cache_key=f"basedbench-curation-{plan['policy_sha256'][:24]}",
                         )
+                        response = await client.responses.create(**parameters)
                         call.update(response=response.model_dump(mode="json"), status=response.status,
                                     output_text=response.output_text,
                                     usage=response.usage.model_dump(mode="json") if response.usage else None)
@@ -287,6 +295,8 @@ async def collect_calls(client, rows: list[dict], corpus: Path, output: Path, pl
                     if is_fatal_llm_error(exc) or status in {400, 401, 402, 403, 404, 422}:
                         fatal[provider].set()
                 call["latency_ms"] = (time.perf_counter() - started) * 1000
+            if budget is not None:
+                budget.settle(row["post_id"], arm, call)
             _atomic_json(path, call)
             marker.unlink(missing_ok=True)
             completed += 1

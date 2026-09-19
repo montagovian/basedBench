@@ -128,7 +128,7 @@ def curation_llm(
     baseline_run: list[Path] | None = typer.Option(None, help="Existing baseline run to compare on the same selected examples."),
     include_jev: bool = typer.Option(False, help="Add JEV with the same text and reference examples."),
 ) -> None:
-    """Compare one model with text alone and with the same text plus the image."""
+    """Legacy GPT-5.5 experiment. Use 'curation checks' for budgeted Luna/JEV."""
     import os
     from dotenv import dotenv_values
     from basedbench.pipeline.curation_llm import run_llm
@@ -143,6 +143,36 @@ def curation_llm(
         result = asyncio.run(run_llm(corpus, output, history_audit=history_audit, api_key=key,
                                     split=split, limit=limit, concurrency=concurrency,
                                     baseline_runs=baseline_run or [], jev_api_key=jev_key if include_jev else None))
+    except (ValueError, OSError, RuntimeError) as exc:
+        raise typer.BadParameter(str(exc)) from exc
+    Console().print({"metrics": result["metrics"], "cost": result["cost"], "output": str(output)})
+
+
+@curation_app.command("checks")
+def curation_checks(
+    corpus: Path = typer.Argument(..., help="Frozen historical corpus."),
+    output: Path = typer.Option(..., help="New experiment directory, or identical run to resume."),
+    history_audit: Path = typer.Option(..., help="Verified history audit."),
+    budget_usd: float = typer.Option(..., min=0.000001, help="Dispatch budget including pending/unknown requests; no automatic retries."),
+    split: str = typer.Option("development", help="development or calibration only."),
+    limit: int = typer.Option(8, min=1, help="Whole-group target sample size."),
+    concurrency: int = typer.Option(4, min=1, max=8),
+    jev_only: bool = typer.Option(False, help="Run just the cheap decomposed JEV variant."),
+) -> None:
+    """Compare three explicit checks with Luna and JEV under a spending limit."""
+    import os
+    from dotenv import dotenv_values
+    from basedbench.pipeline.curation_checks import run_checks
+
+    local = dotenv_values(".env")
+    key = os.getenv("OPENAI_API_KEY") or local.get("OPENAI_API_KEY")
+    jev_key = os.getenv("JEV_API_KEY") or os.getenv("TYPESAFE_API_KEY") or local.get("JEV_API_KEY") or local.get("TYPESAFE_API_KEY")
+    if not jev_key or (not jev_only and not key):
+        raise typer.BadParameter("JEV_API_KEY (or TYPESAFE_API_KEY) is required; Luna also needs OPENAI_API_KEY")
+    try:
+        result = asyncio.run(run_checks(corpus, output, history_audit=history_audit, api_key=key,
+                                       jev_api_key=jev_key, budget_usd=budget_usd, split=split,
+                                       limit=limit, concurrency=concurrency, jev_only=jev_only))
     except (ValueError, OSError, RuntimeError) as exc:
         raise typer.BadParameter(str(exc)) from exc
     Console().print({"metrics": result["metrics"], "cost": result["cost"], "output": str(output)})

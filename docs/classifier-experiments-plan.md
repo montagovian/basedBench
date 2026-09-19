@@ -11,6 +11,31 @@ rejections. Further adaptation and diagnostic comparisons remain pending.
 Parent: [automated curation and backfill](automated-backfill-plan.md).
 Related: [tag vocabulary and assignment](tagging-taxonomy-plan.md).
 
+## Cost and model preference
+
+Use **GPT-5.6 Luna** as the inexpensive generative comparison model for the next
+experiments. Do not make further GPT-5.5 curation calls without a new explicit
+request. Preserve its existing results as historical baselines.
+
+Prioritize **JEV development** if its selection quality and useful yield are
+reasonably comparable with Luna. Compare both measures at similar coverage;
+matching another weak model alone does not establish admission quality. Measure
+the full workflow cost, including any image interpretation supplied by Luna.
+
+Every API run requires an explicit spending limit, reserves the maximum allowed
+cost before dispatch, and keeps uncertain requests charged against that limit.
+The first Luna/decomposition round has a **$1 total cap**: at most $0.10 for an
+eight-example development check and $0.90 for the 80-example practice comparison.
+Use standard service, bounded output, saved responses, and no automatic retries.
+
+Compare Luna's old overall-decision prompt with its three-check text version,
+then compare that text version with JEV's native three-question version. Include
+a Luna image variant to measure additional visual evidence. All variants use the
+same development references and target examples. The structured versions return
+content-policy, joint ground-truth, and benchmark-value judgments. Code rejects
+on any failed check, defers on any unresolved check, and otherwise accepts.
+Do not interpret the overall historical labels as labels for individual checks.
+
 ## Decision this work should produce
 
 Determine which model approaches can reproduce historical admission decisions
