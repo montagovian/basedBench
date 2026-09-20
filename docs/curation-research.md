@@ -18,6 +18,39 @@ reassessments are recorded separately below.
 
 ## Curator feedback after this research pass
 
+### Completed 28-case follow-up round · September 20, 2026
+
+All 28 new gallery cases now have saved feedback: **13 accept, 8 reject, 1 repair
+answer first, and 6 undecided**. These are the latest saved judgments, not a
+reclassification of the original corpus. The round includes 16 random controls
+and 12 targeted cases; it remains development feedback.
+
+| Dimension | Latest feedback |
+| --- | --- |
+| Content | 23 pass, 2 fail, 3 policy boundary |
+| Stored answer | 27 ready, 1 repair needed |
+| Task value | 17 yes, 5 no, 5 unsure, 1 unlabeled |
+| Reference familiarity | 16 familiar, 11 needed context, 1 still unclear |
+| Perceived difficulty | 20 easy, 8 medium |
+
+All three policy-boundary cases have positive task-value judgments and undecided
+overall admission. An opt-in adult-humor release track was discussed as a possible
+future treatment; no AfterDark policy or release has been adopted. The feedback
+also includes a possible duplicate and a suggestion to consider a “too easy”
+filter. Neither establishes a new automatic rejection rule.
+
+Keep component labels, overall choices and notes separate, including where they
+do not imply the same outcome. Missing rationale or labels must not be inferred
+from an overall rejection. Use the explicit component feedback for the next
+bounded JEV/Luna development comparison; unresolved cases stay unresolved.
+
+The append-only source is `data/curation/review-v1/events.jsonl`. A dated local
+summary records the source hash and latest event IDs. It does not overwrite the
+packet, original reviews, previous feedback or saved model results. No new model
+calls were made to collect or summarize this round.
+
+### Earlier reassessment of opposite-label pairs
+
 Alex explicitly approved **both copies of all three opposite-label pairs**:
 the teapot riddle, number-plate prank and Clarkson/Porsche meme. The six items
 now have accepted reassessments in the local, append-only

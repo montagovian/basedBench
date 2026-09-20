@@ -15,8 +15,10 @@ quality. Further adaptation and diagnostic comparisons remain pending.
 An [offline research pass](curation-research.md) now identifies opposite labels
 for copies of the same meme, two missed families spanning prompt references and
 calibration targets, and a benchmark-value check that passes every sampled
-historical reject. The immediate next step is a small, reasoned reassessment of
-examples and family accounting before more prompt optimization. Historical
+historical reject. The subsequent [28-case feedback round](curation-research.md#completed-28-case-follow-up-round--september-20-2026)
+is now complete: 13 accept, 8 reject, 1 answer repair and 6 undecided. Next,
+use the explicit component labels and resolve family accounting before more
+prompt optimization, preserving partial and unresolved judgments. Historical
 admission is a useful baseline, but is not yet a complete definition of intrinsic
 task suitability or collection-level selection.
 Alex subsequently approved all three opposite-label pairs and tentatively

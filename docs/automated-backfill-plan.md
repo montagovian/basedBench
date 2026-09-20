@@ -340,3 +340,25 @@ alongside that work. See the
 Keep the current split fixed for practice comparisons and preserve the remaining
 unused examples. The history audit records prior exposure; it does not undo it.
 Settle the final evaluation design before making claims about unattended curation.
+
+### Future idea: topical memes as a probe of knowledge recency
+
+Recorded September 20, 2026 at Alex's request. **Breadcrumb only; no work is
+scheduled, and this is not a dependency of the current backfill.**
+
+Use event-dependent memes, especially topical political memes, to explore a
+model's effective “real-world knowledge cutoff”: how recently its usable factual
+and cultural knowledge extends. This could become a bonus reporting dimension
+alongside joke understanding.
+
+If revisited, distinguish the date of the referenced event or newly public fact
+from the meme's posting date. Identify the specific recent knowledge needed to
+get the joke, with a source and date uncertainty where appropriate. A new post
+can be an old joke, and some images supply all the context needed themselves.
+
+A possible analysis would compare success across event-date bands, keeping
+related memes together and accounting for topic and difficulty. Evaluate stored
+knowledge without browsing separately from performance with retrieval. Treat
+the result as evidence about knowledge recency, not proof of an exact training
+cutoff: inference from the image, uneven topic coverage, reasoning errors and
+prior exposure to the meme can all affect the score.
