@@ -293,6 +293,7 @@ async def collect_calls(client, rows: list[dict], corpus: Path, output: Path, pl
                         call["usage"] = {"input_tokens": 0, "output_tokens": 0}
                     status = getattr(exc, "status_code", None) or getattr(getattr(exc, "response", None), "status_code", None)
                     if is_fatal_llm_error(exc) or status in {400, 401, 402, 403, 404, 422}:
+                        call["fatal_provider_error"] = True
                         fatal[provider].set()
                 call["latency_ms"] = (time.perf_counter() - started) * 1000
             if budget is not None:

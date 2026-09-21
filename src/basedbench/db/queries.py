@@ -2327,7 +2327,12 @@ def consensus_eval_category_counts(db: Database) -> dict[str, int]:
 
 def seed_consensus_eval_from_regressions(db: Database) -> int:
     count = 0
+    # Seeding must not overwrite later manual adjudications or put the flagged
+    # faulty answer back into the expected-answer field as a reference.
+    existing = {item.post_id for item in list_consensus_eval_items(db, active_only=False)}
     for entry in list_consensus_regressions(db):
+        if entry.post_id in existing:
+            continue
         category = (
             "bad_gloss"
             if entry.status in ("wrong", "partial")
@@ -2338,13 +2343,16 @@ def seed_consensus_eval_from_regressions(db: Database) -> int:
             entry.post_id,
             category,
             True,
-            entry.canonical_explanation or entry.consensus_at_annotation,
+            entry.canonical_explanation or (entry.consensus_at_annotation if entry.status == "correct" else None),
             source="consensus_regression",
             notes=entry.failure_modes or entry.reviewer_notes,
         )
+        existing.add(entry.post_id)
         count += 1
 
     for entry in list_gate_feedback(db, gate="consensus"):
+        if entry.post_id in existing:
+            continue
         decision = (entry.correct_decision or "").lower()
         gate_decision = (entry.gate_decision or "").lower()
         if "no" in decision and "consensus" in decision:
