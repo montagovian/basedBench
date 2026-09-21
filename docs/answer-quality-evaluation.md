@@ -2,6 +2,10 @@
 
 Implementation and development experiment for [issue #3](https://github.com/montagovian/basedBench/issues/3).
 
+The [completed results](answer-quality-results.md) report defect detection,
+repairs, false alarms, unresolved cases and total cost. The workflow remains a
+development tool; it is not an adopted unattended admission policy.
+
 ## Focused second version
 
 The first run completed 63 calls for $0.04772. Luna caught three of four known

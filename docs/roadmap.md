@@ -24,8 +24,11 @@ Human feedback remains unchanged. In particular, an explicit negative value
 label remains a negative in its original experiment; it does not become a
 positive because the project now gives that experiment less weight.
 
-The first implementation priority is **[#3](https://github.com/montagovian/basedBench/issues/3)**, answer construction/validation.
-[#4](https://github.com/montagovian/basedBench/issues/4), preparing a bounded source inventory, can proceed independently. Existing
+The answer-quality workflow and bounded experiment in
+[#3](https://github.com/montagovian/basedBench/issues/3) are complete; see the
+[results and remaining limitations](answer-quality-results.md). The next priority
+is [#4](https://github.com/montagovian/basedBench/issues/4), preparing a bounded
+source inventory. Existing
 ingestion and tracer commands provide starting points, but have not yet been
 qualified as the new admission workflow.
 
@@ -40,11 +43,11 @@ qualified as the new admission workflow.
 | [#7](https://github.com/montagovian/basedBench/issues/7) | Assemble the resumable admission pilot | Each candidate has versioned content and answer checks, suitability findings, duplicate findings, accept/reject/defer status and technical-error state; total spending and escalation are bounded; reruns preserve provenance and avoid repeating paid work. | [#3](https://github.com/montagovian/basedBench/issues/3), [#5](https://github.com/montagovian/basedBench/issues/5), [#6](https://github.com/montagovian/basedBench/issues/6) |
 | [#8](https://github.com/montagovian/basedBench/issues/8) | Run and assess the first newer-content batch | A frozen candidate batch is processed with the prepared policy and cap; the report shows specific defects, disagreements, coverage, deferrals, duplicates and cost per usable item; raw artifacts stay local and the limits of new-content quality evidence are explicit. | [#4](https://github.com/montagovian/basedBench/issues/4), [#7](https://github.com/montagovian/basedBench/issues/7) |
 
-[#3](https://github.com/montagovian/basedBench/issues/3) has a concrete existing gap: `pipeline/consensus_eval.py` currently sets
-`passed` by comparing only `has_consensus` with its expected Boolean. A run can
-therefore pass while producing the wrong explanation. The current curation
-experiments check stored answers but do not yet constitute a tested generation,
-repair and verification workflow.
+The legacy `consensus-eval` now explicitly reports Boolean agreement rather than
+claiming explanation correctness. The separate `answer_eval` workflow checks
+written meanings, generates answers, attempts bounded repairs and verifies them
+against images/comments. Its development results expose false alarms and shared
+model blind spots; its model approvals are not an unattended quality guarantee.
 
 [#7](https://github.com/montagovian/basedBench/issues/7) should preserve suitability findings without requiring perfect agreement
 with every historical tough reject. The pilot policy still needs an explicit
@@ -76,6 +79,9 @@ work. They should not delay the first useful backfill batch.
 
 ## Completed foundation
 
+- [Answer construction, checks and bounded repair](answer-quality-results.md):
+  119 new provider calls, about 13¢; all four selected known defects detected by
+  the detailed checker, with false alarms and verifier misses recorded separately.
 - Frozen historical corpus, provenance/history audit and comparison harness.
 - Word-count, TF-IDF, frozen-encoder and JEV/LLM diagnostic comparisons.
 - Review gallery and 28 completed multidimensional human reviews, plus earlier
