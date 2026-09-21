@@ -1,7 +1,8 @@
 # Publication content checks for the backfill pilot
 
 Issue [#5](https://github.com/montagovian/basedBench/issues/5), September 21, 2026.
-Policy and implementation version: `content-policy-v1`.
+Current policy and implementation version: `content-policy-v2`. The original
+comparison remains frozen as `content-policy-v1`.
 
 The pilot needs to identify specific content concerns, decide what the current
 rules establish, and leave unresolved items outside the release. This component
@@ -17,10 +18,10 @@ duplicate. Those remain separate checks.
 | Mild innuendo and sexual references | Can pass. Attraction, relationship/hookup references, a taboo premise, ordinary anatomy words, dirty humor and profanity are not blanket exclusions. Distinguish recognizing a sexual premise from a payoff that specifically invites visualizing an act's mechanics or anatomical detail. |
 | Slurs or hate | Fail a recognizable identity slur rendered in the meme, hate speech or dehumanizing hate tropes. Quotation within the meme does not erase a slur. A source comment's unrelated slur is not automatically the candidate's content. |
 | Gore | Fail visibly graphic gore. A verbal historical/crime reference or disturbing legend does not establish gore in the image. |
-| Violence | Fail endorsement/celebration of violence against identifiable people or groups. Distinguish advocacy from dark humor, fictional reversals, historical satire and reporting. |
+| Violence | Fail endorsement/celebration of violence against identifiable people or groups. Distinguish advocacy from dark humor, fictional reversals, historical satire and reporting. A non-graphic fictional time-travel scenario involving a long-dead historical figure is not itself present-day violent advocacy. |
 | Private targeting | Fail doxxing or targeted harassment of a private individual. Ordinary public handles and public-figure satire alone do not establish this. |
 | Minors | Fail established sexualization of minors. Ordinary childhood imagery is not excluded; do not infer age solely from cartoon style or youthful appearance. |
-| Unsettled sexual boundaries | Defer when inclusion hinges on an unresolved threshold for sexual-fluid/obscene wordplay, implied exposure, sexual injury, an allusive pornographic reference, or a relationship age-ambiguity joke. A separately established exclusion can still fail. |
+| Unsettled sexual boundaries | Defer when the central joke belongs to the unresolved categories of sexual-fluid/obscene wordplay, implied exposure, sexual injury, an allusive pornographic reference, or relationship age ambiguity. Calling these mild or non-graphic does not settle their threshold. A separately established exclusion can still fail. |
 | Missing context | Defer when a material reference, age, unreadable detail or competing interpretation prevents applying the rule. Knowing the joke but not having a settled policy threshold is a policy boundary instead. |
 
 The distinction around explicit sexual meaning is a **working interpretation of
@@ -70,7 +71,7 @@ is retained and used for metrics before that preservation rule. Human pass/fail
 labels are not fed into the model or used to improve its reported accuracy.
 Nothing writes to the corpus database or review events.
 
-## Frozen experiment, specified before calls
+## Initial experiment, frozen before calls
 
 Compare two Luna image variants: the previous short content wording versus the
 clarified rules above. Both use the same structured-findings schema, context
@@ -113,7 +114,7 @@ requests, images, feedback provenance, implementation, prices, schemas and polic
 hashes. A process lock prevents concurrent duplicate execution. Completed calls
 are replayed without paying again; fatal provider stops survive resume.
 
-Reproduce with:
+The original experiment was prepared and run at commit `7bc7d48` with:
 
 ```sh
 uv run python -m basedbench.pipeline.content_policy prepare \
@@ -128,3 +129,39 @@ Experiment ID:
 Raw evidence, requests and responses remain in ignored local storage. Existing
 JEV text-only results are documented in `curation-enriched-results.md`; this
 experiment targets the visual policy gap and makes no new JEV calls.
+
+## Focused revision, frozen before its calls
+
+The first comparison completed 68 calls for **$0.0733178** estimated usage
+($0.073328 conservatively accounted). The old wording passed 21/23 positives,
+failed one and deferred one, while catching only one of three exclusions. The
+clarified wording passed 22/23 positives, failed one, caught two exclusions and
+deferred the third. No clear negative passed the clarified check.
+
+Inspection exposed three remaining instruction problems: fictional historical
+satire was classified as violent advocacy; euphemistic anatomical focus was
+still treated as a boundary because the anatomy was not named; and some listed
+unsettled categories were treated as allowed merely because they were non-graphic.
+Version 2 clarifies those distinctions and distinguishes a sexual-scene aftermath
+allusion from depiction of an act's mechanics. It contains no target IDs, names or
+labeled examples. This is explicitly another development iteration on the same
+cases, not a new test set.
+
+Run **only the clarified variant on the same 34 cases**. Inputs, labels, image
+resolution, schema, model and reasoning/output limits stay the same. The new
+conservative request allowance is **$0.21898625**. Set a remaining-run cap of
+**$0.65**: first-run accounted usage plus the entire new cap is $0.723328, below
+the original $0.75 total ceiling. No old-wording calls are repeated.
+
+```sh
+uv run python -m basedbench.pipeline.content_policy prepare \
+  data/curation/review-v1 data/curation/historical-v2/assets \
+  data/curation/content-policy-v2 --budget-usd 0.65 --arms clarified
+uv run python -m basedbench.pipeline.content_policy run \
+  data/curation/content-policy-v2 --budget-usd 0.65
+```
+
+Version 2 experiment ID:
+`94ded284378e8c685e7075fc693e25349539aee82cac04431685ab619773ad8d`.
+The first run's offline replay was verified before updating implementation:
+zero new provider calls, identical report, unchanged human feedback.

@@ -201,3 +201,16 @@ async def test_insufficient_budget_prevents_dispatch(frozen, tmp_path):
     client.responses.create.assert_not_called()
     assert report["accounted_usd"] == 0
     assert report["metrics"]["clarified"]["by_gold"]["pass"]["error"] == 1
+
+
+@pytest.mark.asyncio
+async def test_focused_revision_runs_only_requested_variant(frozen, tmp_path):
+    _, _, _, _, assets = frozen
+    output = tmp_path / "revision"
+    settings = policy.prepare(tmp_path / "packet", assets, output, budget_usd=.65, arms=("clarified",))
+    assert settings["max_calls"] == 1 and settings["arms"] == ["clarified"]
+    client = SimpleNamespace(responses=SimpleNamespace(create=AsyncMock(return_value=response(assessment()))))
+    report = await policy.run(output, budget_usd=.65, client=client)
+    assert client.responses.create.call_count == 1
+    assert set(report["metrics"]) == {"clarified"}
+    assert len(json.loads((output / "results.json").read_text())) == 1
