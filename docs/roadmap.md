@@ -30,10 +30,13 @@ The answer-quality workflow and bounded experiment in
 [source inventory](backfill-source-inventory.md) in
 [#4](https://github.com/montagovian/basedBench/issues/4) is also complete: a frozen
 100-candidate June 20–26 batch with asset failures and a missing-community
-coverage gap recorded. The next priority is
-[#5](https://github.com/montagovian/basedBench/issues/5), content-policy checks;
-[#6](https://github.com/montagovian/basedBench/issues/6), duplicate checks, now has
-fresh candidates available. Existing ingestion and tracer commands have not yet
+coverage gap recorded. The versioned
+[content-policy component](content-policy-pilot.md) in
+[#5](https://github.com/montagovian/basedBench/issues/5) is also complete for pilot
+integration: all three selected exclusions caught, with two false deferrals and
+untested-category limits retained. Next is
+[#6](https://github.com/montagovian/basedBench/issues/6), duplicate checks, using
+the fresh candidate images. Existing ingestion and tracer commands have not yet
 been qualified as the new admission workflow.
 
 ## Pilot work
@@ -83,6 +86,9 @@ work. They should not delay the first useful backfill batch.
 
 ## Completed foundation
 
+- [Publication-content findings and routes](content-policy-pilot.md): 102 Luna
+  image calls, about 12¢; all three definite exclusions caught by the revised
+  check, 21/23 clear passes retained and two deferred too cautiously.
 - [Bounded source inventory](backfill-source-inventory.md): 100 fresh candidates
   from June 20–26, with images/comments, source coverage and retrieval gaps
   recorded locally; no model calls or admissions.

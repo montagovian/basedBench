@@ -10,6 +10,79 @@ only checks publication content. It does not grade whether an explanation gets
 the joke, whether the joke is worthwhile or difficult, or whether an image is a
 duplicate. Those remain separate checks.
 
+## Results and pilot recommendation
+
+**The revised checker failed all 3 definite exclusions, passed 21 of 23 definite
+content passes, and deferred the other 2.** It made no hard false rejection on
+these settled labels. Those two deferrals are still losses of valid material for
+an unattended batch and must be reported; they are not correct passes.
+
+| Blind model outcome | Old wording | Clarified v1 | Revised v2 |
+| --- | ---: | ---: | ---: |
+| Clear human passes: model pass | 21/23 | 22/23 | 21/23 |
+| Clear human passes: model fail | 1/23 | 1/23 | 0/23 |
+| Clear human passes: model defer | 1/23 | 0/23 | 2/23 |
+| Clear human failures: model fail | 1/3 | 2/3 | 3/3 |
+| Clear human failures: model pass | 2/3 | 0/3 | 0/3 |
+| Clear human failures: model defer | 0/3 | 1/3 | 0/3 |
+| Unresolved judgments: model pass / fail / defer | 7 / 0 / 1 | 4 / 1 / 3 | 1 / 1 / 6 |
+| Technical errors | 0 | 0 | 0 |
+
+The initial control and v1 were paired on identical inputs/schema; v2 is a
+follow-up iteration on those same cases. Its improved negative detection and
+boundary handling came with additional positive deferrals. Repeated use of the
+same small development set means this is not an unbiased performance estimate.
+
+Concrete results:
+
+- **K-pop anatomy-focused joke:** old wording passed it; v1 deferred it; v2
+  excluded the intended anatomical focus without requiring literal nudity or
+  an explicitly spelled-out anatomical word. This matches the definite fail.
+- **Popsicle gag:** both clarified versions excluded the specific sexual-act
+  implication carried by the ordinary object. The old wording passed it.
+- **Spicy ramen:** all three checks caught the rendered slur.
+- **Historical time-travel satire:** the first two checks overextended the
+  violence rule. V2 passed it after clarifying fictional historical satire.
+- **Freddie Mercury and Oprah/Weinstein:** v2 deferred both despite clear human
+  content passes. It overextended the allusive-sexual boundary to non-graphic
+  dark humor. Their human labels remain pass. These are explicit residual
+  false deferrals, not evidence to rewrite the policy or labels.
+- **Six boundary judgments:** v2 deferred the superpowered injury, Sneed/Chuck,
+  crumb slogan, childhood-photo age ambiguity, Vaporeon/ID and stairs/elevator
+  cases. These are policy-boundary outputs, not claims that the model cannot
+  understand the references.
+- **Evangelion and neck/back:** v2 respectively failed and passed them. The
+  original human lean-fail/lean-pass remain unresolved; the separate preservation
+  rule keeps both deferred. All eight unsettled human judgments therefore stay
+  outside automatic admission without hiding the blind model's decisions.
+
+Use **v2 as the versioned experimental content component for #7**, retaining its
+findings, original model route, human-uncertainty preservation and technical
+status. It is ready to integrate into a bounded development pilot. This does not
+switch the old production gate or establish general unattended accuracy. Do not
+spend more calls trying to perfect these same 34 cases; assess consequential
+errors and coverage loss in the later pilot.
+
+The known negatives cover two sexual exclusions and one rendered slur. There are
+no adequate human-labeled negative controls for gore, doxxing/private harassment,
+real violent advocacy or established minor sexualization in this development
+set. Nor are there definitive real-case “needs context” labels here; that route
+has contract tests, not a measured recall estimate. Existing source explanations
+can also be wrong. #7/#8 must preserve these limitations and should not claim
+broad-category validation from the aggregate counts.
+
+Across both runs: **102 new provider calls**, **$0.1154847 estimated model cost**
+($0.1155 conservatively accounted), below the original **$0.75 ceiling**. No
+unknown-cost requests, pending calls, provider errors, parser errors or allowance
+violations remained. There were no new JEV or flagship-model calls.
+
+**378 tests passed.** Both completed versions were replayed with a client that
+would fail on any new provider call; reports were unchanged. Frozen evidence,
+request hashes, response provenance, model IDs and usage were audited, and human
+feedback remained unchanged. Final local artifact hashes are recorded under
+`data/curation/content-policy-analysis/`. No raw data, images or call logs are
+committed, and the source/report commits remain local and unpushed.
+
 ## Working rules
 
 | Content | Decision rule |
