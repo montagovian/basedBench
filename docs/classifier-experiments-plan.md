@@ -39,11 +39,17 @@ corrected one content failure. Luna image caught the known answer defect and
 raised additional completeness disputes. The next priority is aligning the
 written criteria with the curator's value/content boundaries, followed by
 shorter JEV questions and testing a review route for low-confidence passes.
-The [inferred prompt hypotheses](curation-prompt-hypotheses.md) now supply three
-concrete, unrun value prompts based on the existing feedback: a useful missing
+The [inferred prompt hypotheses](curation-prompt-hypotheses.md) supply three
+concrete value prompts based on the existing feedback: a useful missing
 connection, a supported intended payoff, and their combination. Test these
 before requesting another broad labeling round; preserve the documented
 counterexamples and distinguish prompt changes from added visual descriptions.
+The [first 224-call comparison](curation-value-experiment.md#results) is complete
+for $0.01208: the combined prompt caught the spelling riddle and retained all 17
+value positives, but four of five negatives still passed. Literal descriptions
+did not improve the default verdicts. Next, test shorter observable-property
+questions to distinguish failure to recognize a property from disagreement about
+its relevance to value; keep score-based review routes exploratory.
 
 ## Cost and model preference
 

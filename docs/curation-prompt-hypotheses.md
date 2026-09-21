@@ -2,7 +2,10 @@
 
 These are assistant hypotheses derived from Alex's existing judgments, not
 additional human labels. They are concrete enough to test without first asking
-Alex to articulate a complete policy. No new model calls have been made.
+Alex to articulate a complete policy. The subsequent
+[224-call comparison](curation-value-experiment.md#results) is complete: about
+1.2¢, one of five negative value labels caught, and all 17 positives retained.
+The hoped-for broader distinction remains unproven.
 
 The strongest hypothesis is: **a good item has a specific missing connection
 that an explanation supplies.** Much of the weak material can be accounted for
