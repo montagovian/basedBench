@@ -1,6 +1,8 @@
 # Enriched-label comparison · September 20, 2026
 
-Prepared from the completed 28-case review and earlier conversational feedback.
+Completed September 20: all 140 calls succeeded for approximately $0.08 under
+the approved $1 cap. See the [results and interpretation](curation-enriched-results.md).
+The frozen design below was prepared from the completed 28-case review and earlier conversational feedback.
 The aim is to learn which change helps: clearer criteria, explicit component
 examples, or access to the image. This is a development experiment, not a claim
 of unattended admission quality.
@@ -52,7 +54,7 @@ Criteria were developed after reading the feedback. Keeping each candidate out
 of its own examples reduces direct leakage but does not turn this into an
 independent validation set. The reserved test split is not used.
 
-## What we will measure
+## Measurements
 
 - For each component: the pass/fail confusion matrix, good-item retention,
   bad-item detection, abstentions and balanced accuracy. There are only **two
@@ -75,7 +77,7 @@ classifier that one of those explicit component labels must be wrong.
 ## Cost and execution
 
 Prepared conservative request allowances sum to **$0.71681** across all 140 calls;
-the proposed shared cap is **$1**. Allowances use text bytes as an upper token
+the approved shared cap was **$1**. Allowances use text bytes as an upper token
 estimate, maximum output tokens, conservative image accounting and no cache
 savings. Actual usage is settled as calls finish. Interrupted requests retain
 their allowances and are not automatically retried. The cap covers all five

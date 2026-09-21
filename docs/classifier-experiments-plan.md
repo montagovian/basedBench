@@ -1,7 +1,7 @@
 # Companion plan: classifier experiments
 
 Prepared September 18, 2026. Status: approved; first TF-IDF, frozen MiniLM, JEV,
-GPT-5.5, and decomposed Luna/JEV comparisons complete.
+GPT-5.5, decomposed Luna/JEV, and enriched-label comparisons complete.
 See the [curation evaluation workflow](curation-evaluation.md) for implementation
 and preliminary results. The current split is fixed for practice comparisons;
 earlier use of reserved examples is recorded in a history audit. No tested method
@@ -16,9 +16,9 @@ An [offline research pass](curation-research.md) now identifies opposite labels
 for copies of the same meme, two missed families spanning prompt references and
 calibration targets, and a benchmark-value check that passes every sampled
 historical reject. The subsequent [28-case feedback round](curation-research.md#completed-28-case-follow-up-round--september-20-2026)
-is now complete: 13 accept, 8 reject, 1 answer repair and 6 undecided. Next,
-use the explicit component labels and resolve family accounting before more
-prompt optimization, preserving partial and unresolved judgments. Historical
+is now complete: 13 accept, 8 reject, 1 answer repair and 6 undecided. The enriched
+comparison used those explicit component labels with known-family exclusions,
+preserving partial and unresolved judgments. Historical
 admission is a useful baseline, but is not yet a complete definition of intrinsic
 task suitability or collection-level selection.
 Alex subsequently approved all three opposite-label pairs and tentatively
@@ -29,12 +29,16 @@ the Top Gear examples remain accepted.
 Parent: [automated curation and backfill](automated-backfill-plan.md).
 Related: [tag vocabulary and assignment](tagging-taxonomy-plan.md).
 
-The [enriched-label comparison](curation-enriched-experiment.md) is prepared:
+The [enriched-label comparison](curation-enriched-experiment.md) is complete:
 three controlled JEV variants and matched Luna text/image variants, using only
 explicit component feedback and excluding candidates' known families from their
-reference examples. The proposed total cap is $1 for 140 calls. A zero-cost
-rescore of the overlapping saved predictions is complete; new calls await the
-spending-cap decision.
+reference examples. All 140 calls succeeded for about $0.08 under the approved
+$1 total cap. [Results](curation-enriched-results.md): every variant passed all
+five explicit value failures. Clearer JEV rules changed no verdicts; examples
+corrected one content failure. Luna image caught the known answer defect and
+raised additional completeness disputes. The next priority is aligning the
+written criteria with the curator's value/content boundaries, followed by
+shorter JEV questions and testing a review route for low-confidence passes.
 
 ## Cost and model preference
 
@@ -191,12 +195,16 @@ within the joint ground-truth task. It caught some explanation defects but did n
 improve overall admission quality. A repair proposal is still not acceptance until
 the repaired explanation has been checked.
 
-The next priority is JEV with more concrete curation criteria and relevant evidence.
+The earlier priority was JEV with more concrete curation criteria and relevant evidence.
 Its benchmark-value check passed all 80 items; Luna passed 79 with text and all 80
 with images. This check has not captured the historical inclusion standard. Use
 contrasting development examples to refine that standard and test smaller, more
 direct JEV questions. Target known explanation omissions as diagnostics; do not
-turn general historical rejections into ground-truth-failure labels.
+turn general historical rejections into ground-truth-failure labels. The completed
+enriched-label run shows that adding examples to the current broad questions is
+insufficient. Its retained value answer descriptions still favor any recoverable
+joke, and its content rule misses some explicit sexual implications excluded by
+the curator. Resolve those mismatches before prompt optimization or adaptation.
 
 Overall historical admission agreement also remains weak. Testing adaptation to
 the full development corpus remains useful, alongside confirmation of rejection
