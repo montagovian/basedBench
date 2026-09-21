@@ -29,6 +29,13 @@ the Top Gear examples remain accepted.
 Parent: [automated curation and backfill](automated-backfill-plan.md).
 Related: [tag vocabulary and assignment](tagging-taxonomy-plan.md).
 
+The [enriched-label comparison](curation-enriched-experiment.md) is prepared:
+three controlled JEV variants and matched Luna text/image variants, using only
+explicit component feedback and excluding candidates' known families from their
+reference examples. The proposed total cap is $1 for 140 calls. A zero-cost
+rescore of the overlapping saved predictions is complete; new calls await the
+spending-cap decision.
+
 ## Cost and model preference
 
 Use **GPT-5.6 Luna** as the inexpensive generative comparison model for the next
