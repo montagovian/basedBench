@@ -23,7 +23,7 @@ from basedbench.pipeline import curation_checks as checks
 from basedbench.pipeline import curation_llm as transport
 from basedbench.pipeline.curation_corpus import canonical_json, digest, file_hash, write_json
 
-VERSION = "answer-eval-v2"
+VERSION = "answer-eval-v3"
 STAGES = ("original_check", "original_repair", "original_verify", "generate",
           "generated_check", "generated_repair", "generated_verify")
 DEFECTS = Literal["missing_core_connection", "unsupported_addition", "visual_contradiction",
@@ -104,9 +104,6 @@ class AnswerCheck(StrictModel):
             c.support in {"minority_comment", "unsupported", "unresolved"} for c in self.claim_support
         )):
             raise ValueError("A pass cannot have missing core details or unsupported material claims")
-        for claim in self.claim_support:
-            if claim.support == "shared_comments" and len(set(claim.evidence_comment_ids)) < 3:
-                raise ValueError("A shared-comment claim requires three distinct supporting citations")
         if self.verdict == "fail" and not self.defects:
             raise ValueError("A failure must identify a defect")
         if self.verdict == "pass" and len(set(self.evidence_comment_ids)) < 3:
@@ -203,7 +200,7 @@ def code_hashes() -> dict:
 
 
 def prepare(cases_path: Path, assets: Path, output: Path, *, budget_usd: float,
-            jev_baseline: bool = False) -> dict:
+            jev_baseline: bool = False, reuse_from: Path | None = None) -> dict:
     if output.exists():
         raise FileExistsError("Prepare into a new experiment directory")
     if not math.isfinite(budget_usd) or budget_usd <= 0:
@@ -215,6 +212,28 @@ def prepare(cases_path: Path, assets: Path, output: Path, *, budget_usd: float,
         sha = case["input"]["image_sha256"]
         if file_hash(assets / sha) != sha:
             raise ValueError("Image does not match frozen evidence")
+    reusable = {}
+    if reuse_from is not None:
+        source = reuse_from.resolve()
+        old = json.loads((source / "plan.json").read_text())
+        if digest({k: v for k, v in old.items() if k != "experiment_id"}) != old["experiment_id"]:
+            raise ValueError("Invalid replay source plan")
+        if list((source / "calls").glob("*.pending")) or not (source / "report.json").exists():
+            raise ValueError("Replay source must be a completed run with no pending requests")
+        for relative, sha in old["files"].items():
+            path = (source / relative).resolve()
+            if not path.is_relative_to(source) or file_hash(path) != sha:
+                raise ValueError("Replay source evidence changed")
+        for path in sorted((source / "calls").glob("*.json")):
+            call = json.loads(path.read_text())
+            request = source / "requests" / path.name
+            if call["experiment_id"] != old["experiment_id"]:
+                raise ValueError("Replay source call identity mismatch")
+            if call["status"] == "completed" and not call.get("error"):
+                if digest(json.loads(request.read_text())) != call["request_content_sha256"]:
+                    raise ValueError("Replay source request mismatch")
+                reusable[path.stem] = {"path": str(path), "sha256": file_hash(path),
+                    "experiment_id": old["experiment_id"], "request_sha256": call["request_content_sha256"]}
     (output / "assets").mkdir(parents=True)
     (output / "requests").mkdir()
     (output / "calls").mkdir()
@@ -246,6 +265,7 @@ def prepare(cases_path: Path, assets: Path, output: Path, *, budget_usd: float,
             "prices": {"luna": checks.PRICES, "jev": transport.JEV_PRICES},
             "prompts": {"check": CHECK, "draft": DRAFT, "repair": REPAIR},
             "code_hashes": code_hashes(), "automatic_retries": 0,
+            "reusable_calls": reusable,
             "max_repairs_per_answer": 1, "independent_validation": False}
     plan["experiment_id"] = digest(plan)
     write_json(output / "plan.json", plan)
@@ -260,6 +280,9 @@ def load_plan(output: Path, *, executing: bool = False) -> dict:
         path = (output / relative).resolve()
         if not path.is_relative_to(output.resolve()) or file_hash(path) != sha:
             raise ValueError("Frozen evidence changed")
+    for item in plan.get("reusable_calls", {}).values():
+        if file_hash(Path(item["path"])) != item["sha256"]:
+            raise ValueError("Frozen replay response changed")
     if executing and plan["code_hashes"] != code_hashes():
         raise ValueError("Implementation changed; prepare a new experiment")
     return plan
@@ -354,7 +377,8 @@ def summarize(cases: list[dict], results: list[dict], output: Path, plan: dict, 
         "unresolved_gold": sum(c["gold"] == "unresolved" for c in cases), "metrics": metrics,
         "branches": {branch: dict(Counter(r[branch]["status"] for r in results)) for branch in ("original", "fresh")},
         "original_repairs_verified_by_model": sum(r["original"]["repaired"] for r in results),
-        "calls": len(calls), "call_errors": sum(bool(c.get("error")) for c in calls),
+        "calls": len(calls), "reused_calls": sum(bool(c.get("reused_from")) for c in calls),
+        "call_errors": sum(bool(c.get("error")) for c in calls),
         "parse_errors": sum(bool(v.get("error")) for r in results for v in r["stages"].values()),
         "calls_without_usage": sum(c.get("usage") is None for c in calls),
         "cost_estimate_usd": sum(exact_cost(c) or 0 for c in calls),
@@ -371,6 +395,8 @@ def summarize(cases: list[dict], results: list[dict], output: Path, plan: dict, 
 
 
 def exact_cost(call: dict) -> float | None:
+    if call.get("reused_from"):
+        return 0.0  # Original usage is retained; the source experiment paid for it.
     usage = call.get("usage")
     if usage is None or call["arm"] == "jev":
         return checks.cost(usage, call["arm"])
@@ -380,6 +406,16 @@ def exact_cost(call: dict) -> float | None:
     return ((usage["input_tokens"] - cached - written) * prices["input_per_million"]
             + cached * prices["cached_input_per_million"] + written * prices["cache_write_per_million"]
             + usage["output_tokens"] * prices["output_per_million"]) / 1_000_000
+
+
+class Budget(checks.Budget):
+    def settle(self, pid: str, arm: str, call: dict) -> None:
+        if call.get("reused_from"):
+            self.charges[f"{pid}.{arm}"] = 0.0
+            self.active.discard(f"{pid}.{arm}")
+            self.changed.set()
+        else:
+            super().settle(pid, arm, call)
 
 
 async def run(output: Path, *, budget_usd: float, api_key: str = "", jev_key: str = "",
@@ -401,7 +437,7 @@ async def run(output: Path, *, budget_usd: float, api_key: str = "", jev_key: st
     try:
         with (output / "run.lock").open("w") as lock:
             fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
-            budget = checks.Budget(plan, output)
+            budget = Budget(plan, output)
             results = []
             # Preserve fatal-provider stops across staged transport invocations.
             halted = set()
@@ -422,6 +458,15 @@ async def run(output: Path, *, budget_usd: float, api_key: str = "", jev_key: st
                     else:
                         write_json(request_path, body)
                     path = output / "calls" / f"{key}.json"
+                    reusable = plan.get("reusable_calls", {}).get(key)
+                    if not path.exists() and reusable and reusable["request_sha256"] == digest(body):
+                        source_call = json.loads(Path(reusable["path"]).read_text())
+                        if source_call["input_sha256"] == plan["input_hashes"][case["case_id"]]:
+                            # Retain the source's raw response/usage and a hashed
+                            # provenance pointer. Only this replay's charge is zero.
+                            replayed = {**source_call, "experiment_id": plan["experiment_id"], "reused_from": reusable}
+                            transport._atomic_json(path, replayed)
+                            budget.settle(case["case_id"], stage, replayed)
                     provider = "jev" if stage == "jev" else "luna"
                     if provider in halted and not path.exists():
                         return {"error": "Not attempted after a fatal provider error"}
@@ -458,12 +503,14 @@ def main():
     prep.add_argument("output", type=Path)
     prep.add_argument("--budget-usd", type=float, required=True)
     prep.add_argument("--jev-baseline", action="store_true")
+    prep.add_argument("--reuse-from", type=Path)
     paid = sub.add_parser("run")
     paid.add_argument("output", type=Path)
     paid.add_argument("--budget-usd", type=float, required=True)
     args = parser.parse_args()
     if args.command == "prepare":
-        plan = prepare(args.cases, args.assets, args.output, budget_usd=args.budget_usd, jev_baseline=args.jev_baseline)
+        plan = prepare(args.cases, args.assets, args.output, budget_usd=args.budget_usd,
+                       jev_baseline=args.jev_baseline, reuse_from=args.reuse_from)
         print(json.dumps({k: plan[k] for k in ("experiment_id", "max_calls", "budget_usd", "all_request_bounds_usd")}))
     else:
         import os

@@ -23,6 +23,16 @@ branches. Do not repeat the unchanged JEV comparison. Cap this follow-up at
 original $1 total. This is a development revision informed by the first run,
 not a fresh validation set. Keep both versions and their results separate.
 
+The initial version-2 parser also demanded three citations for every individual
+claim, which incorrectly discarded useful checks of answers whose overall
+interpretation had three supporting comments. Version 3 removes that extra
+per-fact quota while retaining the requirement for three comments supporting
+the shared reading. Its prompts and response schema are unchanged from version 2.
+It reuses completed responses only when both the full request and candidate input
+match exactly. Source responses and usage remain intact, with hashed provenance;
+replayed calls have zero new charge. Only newly reachable repair branches make
+additional requests. Its $0.75 cap is below the remaining total budget.
+
 ## What this tests
 
 An answer can name the right celebrity, song or film and still miss the joke.
@@ -90,9 +100,10 @@ IDs. Store raw data and image assets locally under `data/`.
 uv run python -m basedbench.pipeline.answer_eval prepare \
   data/curation/answer-eval-sources-v1/cases.json \
   data/curation/historical-v2/assets \
-  data/curation/answer-eval-v2 --budget-usd 0.90
+  data/curation/answer-eval-v3 --budget-usd 0.75 \
+  --reuse-from data/curation/answer-eval-v2
 uv run python -m basedbench.pipeline.answer_eval run \
-  data/curation/answer-eval-v2 --budget-usd 0.90
+  data/curation/answer-eval-v3 --budget-usd 0.75
 ```
 
 Preparation freezes case labels, input bytes, image bytes, prompts, model IDs,
@@ -104,6 +115,8 @@ replays finished calls; changed evidence, code or requests require a new version
 The first run used commit `4619c31`; later code versions intentionally cannot
 resume it. Its completed real requests were replayed offline with zero provider
 calls and identical results before the second version was prepared.
+The optional `--reuse-from` argument imports only exact matching completed
+requests into a new experiment version. Omit it for a fresh comparison.
 
 ## Legacy evaluator corrections
 

@@ -1,6 +1,7 @@
 """Meaning-sensitive routing, label isolation, budget enforcement and safe resume."""
 
 import json
+from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import AsyncMock
 
@@ -140,13 +141,47 @@ def test_model_substitution_and_incomplete_calls_never_verify(frozen):
     {"missing_core_details": ["The image's visual punchline"]},
     {"claim_support": [{"claim": "Optional embellishment", "support": "minority_comment", "evidence_comment_ids": ["c1"]}]},
     {"claim_support": [{"claim": "Unsupported assertion", "support": "unsupported", "evidence_comment_ids": []}]},
-    {"claim_support": [{"claim": "Not actually shared", "support": "shared_comments", "evidence_comment_ids": ["c1"]}]},
     {"claim_support": [{"claim": "Made-up evidence", "support": "image_and_shared_comments", "evidence_comment_ids": ["invented"]}]},
 ])
 def test_global_pass_cannot_override_claim_evidence_or_missing_payoff(frozen, change):
     case, _, _ = frozen
     call = {"status": "completed", "response": {"model": answers.checks.MODEL}, "output_text": json.dumps(check() | change)}
     assert "error" in answers.parse(case, "original_check", call)
+
+
+def test_individual_fact_does_not_need_three_citations_when_shared_reading_has_them(frozen):
+    case, _, _ = frozen
+    payload = check()
+    payload["claim_support"].append({"claim": "A background identifying fact", "support": "shared_comments", "evidence_comment_ids": ["c1"]})
+    call = {"status": "completed", "response": {"model": answers.checks.MODEL}, "output_text": json.dumps(payload)}
+    assert answers.parse(case, "original_check", call)["verdict"] == "pass"
+
+
+@pytest.mark.asyncio
+async def test_parser_replay_reuses_only_identical_requests_with_preserved_usage_and_zero_new_cost(frozen, tmp_path):
+    _, source, _ = frozen
+    async def create(**body):
+        return response(draft() if "status" in body["text"]["format"]["schema"]["properties"] else check())
+    client = SimpleNamespace(responses=SimpleNamespace(create=AsyncMock(side_effect=create)))
+    original = await answers.run(source, budget_usd=1, client=client)
+    target = tmp_path / "replay"
+    answers.prepare(source / "cases.json", source / "assets", target, budget_usd=1, reuse_from=source)
+    client.responses.create.reset_mock(side_effect=True)
+    client.responses.create.side_effect = AssertionError("Should reuse")
+    replay = await answers.run(target, budget_usd=1, client=client)
+    client.responses.create.assert_not_called()
+    assert replay["results"] == original["results"]
+    assert replay["reused_calls"] == replay["calls"] == 3
+    assert replay["cost_estimate_usd"] == replay["accounted_usd"] == 0
+    saved = json.loads(next((target / "calls").glob("*.json")).read_text())
+    assert saved["usage"]["input_tokens"] == 100
+    assert saved["reused_from"]["experiment_id"] == original["experiment_id"]
+    await answers.run(target, budget_usd=1, client=client)
+    client.responses.create.assert_not_called()
+    source_call = Path(saved["reused_from"]["path"])
+    source_call.write_text("{}")
+    with pytest.raises(ValueError, match="Frozen replay response"):
+        answers.load_plan(target)
 
 
 @pytest.mark.asyncio
