@@ -15,7 +15,7 @@ import re
 import shutil
 from collections import Counter
 from pathlib import Path
-from typing import Literal
+from typing import Annotated, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
@@ -23,7 +23,7 @@ from basedbench.pipeline import curation_checks as checks
 from basedbench.pipeline import curation_llm as transport
 from basedbench.pipeline.curation_corpus import canonical_json, digest, file_hash, write_json
 
-VERSION = "answer-eval-v1"
+VERSION = "answer-eval-v2"
 STAGES = ("original_check", "original_repair", "original_verify", "generate",
           "generated_check", "generated_repair", "generated_verify")
 DEFECTS = Literal["missing_core_connection", "unsupported_addition", "visual_contradiction",
@@ -43,6 +43,14 @@ Do not browse or use knowledge of benchmark membership. Cite only supplied comme
 """
 CHECK = COMMON + """
 Evaluate the candidate answer AS WRITTEN. Your ability to reconstruct the joke does not repair it.
+First describe the visible setup and the central connection a viewer must recover, including any
+essential spatial detail or implied action. Then audit each material claim in the candidate answer.
+Three comments supporting one clause do NOT establish support for the other clauses. Distinguish
+the shared interpretation from an optional embellishment found in one or two comments, even if
+those comments have many votes. Record such embellishments as minority_comment, not shared_comments.
+A list of real citation IDs is not evidence that those comments support every claim.
+List any essential visible setup/payoff connection missing from the written answer. A reference
+name or quoted catchphrase alone is incomplete when the image does something specific with it.
 Pass a supported paraphrase that gets the core joke. Do not demand every peripheral detail or
 proper name if the intended connection is already clear. Fail a material missing connection,
 unsupported addition, visual contradiction, or falsely asserted agreement. A merely possible
@@ -53,6 +61,10 @@ cite at least three genuinely supporting comments. Do not write a replacement an
 DRAFT = COMMON + """
 Write a concise, self-contained answer that would allow a judge to tell whether a model got this
 specific joke. Connect the setup to its payoff. Do not transplant commenters' additional jokes.
+Describe the image's actual setup, including essential spatial details or actions, and connect it
+to the reference. If a quoted retort is the punchline, explain the retort's intended inversion when
+needed to understand it. Keep the convergent core: omit optional embellishments from one or two
+comments, even popular ones. Do not merge different explanations into a single causal story.
 Return proposed only when the image and at least three substantive comments support the shared
 core. Otherwise return insufficient_evidence with a null explanation. Cite the supporting comments.
 """
@@ -67,7 +79,18 @@ class StrictModel(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
 
+class ClaimSupport(StrictModel):
+    claim: str = Field(min_length=1, max_length=400)
+    support: Literal["image", "shared_comments", "image_and_shared_comments",
+                     "minority_comment", "unsupported", "unresolved"]
+    evidence_comment_ids: list[str] = Field(max_length=30)
+
+
 class AnswerCheck(StrictModel):
+    image_setup: str = Field(min_length=1, max_length=600)
+    joke_connection: str = Field(min_length=1, max_length=600)
+    claim_support: list[ClaimSupport] = Field(min_length=1, max_length=6)
+    missing_core_details: list[Annotated[str, Field(max_length=300)]] = Field(max_length=3)
     verdict: Literal["pass", "fail", "uncertain"]
     reason: str = Field(min_length=1, max_length=1200)
     defects: list[DEFECTS]
@@ -77,6 +100,13 @@ class AnswerCheck(StrictModel):
     def consistent(self):
         if self.verdict == "pass" and self.defects:
             raise ValueError("A pass cannot have material defects")
+        if self.verdict == "pass" and (self.missing_core_details or any(
+            c.support in {"minority_comment", "unsupported", "unresolved"} for c in self.claim_support
+        )):
+            raise ValueError("A pass cannot have missing core details or unsupported material claims")
+        for claim in self.claim_support:
+            if claim.support == "shared_comments" and len(set(claim.evidence_comment_ids)) < 3:
+                raise ValueError("A shared-comment claim requires three distinct supporting citations")
         if self.verdict == "fail" and not self.defects:
             raise ValueError("A failure must identify a defect")
         if self.verdict == "pass" and len(set(self.evidence_comment_ids)) < 3:
@@ -131,7 +161,8 @@ def make_request(case: dict, stage: str, directory: Path, *, explanation: str | 
     if stage != "generate":
         evidence["candidate_answer"] = explanation if explanation is not None else case["input"]["explanation"]
     if stage.endswith("repair"):
-        evidence["possible_defect"] = critique
+        evidence["possible_defect"] = {k: v for k, v in (critique or {}).items()
+                                       if k in {"reason", "defects", "missing_core_details"}}
     if stage == "jev":
         return {"model": transport.JEV_MODEL, "state": evidence,
                 "questions": {"ground_truth": {"type": "choice", "instructions": CHECK +
@@ -140,11 +171,19 @@ def make_request(case: dict, stage: str, directory: Path, *, explanation: str | 
     draft = stage == "generate" or stage.endswith("repair")
     schema = (Draft if draft else AnswerCheck).model_json_schema()
     ids = citation_ids(case)
-    item = schema["properties"]["evidence_comment_ids"]
-    if ids:
-        item["items"]["enum"] = ids
-    else:
-        item["maxItems"] = 0
+    def constrain_citations(value):
+        if isinstance(value, dict):
+            for key, child in value.items():
+                if key == "evidence_comment_ids":
+                    if ids:
+                        child["items"]["enum"] = ids
+                    else:
+                        child["maxItems"] = 0
+                constrain_citations(child)
+        elif isinstance(value, list):
+            for child in value:
+                constrain_citations(child)
+    constrain_citations(schema)
     # Reuse the existing image format/MIME validation, but replace its text input.
     content = transport.request_content(case, "image", directory)
     content[0] = {"type": "input_text", "text": canonical_json(evidence)}
@@ -190,6 +229,7 @@ def prepare(cases_path: Path, assets: Path, output: Path, *, budget_usd: float,
         # conservative text allowance, including the largest repair critique.
         worst = "\U00010000" * 2400
         critique = {"verdict": "fail", "reason": "\U00010000" * 1200,
+                    "missing_core_details": ["\U00010000" * 300] * 3,
                     "defects": ["missing_core_connection", "unsupported_addition", "visual_contradiction",
                                 "competing_readings", "insufficient_evidence"],
                     "evidence_comment_ids": citation_ids(case)}
@@ -251,7 +291,10 @@ def parse(case: dict, stage: str, call: dict) -> dict:
             raise ValueError("Unexpected Luna model; no fallback")
         schema = Draft if stage == "generate" or stage.endswith("repair") else AnswerCheck
         parsed = schema.model_validate_json(call["output_text"])
-        if not set(parsed.evidence_comment_ids) <= set(citation_ids(case)):
+        cited = set(parsed.evidence_comment_ids)
+        if isinstance(parsed, AnswerCheck):
+            cited.update(cid for claim in parsed.claim_support for cid in claim.evidence_comment_ids)
+        if not cited <= set(citation_ids(case)):
             raise ValueError("Citation outside supplied evidence")
         return parsed.model_dump()
     except (ValueError, KeyError, TypeError, AttributeError) as exc:

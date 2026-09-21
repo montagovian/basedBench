@@ -12,7 +12,9 @@ from basedbench.pipeline.curation_corpus import file_hash, write_json
 
 
 def check(verdict="pass", reason="The explanation matches the shared joke."):
-    return {"verdict": verdict, "reason": reason,
+    return {"image_setup": "The image provides a concrete setup.", "joke_connection": "The payoff inverts the setup.",
+            "claim_support": [{"claim": "The intended reading", "support": "shared_comments", "evidence_comment_ids": ["c1", "c2", "c3"]}],
+            "missing_core_details": [], "verdict": verdict, "reason": reason,
             "defects": [] if verdict == "pass" else ["missing_core_connection"],
             "evidence_comment_ids": ["c1", "c2", "c3"]}
 
@@ -131,6 +133,19 @@ def test_model_substitution_and_incomplete_calls_never_verify(frozen):
     call = {"status": "completed", "response": {"model": "another-model"}, "output_text": json.dumps(check())}
     assert "error" in answers.parse(case, "original_check", call)
     call.update(status="incomplete", response={"model": answers.checks.MODEL})
+    assert "error" in answers.parse(case, "original_check", call)
+
+
+@pytest.mark.parametrize("change", [
+    {"missing_core_details": ["The image's visual punchline"]},
+    {"claim_support": [{"claim": "Optional embellishment", "support": "minority_comment", "evidence_comment_ids": ["c1"]}]},
+    {"claim_support": [{"claim": "Unsupported assertion", "support": "unsupported", "evidence_comment_ids": []}]},
+    {"claim_support": [{"claim": "Not actually shared", "support": "shared_comments", "evidence_comment_ids": ["c1"]}]},
+    {"claim_support": [{"claim": "Made-up evidence", "support": "image_and_shared_comments", "evidence_comment_ids": ["invented"]}]},
+])
+def test_global_pass_cannot_override_claim_evidence_or_missing_payoff(frozen, change):
+    case, _, _ = frozen
+    call = {"status": "completed", "response": {"model": answers.checks.MODEL}, "output_text": json.dumps(check() | change)}
     assert "error" in answers.parse(case, "original_check", call)
 
 

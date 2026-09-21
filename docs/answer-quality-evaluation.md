@@ -2,6 +2,27 @@
 
 Implementation and development experiment for [issue #3](https://github.com/montagovian/basedBench/issues/3).
 
+## Focused second version
+
+The first run completed 63 calls for $0.04772. Luna caught three of four known
+defects; JEV caught none. Luna also disagreed with Kylie's ready label and deferred
+the Oprah answer for insufficient substantive comments. Inspection found that
+some model-verified outputs still imported a minority interpretation or omitted
+an essential visual detail. These are concrete reasons to test a focused revision.
+
+Version 2 requires the checker to describe the visible setup and intended
+connection, then map each important answer claim to its supporting evidence.
+It records missing core details and distinguishes shared comments from minority
+elaborations. A global pass cannot override an explicitly unsupported claim or
+missing core detail in that same response. Citation IDs still require semantic
+inspection; these consistency checks cannot prove entailment.
+
+Repeat the same frozen cases with Luna and the same bounded repair/generation
+branches. Do not repeat the unchanged JEV comparison. Cap this follow-up at
+**$0.90**, so combined spending with the completed first run stays below the
+original $1 total. This is a development revision informed by the first run,
+not a fresh validation set. Keep both versions and their results separate.
+
 ## What this tests
 
 An answer can name the right celebrity, song or film and still miss the joke.
@@ -69,9 +90,9 @@ IDs. Store raw data and image assets locally under `data/`.
 uv run python -m basedbench.pipeline.answer_eval prepare \
   data/curation/answer-eval-sources-v1/cases.json \
   data/curation/historical-v2/assets \
-  data/curation/answer-eval-v1 --budget-usd 1 --jev-baseline
+  data/curation/answer-eval-v2 --budget-usd 0.90
 uv run python -m basedbench.pipeline.answer_eval run \
-  data/curation/answer-eval-v1 --budget-usd 1
+  data/curation/answer-eval-v2 --budget-usd 0.90
 ```
 
 Preparation freezes case labels, input bytes, image bytes, prompts, model IDs,
@@ -80,6 +101,9 @@ adaptive request before dispatch and checks its bound. Responses, token usage,
 citations, proposals and outcomes are checkpointed. Re-running the same command
 replays finished calls; changed evidence, code or requests require a new version.
 `report.json` contains the detailed results and denominators.
+The first run used commit `4619c31`; later code versions intentionally cannot
+resume it. Its completed real requests were replayed offline with zero provider
+calls and identical results before the second version was prepared.
 
 ## Legacy evaluator corrections
 
