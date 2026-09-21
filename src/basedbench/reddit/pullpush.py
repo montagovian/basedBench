@@ -181,14 +181,14 @@ class PullpushClient:
                 if resp.status_code >= 500:
                     raise httpx.ReadError(f"pullpush {resp.status_code}")
                 if resp.status_code >= 400:
-                    log.warning(
-                        "Pullpush %d for r/%s: %s",
-                        resp.status_code, subreddit, resp.text[:200],
-                    )
-                    return []
+                    # A denied/rate-limited request is not an empty date range.
+                    resp.raise_for_status()
                 payload = resp.json()
 
-        return payload.get("data", []) or []
+        if (not isinstance(payload, dict) or payload.get("error")
+                or not isinstance(payload.get("data"), list)):
+            raise ValueError("Malformed PullPush response or archive error")
+        return payload["data"]
 
 
 def _to_pullpush_post(raw: dict) -> PullpushPost | None:
