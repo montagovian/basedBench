@@ -26,11 +26,15 @@ positive because the project now gives that experiment less weight.
 
 The answer-quality workflow and bounded experiment in
 [#3](https://github.com/montagovian/basedBench/issues/3) are complete; see the
-[results and remaining limitations](answer-quality-results.md). The next priority
-is [#4](https://github.com/montagovian/basedBench/issues/4), preparing a bounded
-source inventory. Existing
-ingestion and tracer commands provide starting points, but have not yet been
-qualified as the new admission workflow.
+[results and remaining limitations](answer-quality-results.md). The bounded
+[source inventory](backfill-source-inventory.md) in
+[#4](https://github.com/montagovian/basedBench/issues/4) is also complete: a frozen
+100-candidate June 20–26 batch with asset failures and a missing-community
+coverage gap recorded. The next priority is
+[#5](https://github.com/montagovian/basedBench/issues/5), content-policy checks;
+[#6](https://github.com/montagovian/basedBench/issues/6), duplicate checks, now has
+fresh candidates available. Existing ingestion and tracer commands have not yet
+been qualified as the new admission workflow.
 
 ## Pilot work
 
@@ -79,6 +83,9 @@ work. They should not delay the first useful backfill batch.
 
 ## Completed foundation
 
+- [Bounded source inventory](backfill-source-inventory.md): 100 fresh candidates
+  from June 20–26, with images/comments, source coverage and retrieval gaps
+  recorded locally; no model calls or admissions.
 - [Answer construction, checks and bounded repair](answer-quality-results.md):
   119 new provider calls, about 13¢; all four selected known defects detected by
   the detailed checker, with false alarms and verifier misses recorded separately.
@@ -91,7 +98,8 @@ work. They should not delay the first useful backfill batch.
   about 1.2¢; the best default verdicts caught one of five value negatives while
   keeping 17 positives. This is completed research, not a production-quality gate.
 
-No new-content backfill has been completed as part of these experiments.
+Fresh source collection is complete for the bounded inventory. No new-content
+admission batch or candidate release has been completed.
 
 ## Ticket workflow
 
