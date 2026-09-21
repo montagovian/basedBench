@@ -2,6 +2,11 @@
 
 Prepared September 18, 2026. Status: approved; first TF-IDF, frozen MiniLM, JEV,
 GPT-5.5, decomposed Luna/JEV, and enriched-label comparisons complete.
+September 20 priority update: the user has moved exact matching of discretionary
+value rejections off the critical path. The [current work backlog](roadmap.md)
+prioritizes answer correctness and a bounded backfill pilot. Further value
+question experiments below are recorded possibilities, not the next required
+milestone; existing human labels and their experiment metrics remain intact.
 See the [curation evaluation workflow](curation-evaluation.md) for implementation
 and preliminary results. The current split is fixed for practice comparisons;
 earlier use of reserved examples is recorded in a history audit. No tested method
@@ -47,9 +52,10 @@ counterexamples and distinguish prompt changes from added visual descriptions.
 The [first 224-call comparison](curation-value-experiment.md#results) is complete
 for $0.01208: the combined prompt caught the spelling riddle and retained all 17
 value positives, but four of five negatives still passed. Literal descriptions
-did not improve the default verdicts. Next, test shorter observable-property
-questions to distinguish failure to recognize a property from disagreement about
-its relevance to value; keep score-based review routes exploratory.
+did not improve the default verdicts. A parked follow-up is to test shorter
+observable-property questions to distinguish failure to recognize a property
+from disagreement about its relevance to value; keep score-based review routes
+exploratory.
 
 ## Cost and model preference
 

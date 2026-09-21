@@ -3,6 +3,11 @@
 Prepared September 18, 2026. Status: approved; execution started. The historical
 corpus builder, common decision contract, word-count baseline, and first frozen
 encoder comparison are implemented.
+September 20 direction update: move exact imitation of discretionary value
+rejections off the critical path. The next milestone is a bounded newer-content
+pilot, prioritizing answer correctness, publication checks and duplication.
+See the [current roadmap and work backlog](roadmap.md) for sequencing; the
+historical-comparison milestones below remain the design and evidence record.
 See the [curation evaluation workflow](curation-evaluation.md). Corpus provenance
 and semantic joke-family grouping remain provisional; no new backfill has run.
 The cross-run history audit also corrects an earlier holdout claim: 244 of the
@@ -27,10 +32,12 @@ The first milestone is automated curation. Jev is a candidate component, and
 improving prediction judges remains valuable, but the immediate bottleneck is
 deciding which newly collected memes deserve to enter the evaluation set.
 
-Success means admitting a useful volume and range of new items at a measured
-historical error rate, with explicit evidence for each decision and no review
-queue that must be cleared before processing can continue. New-content quality
-claims must reflect the evidence actually available.
+Success means admitting a useful volume and range of new items with explicit
+evidence for each decision and no review queue that must be cleared before
+processing can continue. Measure historical agreement separately from known
+defects and collection quality. A discretionary human rejection is not by itself
+proof that a model-selected item damages the dataset. New-content quality claims
+must reflect the evidence actually available.
 
 The benchmark continues to ask whether a model **gets the joke**: identifies the
 relevant references and reconstructs the intended setup, implication, contrast,
@@ -328,14 +335,16 @@ model; do not make further GPT-5.5 curation calls without an explicit request.
 The latest round cost approximately $0.38 under a $1 cap. Further experiments
 require explicit spending limits and saved responses.
 
-Next, make the benchmark-value criteria more concrete using contrasting
-development examples: that check passed almost everything in the latest run.
-Test narrower JEV questions with relevant evidence, and target material explanation
-omissions within the joint ground-truth task. Any proposed explanation repair still
-needs verification before admission. Task adaptation using the full development
-corpus remains untested. Resolve rejection provenance and semantic joke families
-alongside that work. See the
-[plain-English results](curation-evaluation.md) for counts, examples, and costs.
+Subsequent [enriched-label](curation-enriched-results.md) and
+[value-prompt](curation-value-experiment.md) experiments made limited progress on
+agreement with discretionary rejects. Following Alex's decision to move on from
+that problem, further value optimization is parked. The next concrete work is
+to evaluate the correctness of generated explanations, test bounded repairs,
+prepare a source inventory, and connect content checks and duplicate handling
+into a small admission pilot. Any proposed repair still needs verification.
+Task adaptation using the full development corpus remains an optional later
+experiment. See the [work backlog](roadmap.md) for completion criteria and
+dependencies, and the [earlier results](curation-evaluation.md) for their context.
 
 Keep the current split fixed for practice comparisons and preserve the remaining
 unused examples. The history audit records prior exposure; it does not undo it.
