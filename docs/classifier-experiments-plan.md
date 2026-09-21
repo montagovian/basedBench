@@ -39,6 +39,11 @@ corrected one content failure. Luna image caught the known answer defect and
 raised additional completeness disputes. The next priority is aligning the
 written criteria with the curator's value/content boundaries, followed by
 shorter JEV questions and testing a review route for low-confidence passes.
+The [inferred prompt hypotheses](curation-prompt-hypotheses.md) now supply three
+concrete, unrun value prompts based on the existing feedback: a useful missing
+connection, a supported intended payoff, and their combination. Test these
+before requesting another broad labeling round; preserve the documented
+counterexamples and distinguish prompt changes from added visual descriptions.
 
 ## Cost and model preference
 
