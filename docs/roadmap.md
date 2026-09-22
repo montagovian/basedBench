@@ -1,6 +1,6 @@
 # BasedBench roadmap and work backlog
 
-Updated September 20, 2026. This is the short work index; detailed plans and
+Updated September 21, 2026. This is the short work index; detailed plans and
 experiment reports remain the design record. The
 [GitHub roadmap tracker](https://github.com/montagovian/basedBench/issues/15)
 links all twelve work items. GitHub issues are the source of truth for work
@@ -34,10 +34,13 @@ coverage gap recorded. The versioned
 [content-policy component](content-policy-pilot.md) in
 [#5](https://github.com/montagovian/basedBench/issues/5) is also complete for pilot
 integration: all three selected exclusions caught, with two false deferrals and
-untested-category limits retained. Next is
-[#6](https://github.com/montagovian/basedBench/issues/6), duplicate checks, using
-the fresh candidate images. Existing ingestion and tracer commands have not yet
-been qualified as the new admission workflow.
+untested-category limits retained. The [duplicate audit](duplicate-audit.md) in
+[#6](https://github.com/montagovian/basedBench/issues/6) is complete: all three
+known families retrieved, one exact fresh-copy pair and 28 uncertain match pairs
+recorded, with concrete same-topic false alarms and asset gaps retained. Next is
+[#7](https://github.com/montagovian/basedBench/issues/7), assembling the resumable
+admission pilot. Existing ingestion and tracer commands have not yet been
+qualified as that workflow.
 
 ## Pilot work
 
@@ -85,6 +88,10 @@ Changing prediction judges and recurring automatic ingestion also remain later
 work. They should not delay the first useful backfill batch.
 
 ## Completed foundation
+
+- [Duplicate and joke-family audit](duplicate-audit.md): local image and text
+  retrieval, no paid calls; exact-copy evidence is separate from candidate
+  family links, publication membership and intrinsic quality.
 
 - [Publication-content findings and routes](content-policy-pilot.md): 102 Luna
   image calls, about 12¢; all three definite exclusions caught by the revised

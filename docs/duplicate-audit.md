@@ -6,6 +6,91 @@ The pilot now has a read-only duplicate audit. It distinguishes an exact copy,
 a possible repeat and an item it could not assess. None of those is a finding
 about whether the meme is good, safe or correctly explained.
 
+## Completed bounded run
+
+The combined retrieval found **all three known repeat families**. Across the
+100 fresh candidates, it found **one exact-copy pair and 28 possible-match
+pairs**, involving 20 fresh posts. These are pair counts, not 29 excluded items.
+There were no paid model calls or API costs.
+
+| Coverage / result | Count |
+| --- | ---: |
+| Archived records | 5,886 |
+| Archived static images assessed | 5,390 |
+| Archived missing images / animated files | 479 / 17 |
+| Fresh static images assessed / missing | 73 / 27 |
+| Legacy explanations / fresh comment samples compared | 2,537 / 97 |
+| Fresh–legacy match pairs / fresh–fresh match pairs | 26 / 3 |
+| Fresh posts with an exact-copy match | 2 |
+| Fresh posts with other candidate matches | 18 |
+| Fresh posts with no match found | 57 |
+| Fresh posts without an image and without a text match | 23 |
+
+Four of the 18 posts with candidate matches also have missing images. All 27
+missing-image cases therefore remain incomplete, not just the 23 whose summary
+route is `not_assessed`. Three fresh posts have no text surviving the comment
+selection rule; two have no usable comments and one has only shorter comments.
+Those three still received image comparisons.
+
+The archive includes all 519 published items: 518 have static images, one is
+animated, and all 519 have explanations. Animated files participate in exact
+byte matching only; the near-image method does not compare their frames. Thus
+image near-match coverage is incomplete even for the published set. The text
+encoder read 169,670 tokens across the selected evidence, with no tokens omitted
+from those selected fields. This does not make the source comment sample complete.
+
+| Known family | Near-image retrieval | TF-IDF retrieval | MiniLM retrieval |
+| --- | --- | --- | --- |
+| Teapot carton | Found | Found | Found |
+| Number-plate prank | Missed | Found | Found |
+| Clarkson / Porsche 928 | Found | Missed | Found |
+
+These are outcomes under the frozen thresholds and top-five limits. The
+number-plate pair changes light/dark presentation and framing enough to defeat
+this image method. Text recovers it. Conversely, both text methods miss the
+same Hello Kitty comic in the diagnostic table below because its stored
+explanations emphasize different meanings. No one method establishes completeness.
+
+Assistant inspection of all six fresh near-image pairs found recognizable
+reposts: the spouse-comparison tweet, language-reaction map, American Squid Game
+joke, Uber/Benz narrative, examination/echo comic and Toy Story ratings post.
+Two of those match published images; four match archive records outside the
+published set. They remain candidates in the automatic report, with the visual
+observations saved separately. This small retrieved sample does not estimate
+recall or general near-image precision.
+
+Six additional semantic-only pairs were inspected:
+
+- The differently framed **“who is JSON?”** screenshots share the same core
+  image and joke; the image search missed them.
+- **DiCaprio:** an Epstein comparison and an age-gap-as-parenthood joke are
+  different jokes despite an encoder score of 0.791. **Dinosaurs:** a scarred
+  dinosaur comic and a Spinosaurus-reconstruction joke are likewise different,
+  despite a score of 0.658. Shared topic is a real source of false matches.
+- The **“every base calls itself 10”** tier list and alien-counting comic share
+  a core inference but have different setups. Keep this as an explicit family
+  policy question, not an automatic merge.
+- The laptop-company and square-root-treasure matches have missing fresh images.
+  Their comments suggest relations, but their visual jokes remain unverified.
+
+The 12 inspected fresh pairs are an exploratory selection. The remaining
+candidates are unadjudicated; no precision estimate or automatic exclusion is
+claimed. These observations are assistant annotations, not new curator labels.
+
+The split check flags the two already-known families crossing development and
+calibration (number plate and Clarkson), plus five additional pending cross-split
+links. It preserves the original assignments and records the retrieval exposure.
+Later splits must resolve or quarantine those links before claiming independence.
+
+Run artifacts: `data/backfill/duplicate-audit-v1/`. Analysis, visual controls,
+exposure and split audit: `data/backfill/duplicate-controls-v1/`. Audit ID:
+`fa506730f16087403cee929f78e79d1ac4c69d0e5e131c731e0be18616dda838`.
+Implementation commits: `87c82ec`, `5cb4dd5`, local and unpushed.
+**389 tests passed.** Source database, frozen corpus and human-feedback hashes
+were unchanged. An offline recomputation produced identical report, vector and
+token-packing hashes, with runtime versions verified against the frozen plan.
+The code and result summaries are committed; raw evidence and images remain local.
+
 ## What the check does
 
 - Compare every available fresh image against the archived images and the other
@@ -56,7 +141,9 @@ split for adjudication; it does not silently merge families. Once reviewed,
 same-joke pairs can become confirmed edges and different-joke pairs can be removed
 from the pending constraints, retaining their evidence and decision provenance.
 The existing frozen evaluation splits are not rewritten. This is a scoped audit,
-not proof that the entire archive is free of family leakage.
+not proof that the entire archive is free of family leakage. The retrieval run
+reads historical explanations across the old splits; this is development work,
+not a new untouched holdout. Keep that exposure in later evaluation provenance.
 With no proposed assignments, split readiness is unassessed (`null`), not a pass.
 
 For #7/#8, consume the frozen report by audit ID, retain each match and its
@@ -91,3 +178,26 @@ new evidence. Changed code or inputs require a new run directory.
 The model is `sentence-transformers/all-MiniLM-L6-v2`, revision
 `1110a243fdf4706b3f48f1d95db1a4f5529b4d41`, loaded locally on CPU. The existing
 chunked encoder implementation is reused; there is no fitting to review labels.
+
+## Real-image diagnostic controls
+
+The three previously reviewed positive families are the teapot carton,
+number-plate prank and Clarkson/Porsche 928. Their known-family links are added
+**after** measuring retrieval, so supplying those links cannot manufacture a
+successful result. They are development controls, not an independent accuracy
+sample.
+
+Additional assistant visual inspection found these useful contrasts:
+
+| Pair | Visual evidence | Implication |
+| --- | --- | --- |
+| `1n4gbgg` / `1t55ci9` | Same three-panel reaction template, different writing: SCP island/routine versus childhood imagination and sociology. Image hash distances are only 3 and 0, despite the different references. | A near-image match can be a different joke. Preserve it as a candidate, never a confirmed copy. |
+| `1ja7tpy` / `1rpdvw4` | Same Family Guy “asking too many questions” template; one asks about horses in films, the other about energy drinks in bottles. | Shared format and mechanism need not mean interchangeable benchmark content. The implied questions differ. |
+| `1kn0cs2` / `1sdqoek` | Same first-date/Hello Kitty car-reveal comic at different resolutions, but the stored explanations emphasize different things. | Text disagreement does not establish a new joke; the resized image remains a useful retrieval signal. |
+
+These were selected by looking for archive image-hash neighbors with low
+explanation word overlap, then visually inspected after the retrieval settings
+were frozen. They demonstrate failure modes; they do not estimate precision or
+recall. They are assistant diagnostic annotations, not new human ground truth,
+and they do not replace any curator label or adjudicate every returned pair.
+Local evidence is under `data/backfill/duplicate-controls-v1/`.
