@@ -8,11 +8,13 @@ status; this document records direction and scope.
 
 ## Current direction
 
-The next milestone is **a bounded, reproducible pilot of the newer-content
-backfill**, with a report showing what was admitted, what was deferred, why, and
-what processing cost. The initial batch is frozen at 100 candidates from
-June 20–26, with a $1 admission-model cap. This is a development candidate
-set, not publication or a claim that unattended admission is validated.
+The first bounded newer-content pilot is complete: 100 June 20–26 candidates,
+43 automatic accepts, one rejection and 56 deferrals for about 23.3¢, within
+the frozen $1 admission-model cap. The next work is **targeted answer/suitability
+and duplicate improvements before chronological expansion**. See the
+[assessment](backfill-pilot-results.md), [#16](https://github.com/montagovian/basedBench/issues/16)
+and [#17](https://github.com/montagovian/basedBench/issues/17). This remains a
+development candidate set, not publication or proof of unattended quality.
 
 Move exact imitation of discretionary historical rejections off the critical
 path. Some valid items can reasonably be omitted from a curated collection.
@@ -42,11 +44,13 @@ recorded, with concrete same-topic false alarms and asset gaps retained. The
 [#7](https://github.com/montagovian/basedBench/issues/7) is also complete: six
 controls exercised generation, repair, rejection, deferral and safe continuation
 for about 1.8¢. Offline replay was identical and made no API calls; all 415 tests
-passed. Next is [#8](https://github.com/montagovian/basedBench/issues/8), running
-and assessing the frozen fresh batch. Of 100 candidates, 54 can reach model
-checks and 46 defer for evidence/source gaps or unresolved duplicate findings.
-There have been no fresh admission calls. Use the dedicated `admission_pilot`
-workflow; legacy ingestion and tracer commands are not its entry points.
+passed. [#8](https://github.com/montagovian/basedBench/issues/8) completed the fresh
+assessment: 54 candidates reached models and 46 deferred before spending.
+Inspection found no concrete issue in 30 accepted rows and flagged 13 for
+different reasons, including two copies of one missed duplicate. The fresh run
+made 195 Luna calls; zero-call replay preserved 466 files. All 424 tests passed.
+Use the dedicated `admission_pilot` workflow; legacy ingestion and tracer
+commands are not its entry points.
 
 ## Pilot work
 
@@ -72,6 +76,13 @@ absence of a detected defect should be reported as independent proof of quality.
 
 ## After a useful pilot
 
+The decision from #8 is to revise before expanding. Complete
+[#16](https://github.com/montagovian/basedBench/issues/16) (joke-connection
+coverage, substantive support and competing readings) and
+[#17](https://github.com/montagovian/basedBench/issues/17) (bordered copies and
+duplicate false matches), then reassess expansion in #9. This does not reopen
+the completed pilot or require a broad new human-review queue.
+
 | Issue | Work item | Done when | Depends on |
 | --- | --- | --- | --- |
 | [#9](https://github.com/montagovian/basedBench/issues/9) | Expand chronological backfill with coverage accounting | Resumable date batches account for discovered content, missing periods, processing outcomes and budget; policy changes create new versions. | [#8](https://github.com/montagovian/basedBench/issues/8) and an explicit decision to expand |
@@ -94,6 +105,10 @@ Changing prediction judges and recurring automatic ingestion also remain later
 work. They should not delay the first useful backfill batch.
 
 ## Completed foundation
+
+- [Fresh-batch assessment](backfill-pilot-results.md): 100 candidates, 195 Luna
+  calls, 23.3¢; all 54 model-reached cases inspected separately, with clear
+  denominators, source gaps, concrete weaknesses and follow-up decisions.
 
 - [Resumable admission pilot](admission-pilot.md): versioned components, bounded
   repair and spending, preserved human judgments and zero-call offline replay.

@@ -144,10 +144,13 @@ tampering and recovery after a response was saved but its pending marker remaine
 Actual interruption during a provider request was tested with a simulated
 cancelled request; the live experiment stopped between requests.
 
-## Prepared handoff to #8
+## Fresh batch assessed in #8
 
 The 100-candidate June 20–26 inventory is frozen with the integrated policy and
-a **$1 admission-model cap**. It has made **zero fresh model calls**.
+a **$1 admission-model cap**. The completed run made 195 Luna calls for
+**$0.2331608**, yielding 43 automatic accepts, one rejection and 56 deferrals.
+See the [fresh-batch assessment](backfill-pilot-results.md) for inspection,
+coverage, costs and the decision to revise checks before expanding.
 
 | Readiness | Candidates |
 | --- | ---: |
@@ -158,9 +161,9 @@ a **$1 admission-model cap**. It has made **zero fresh model calls**.
 | Total | 100 |
 
 Thus 32 candidates have preflight shortfalls and 20 have unresolved duplicate
-matches, overlapping on six: **46 will defer before model spending**. The 54
-eligible candidates may still reject or defer during later checks; readiness is
-not acceptance. All 100 remain in the report denominator. The early duplicate
+matches, overlapping on six: **46 deferred before model spending**. Of the 54
+eligible candidates, 43 were accepted, one rejected and ten deferred in later
+checks. All 100 remain in the report denominator. The early duplicate
 holds include known retrieval false alarms; conservative deferral loses coverage
 and is not a finding of intrinsic unsuitability.
 
@@ -169,14 +172,17 @@ Local artifacts:
 - `data/backfill/admission-controls-v1`: frozen controls, requests, responses and
   final report; experiment
   `6625a64efef6230443505c8cc71cd2e6268c51b02504398dba4ef5c8e2fa1cd9`.
-- `data/backfill/admission-june20-26-v1`: prepared fresh cases/assets/plan;
+- `data/backfill/admission-june20-26-v1`: frozen fresh cases/assets/plan and completed results;
   experiment `693a5150d40e61b740c85048211686e658bdc04949cde678a36106a9f7a1de61`.
 - `data/backfill/admission-analysis-v1`: checkpoint snapshots, file hashes,
   offline replay verification and separate assistant inspection notes.
+- `data/backfill/admission-june20-26-analysis-v1`: fresh assessment, casebook,
+  separate inspection notes and identical zero-call replay verification.
 
 Implementation and results remain in local, unpushed commits. Raw artifacts stay
-ignored. #7 completes the integration and control exercise; #8 executes and
-assesses the prepared fresh batch.
+ignored. #7 completed integration and the control exercise; #8 completed the
+fresh assessment. Follow-ups #16 and #17 address specific quality and duplicate
+gaps before a chronological-expansion decision.
 
 ## Commands
 
@@ -201,12 +207,12 @@ uv run --no-sync python -m basedbench.pipeline.admission_pilot prepare \
   --output data/backfill/admission-june20-26-v1 --budget-usd 1.00
 ```
 
-Issue #8 runs that prepared batch with the same `run` command and its frozen
-`--budget-usd 1.00`, then inspects admissions, exclusions, deferrals, coverage and
-cost. The report is a development artifact; its accepted rows are not a published
-benchmark release.
+Issue #8 ran that prepared batch with the same `run` command and its frozen
+`--budget-usd 1.00`, then inspected admissions, exclusions, deferrals, coverage
+and cost. Replaying the completed run makes zero model calls. The report is a
+development artifact; its accepted rows are not a published benchmark release.
 
-## Limits to carry into #8
+## Limits carried into the fresh assessment
 
 The answer workflow has known overreach and shared verifier errors. The content
 check has false deferrals and lacks adequate negative controls for several
