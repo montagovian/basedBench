@@ -83,6 +83,7 @@ def test_split_overlap_through_unassigned_member_and_pending_link():
     assert result['confirmed_families'] == [['a', 'b', 'c']]
     assert result['ready'] is False
     assert audit.split_audit({'a': 'train', 'c': 'train', 'd': 'train'}, edges)['ready']
+    assert audit.split_audit({}, edges)['ready'] is None
 
 
 def test_comment_selection_records_provenance_and_no_label_features():
@@ -137,3 +138,52 @@ def test_tampered_frozen_input_is_refused(tmp_path):
     (tmp_path / 'inputs.json').write_text('[{}]')
     with pytest.raises(ValueError, match='input changed'):
         audit.verify(tmp_path)
+
+
+def test_pair_sorting_keeps_crop_evidence_attached_to_correct_image(tmp_path, monkeypatch):
+    rows = [dict(post_id=p, pool=pool, text='', in_release=False,
+                 image={'status': 'ok', 'variants': []}) for p, pool in [('archive', 'legacy'), ('new', 'fresh')]]
+    frozen(tmp_path, rows, [])
+    monkeypatch.setattr(audit, 'text_neighbors', lambda *args: ([], {}))
+    monkeypatch.setattr(audit, 'image_evidence', lambda *args: {
+        'method': 'near_image', 'left_view': 'trim', 'right_view': 'full',
+        'left_crop': [10, 10, 90, 90], 'right_crop': [0, 0, 100, 100],
+        'pixel_difference': 2, 'dhash_distance': 1, 'ahash_distance': 0})
+    audit.run(tmp_path, tmp_path)
+    edge = json.loads((tmp_path / 'report.json').read_text())['edges'][0]
+    assert edge['left'] == 'archive'
+    assert edge['evidence'][0]['left_view'] == 'full'
+    assert edge['evidence'][0]['left_crop'] == [0, 0, 100, 100]
+    assert edge['evidence'][0]['query_id'] == 'new'
+
+
+def test_prepare_reads_available_inventory_images_without_changing_database(tmp_path):
+    import sqlite3
+    database = tmp_path / 'archive.db'
+    with sqlite3.connect(database) as db:
+        db.executescript('''
+            CREATE TABLE memes(post_id TEXT, title TEXT, local_image_path TEXT, permalink TEXT);
+            CREATE TABLE ground_truths(post_id TEXT, explanation TEXT);
+            CREATE TABLE reviews(post_id TEXT, status TEXT);
+            INSERT INTO memes VALUES ('old', 'old title', NULL, '/old');
+        ''')
+    before = file_hash(database)
+    inventory = tmp_path / 'inventory'
+    inventory.mkdir()
+    meme(inventory / 'fresh.png')
+    write_json(inventory / 'baseline.json', {'release_ids': [], 'posts': [{'post_id': 'old'}]})
+    write_json(inventory / 'candidates.json', [{
+        'post_id': 'new', 'title': 'new title',
+        'image': {'status': 'available', 'path': 'fresh.png', 'sha256': file_hash(inventory / 'fresh.png')}
+    }])
+    write_json(inventory / 'manifest.json', {'inventory_id': 'test', 'files': {
+        p.name: file_hash(p) for p in inventory.iterdir()
+    }})
+    families = tmp_path / 'families.json'
+    write_json(families, [])
+    output = tmp_path / 'audit'
+    audit.prepare(database, inventory, output, families)
+    rows = json.loads((output / 'inputs.json').read_text())
+    assert {r['post_id']: r['image']['status'] for r in rows} == {'old': 'missing', 'new': 'ok'}
+    assert file_hash(database) == before
+    assert audit.verify(output)['inventory_id'] == 'test'

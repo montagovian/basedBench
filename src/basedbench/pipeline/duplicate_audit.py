@@ -210,7 +210,8 @@ def split_audit(assignments: dict[str, str], edges: list[dict]) -> dict:
                and len(set(splits[root(e['left'])] + splits[root(e['right'])])) > 1]
     return {'confirmed_families': sorted(sorted(g) for g in members.values() if len(g) > 1),
             'cross_split_confirmed': violations, 'cross_split_pending': pending,
-            'ready': not violations and not pending,
+            'assigned_posts': len(assignments),
+            'ready': (not violations and not pending) if assignments else None,
             'scope': 'Only recorded links; absence of a match does not prove family independence.'}
 
 
@@ -261,6 +262,11 @@ def run(output: Path, model_cache: Path) -> dict:
     edges = {}
     def add(left, right, evidence, confirmed=False):
         key = tuple(sorted((left, right)))
+        if left > right and evidence['method'] == 'near_image':
+            evidence = dict(evidence)
+            for field in ('view', 'crop'):
+                evidence['left_' + field], evidence['right_' + field] = (
+                    evidence['right_' + field], evidence['left_' + field])
         if key not in edges:
             edges[key] = {'left': key[0], 'right': key[1], 'status': 'candidate', 'evidence': [],
                           'release_members': [p for p in key if by_id[p]['in_release']],

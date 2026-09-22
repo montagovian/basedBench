@@ -57,6 +57,7 @@ same-joke pairs can become confirmed edges and different-joke pairs can be remov
 from the pending constraints, retaining their evidence and decision provenance.
 The existing frozen evaluation splits are not rewritten. This is a scoped audit,
 not proof that the entire archive is free of family leakage.
+With no proposed assignments, split readiness is unassessed (`null`), not a pass.
 
 For #7/#8, consume the frozen report by audit ID, retain each match and its
 published-membership evidence, and distinguish potential redundancy from intrinsic
