@@ -29,15 +29,28 @@ replays existing calls at zero new model cost: only the bordered pair changes
 from accept to defer, yielding 41 accepts, one rejection and 58 deferrals in a
 separate v2 artifact. The original 43/1/56 outcomes remain frozen.
 
-The approved next step is [#20's human calibration](explanation-calibration.md):
-a prepared 50-case local packet with 20 targeted examples, 30 random cached
-examples and seven blinded answer pairs. It asks whether each explanation is
-sufficient to grade the same joke, with both-acceptable and uncertainty allowed.
-No new model calls were made. Human judgments are pending. The follow-on
-[#21 comparison](calibrated-comparison.md) separates a simpler Luna interface
-from one stronger-model condition, with repeats and a **$10 total ceiling**.
-It remains unlaunched until human calibration informs frozen recipes. The
-50-case packet is development evidence, not an untouched holdout.
+[#20's human calibration](explanation-calibration-results.md) is complete:
+50 cases, seven blinded answer pairs and two newly confirmed duplicate families.
+The random cached stratum has 25 ready, four repair and one unclear original;
+the targeted stratum has 12 ready and eight repair originals. Four prior repairs
+fix human-confirmed defects, two pairs are both acceptable and one pair remains
+inadequate. Assistant hypotheses are not substituted for those judgments.
+
+The [#21 comparison](calibrated-comparison-results.md) is also complete:
+**209 calls for 22.2¢**, below the $10 ceiling, with no API/validation errors.
+It separates the existing GPT-5.6 Luna checker, a simpler interface on 5.6 and
+the same interface on **GPT-6 Luna**, following the user's model update. Luna 6
+costs 38% less at the same interface in development but shows no clear quality
+win. All three still miss human-confirmed defects and object to some ready
+answers. The fresh sample retains 30 selected identities: 14 exposure/family
+holds, 16 paired checks, no replacements or fresh human accuracy labels.
+
+The immediate next experiment should address required decoding and visible
+referents while preserving human-ready controls and separating source support.
+These 50 human reviews provide direction; another broad annotation round or
+larger backfill is not yet justified. A more expensive capacity tier remains
+untested and would need a separately frozen comparison. #9 stays pending an
+explicit expansion decision. No challenger is promoted to automatic admission.
 
 Move exact imitation of discretionary historical rejections off the critical
 path. Some valid items can reasonably be omitted from a curated collection.
@@ -114,8 +127,12 @@ variant; any further answer experiment needs a separate, simpler comparison plan
 explicit packet coverage and unchanged historical model responses. Expansion in
 #9 still requires a later decision. This does not reopen the frozen pilot, tighten
 discretionary suitability, or require a broad human-review queue. The subsequently
-approved, bounded #20 calibration round is the immediate next step; #21 follows
-it. This is evaluation/calibration data, not a new production admission queue.
+approved, bounded #20 calibration and #21 model comparison are now complete.
+Their [results](calibrated-comparison-results.md) narrow the remaining work to
+human-confirmed decoding/specificity defects and false alarms, plus broader
+duplicate retrieval coverage. The model-version upgrade lowers cost but does
+not remove those defects. This remains evaluation/calibration evidence, not
+a new production admission queue or proof of unattended quality.
 
 | Issue | Work item | Done when | Depends on |
 | --- | --- | --- | --- |
@@ -140,11 +157,15 @@ work. They should not delay the first useful backfill batch.
 
 ## Completed foundation
 
-- [Explanation-calibration preparation](explanation-calibration.md): 50 local
-  cases, seven blinded pairs, zero new calls; focused review with append-only
-  feedback is ready. Human collection and the $10 comparison remain pending in
-  [#20](https://github.com/montagovian/basedBench/issues/20) and
-  [#21](https://github.com/montagovian/basedBench/issues/21).
+- [Human-calibrated Luna comparison](calibrated-comparison-results.md): three
+  development conditions, ten repeats each, 16 fresh paired cases after 14
+  exposure/family holds; 209 calls, 22.2¢, no API/validation errors. Simpler
+  contracts are reliable in this run and GPT-6 Luna is cheaper, but there is
+  no demonstrated quality win or automatic-admission promotion.
+- [Explanation calibration](explanation-calibration-results.md): all 50 cases
+  and seven blinded pairs reviewed; exact append-only human feedback frozen,
+  four confirmed repair wins, two both-acceptable pairs and two duplicate
+  families recovered. Preparation and analysis used zero new model calls.
 - [Direct claim comparison](claim-comparison-results.md): 20 exposed paired cases,
   48 Luna calls, 12.1¢; useful targeted findings but nine technical errors and
   failed human-ready retention. Completed negative promotion result.

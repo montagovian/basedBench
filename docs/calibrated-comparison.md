@@ -1,7 +1,9 @@
 # Bounded comparison after human calibration
 
 September 22, 2026 · [Issue #21](https://github.com/montagovian/basedBench/issues/21).
-**Human calibration complete; development recipes frozen.** Depends on the
+**Complete; [results and next decision](calibrated-comparison-results.md).**
+The experiment used 209 calls for $0.22198508, with no API/validation errors;
+neither challenger is promoted. Depends on the
 [50-case human calibration](explanation-calibration-results.md). The approved total
 ceiling is **$10**, covering all new model calls, retries and failures in this
 comparison. Preparing the human review spent $0. Existing experiments remain
@@ -126,7 +128,10 @@ usage releases the excess reservation. GPT-5.6 retains its established image
 bound. Unknown usage, unexpected cost or a fatal provider error stops new work.
 No assumptions about cached-input savings are needed to stay within the cap.
 
-The fresh phase may only start after this screen settles, with recipes and
-family-separated sampling frozen before output inspection. Its sample must also
-exclude the newly confirmed monitor and police/curfew families. Full comparison
-results and any coverage shortfall belong in a separate result report.
+The fresh phase started after the screen settled, with recipes and sampling
+frozen before output inspection. Broader exposure/family screening held 14 of
+the 30 preselected cases without replacement; the remaining 16 received paired
+checks. The newly confirmed monitor and police/curfew families were included in
+the retrieval references. The [result report](calibrated-comparison-results.md)
+records all denominators, disagreements, costs and remaining limits. No fresh
+human labels, new repairs or expansion decision are inferred from model passes.
