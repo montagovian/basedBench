@@ -86,6 +86,98 @@ The model alias and actual returned model IDs are retained; no dated snapshot is
 invented. Estimates are not provider invoices. Unknown usage remains visible
 and is conservatively reserved.
 
+## Completed control run
+
+The six-case development smoke test made **16 Luna calls**, costing an estimated
+**$0.01821925 (about 1.8¢)** within its separate 25¢ cap. Conservative accounting
+was $0.01822165. Every response returned `gpt-5.6-luna`; there were no provider or
+parsing errors, unknown-usage calls, pending requests or allowance violations.
+
+| Control | Automatic outcome | What happened |
+| --- | --- | --- |
+| RCA cables / Van Gogh | Defer | The checker agreed the explanation was correct, but found only two substantive supporting comments against the three-comment requirement. The human-ready answer and acceptance label were preserved. |
+| Freezer bags | Accept | Starting with no supplied answer, the workflow generated and checked the literal-misunderstanding explanation, then passed minimum suitability. |
+| Harry Potter's greatest achievement | Accept after one repair | The checker caught the missing comparison between the sarcastic comeback and Harry's heroic deeds. One repair restored it; the subsequent answer and suitability checks passed. The original explanation and its negative human label remain intact. |
+| Spicy ramen | Reject | The visible slur triggered the established content exclusion, agreeing with the human label. No answer or suitability calls followed. |
+| Superpowered injury | Defer | The model returned a policy boundary; the unresolved human judgment was also preserved. No answer or suitability calls followed. |
+| Time-freezing snap | Defer | The answer check passed and the model found a recoverable suitability task, but the existing human value failure kept this disagreement unresolved. That label was not changed to a positive. |
+
+These are **2 automatic accepts, 1 rejection and 3 deferrals**, not an accuracy
+estimate. Duplicate findings for these historical controls are explicitly
+isolated passing fixtures so they can exercise the remaining workflow; they do
+not establish that the items are absent from the published collection. The
+freezer-bags generation variant also does not inherit human validation of its
+new wording from a previously reviewed answer.
+
+Assistant inspection of the saved images, explanations and supporting evidence
+is recorded separately from model outputs and human gold. It confirms that the
+Harry Potter repair added the omitted greatest-achievement framing, but exposes
+an inconsistency in the verifier: its setup field calls the quoted comeback
+Snape's line, while its joke-connection field correctly attributes it to Harry.
+The proposed repair itself attributes the comeback to Harry, although Snape's
+demand for respectful address remains implicit. A passing verifier is still
+fallible; #8 must inspect accepted explanations and their evidence rather than
+treat the pass field as proof.
+
+The RCA control exposes a different cost: a hard evidence-count rule can defer
+a correct answer even with two clear, high-scoring explanations. That is a
+coverage loss caused by the current requirement, not a demonstrated answer
+defect. Preserve this distinction when assessing fresh deferrals; this smoke
+test did not change the frozen three-comment rule.
+
+### Resume and preservation checks
+
+The live run deliberately stopped after two calls. Resuming added 14 calls and
+left the earlier responses and requests byte-for-byte unchanged. A subsequent
+offline replay used a client that would fail on any attempted provider call:
+it made zero calls and reproduced every artifact byte-for-byte, including the
+report, requests, responses, cases, plan and assets (excluding the run lock).
+The corpus database, review events, reassessment feedback and historical examples
+also retained their original hashes. Human labels matched the frozen controls;
+reviewer notes were absent from all model requests.
+
+**All 415 tests passed**, including 26 admission-pilot cases covering generation,
+bounded repair, editorial failures, human disagreements, missing evidence,
+published-copy versus unpublished-copy routing, budget exhaustion, fatal
+provider stops, checkpoint continuation, mid-request interruption, response
+tampering and recovery after a response was saved but its pending marker remained.
+Actual interruption during a provider request was tested with a simulated
+cancelled request; the live experiment stopped between requests.
+
+## Prepared handoff to #8
+
+The 100-candidate June 20–26 inventory is frozen with the integrated policy and
+a **$1 admission-model cap**. It has made **zero fresh model calls**.
+
+| Readiness | Candidates |
+| --- | ---: |
+| Ready for model checks | 54 |
+| Evidence/source shortfall only | 26 |
+| Unresolved duplicate match only | 14 |
+| Both shortfalls | 6 |
+| Total | 100 |
+
+Thus 32 candidates have preflight shortfalls and 20 have unresolved duplicate
+matches, overlapping on six: **46 will defer before model spending**. The 54
+eligible candidates may still reject or defer during later checks; readiness is
+not acceptance. All 100 remain in the report denominator. The early duplicate
+holds include known retrieval false alarms; conservative deferral loses coverage
+and is not a finding of intrinsic unsuitability.
+
+Local artifacts:
+
+- `data/backfill/admission-controls-v1`: frozen controls, requests, responses and
+  final report; experiment
+  `6625a64efef6230443505c8cc71cd2e6268c51b02504398dba4ef5c8e2fa1cd9`.
+- `data/backfill/admission-june20-26-v1`: prepared fresh cases/assets/plan;
+  experiment `693a5150d40e61b740c85048211686e658bdc04949cde678a36106a9f7a1de61`.
+- `data/backfill/admission-analysis-v1`: checkpoint snapshots, file hashes,
+  offline replay verification and separate assistant inspection notes.
+
+Implementation and results remain in local, unpushed commits. Raw artifacts stay
+ignored. #7 completes the integration and control exercise; #8 executes and
+assesses the prepared fresh batch.
+
 ## Commands
 
 All raw artifacts remain in ignored local `data/` directories.

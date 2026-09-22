@@ -10,8 +10,8 @@ status; this document records direction and scope.
 
 The next milestone is **a bounded, reproducible pilot of the newer-content
 backfill**, with a report showing what was admitted, what was deferred, why, and
-what processing cost. A suggested initial ceiling is 100 candidates; choose the
-source window and spending cap before execution. This is a development candidate
+what processing cost. The initial batch is frozen at 100 candidates from
+June 20–26, with a $1 admission-model cap. This is a development candidate
 set, not publication or a claim that unattended admission is validated.
 
 Move exact imitation of discretionary historical rejections off the critical
@@ -37,10 +37,16 @@ integration: all three selected exclusions caught, with two false deferrals and
 untested-category limits retained. The [duplicate audit](duplicate-audit.md) in
 [#6](https://github.com/montagovian/basedBench/issues/6) is complete: all three
 known families retrieved, one exact fresh-copy pair and 28 uncertain match pairs
-recorded, with concrete same-topic false alarms and asset gaps retained. Next is
-[#7](https://github.com/montagovian/basedBench/issues/7), assembling the resumable
-admission pilot. Existing ingestion and tracer commands have not yet been
-qualified as that workflow.
+recorded, with concrete same-topic false alarms and asset gaps retained. The
+[resumable admission pilot](admission-pilot.md) in
+[#7](https://github.com/montagovian/basedBench/issues/7) is also complete: six
+controls exercised generation, repair, rejection, deferral and safe continuation
+for about 1.8¢. Offline replay was identical and made no API calls; all 415 tests
+passed. Next is [#8](https://github.com/montagovian/basedBench/issues/8), running
+and assessing the frozen fresh batch. Of 100 candidates, 54 can reach model
+checks and 46 defer for evidence/source gaps or unresolved duplicate findings.
+There have been no fresh admission calls. Use the dedicated `admission_pilot`
+workflow; legacy ingestion and tracer commands are not its entry points.
 
 ## Pilot work
 
@@ -59,9 +65,9 @@ written meanings, generates answers, attempts bounded repairs and verifies them
 against images/comments. Its development results expose false alarms and shared
 model blind spots; its model approvals are not an unattended quality guarantee.
 
-[#7](https://github.com/montagovian/basedBench/issues/7) should preserve suitability findings without requiring perfect agreement
-with every historical tough reject. The pilot policy still needs an explicit
-minimum standard and a deferral path. No model agreement, confidence score or
+The [pilot policy](admission-pilot.md) preserves suitability findings without
+requiring perfect agreement with every historical tough reject. It defines a
+minimum recoverable joke task and retains a deferral path. No model agreement, confidence score or
 absence of a detected defect should be reported as independent proof of quality.
 
 ## After a useful pilot
@@ -89,6 +95,10 @@ work. They should not delay the first useful backfill batch.
 
 ## Completed foundation
 
+- [Resumable admission pilot](admission-pilot.md): versioned components, bounded
+  repair and spending, preserved human judgments and zero-call offline replay.
+  Six controls produced two automatic accepts, one rejection and three deferrals;
+  the evidence-count restriction and a verifier inconsistency remain visible.
 - [Duplicate and joke-family audit](duplicate-audit.md): local image and text
   retrieval, no paid calls; exact-copy evidence is separate from candidate
   family links, publication membership and intrinsic quality.
