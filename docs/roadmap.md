@@ -1,6 +1,6 @@
 # BasedBench roadmap and work backlog
 
-Updated September 21, 2026. This is the short work index; detailed plans and
+Updated September 22, 2026. This is the short work index; detailed plans and
 experiment reports remain the design record. The
 [GitHub roadmap tracker](https://github.com/montagovian/basedBench/issues/15)
 links all twelve work items. GitHub issues are the source of truth for work
@@ -10,8 +10,13 @@ status; this document records direction and scope.
 
 The first bounded newer-content pilot is complete: 100 June 20–26 candidates,
 43 automatic accepts, one rejection and 56 deferrals for about 23.3¢, within
-the frozen $1 admission-model cap. The next work is **targeted answer/suitability
-and duplicate improvements before chronological expansion**. See the
+the frozen $1 admission-model cap. The bounded follow-ups are complete:
+[#16's source-first comparison](connection-comparison-results.md) produced useful
+repairs for 20.0¢ but did not meet the decoding/intent/support targets;
+[#17's local comparison](duplicate-comparison-results.md) recovered the bordered
+copy through image and explanation retrieval at zero paid-call cost. **Do not
+promote the answer variant or expand automatically yet.** Preserve useful simple
+items and target the remaining concrete explanation defects. See the
 [assessment](backfill-pilot-results.md), [#16](https://github.com/montagovian/basedBench/issues/16)
 and [#17](https://github.com/montagovian/basedBench/issues/17). This remains a
 development candidate set, not publication or proof of unattended quality.
@@ -76,12 +81,15 @@ absence of a detected defect should be reported as independent proof of quality.
 
 ## After a useful pilot
 
-The decision from #8 is to revise before expanding. Complete
-[#16](https://github.com/montagovian/basedBench/issues/16) (joke-connection
-coverage, substantive support and competing readings) and
-[#17](https://github.com/montagovian/basedBench/issues/17) (bordered copies and
-duplicate false matches), then reassess expansion in #9. This does not reopen
-the completed pilot or require a broad new human-review queue.
+The decision from #8 remains to revise before expanding. The bounded experiments
+in [#16](https://github.com/montagovian/basedBench/issues/16) and
+[#17](https://github.com/montagovian/basedBench/issues/17) are complete. The
+[answer results](connection-comparison-results.md) do not justify promoting the
+heavier checker or an unseen admission validation yet. The
+[duplicate results](duplicate-comparison-results.md) support broader image
+retrieval and retaining both text evidence views, with explicit adjudication.
+Expansion in #9 still requires a later decision. This does not reopen the frozen
+pilot, tighten discretionary suitability, or require a broad human-review queue.
 
 | Issue | Work item | Done when | Depends on |
 | --- | --- | --- | --- |
@@ -105,6 +113,13 @@ Changing prediction judges and recurring automatic ingestion also remain later
 work. They should not delay the first useful backfill batch.
 
 ## Completed foundation
+
+- [Targeted explanation comparison](connection-comparison-results.md): 28 exposed
+  cases, 92 Luna calls, 20.0¢; three useful verified repairs and retained controls,
+  with decoding, intent and substantive-support failures still visible.
+- [Bordered-copy comparison](duplicate-comparison-results.md): 56 local records,
+  20 pair controls, no paid calls; missed copy recovered through image and text,
+  with known false matches and a lost semantic family link kept separate.
 
 - [Fresh-batch assessment](backfill-pilot-results.md): 100 candidates, 195 Luna
   calls, 23.3¢; all 54 model-reached cases inspected separately, with clear
@@ -136,8 +151,8 @@ work. They should not delay the first useful backfill batch.
   about 1.2¢; the best default verdicts caught one of five value negatives while
   keeping 17 positives. This is completed research, not a production-quality gate.
 
-Fresh source collection is complete for the bounded inventory. No new-content
-admission batch or candidate release has been completed.
+Fresh source collection and the first bounded development admission assessment
+are complete. No candidate release has been completed.
 
 ## Ticket workflow
 

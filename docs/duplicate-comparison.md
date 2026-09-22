@@ -4,6 +4,8 @@ Issue [#17](https://github.com/montagovian/basedBench/issues/17). Predeclared
 September 22, 2026, before running this comparison. Complete the explanation
 comparison in #16 first. **No paid model calls; $0 model cost.**
 
+Completed: [results and next decision](duplicate-comparison-results.md).
+
 ## Fixed comparison
 
 Preserve `duplicate-audit-v1` and its old outcomes. The regression packet selects
