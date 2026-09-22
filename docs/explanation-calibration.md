@@ -4,8 +4,9 @@ September 22, 2026. The approved next step is a bounded human calibration round,
 followed by a more informative model comparison under a **$10 total ceiling**.
 Tracked in [#20](https://github.com/montagovian/basedBench/issues/20) and
 [#21](https://github.com/montagovian/basedBench/issues/21), respectively.
-The review packet is prepared; human collection and the paid comparison are
-**pending**. No new model calls have been made.
+Human collection is **complete**: all 50 cases have saved judgments. See the
+[results](explanation-calibration-results.md). The separate paid comparison
+follows the frozen feedback; packet preparation and human analysis cost $0.
 
 ## The question
 

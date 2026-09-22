@@ -1,8 +1,8 @@
 # Bounded comparison after human calibration
 
 September 22, 2026 · [Issue #21](https://github.com/montagovian/basedBench/issues/21).
-**Planned, not launched.** Depends on the
-[50-case human calibration](explanation-calibration.md). The approved total
+**Human calibration complete; development recipes frozen.** Depends on the
+[50-case human calibration](explanation-calibration-results.md). The approved total
 ceiling is **$10**, covering all new model calls, retries and failures in this
 comparison. Preparing the human review spent $0. Existing experiments remain
 frozen; #18's quote-heavy variant is not being promoted.
@@ -16,9 +16,9 @@ competing interpretations or substantive source support. Test these separately:
 
 | Condition | Purpose |
 | --- | --- |
-| Existing Luna checker | Preserve the inexpensive baseline and its concrete failure cases. |
-| Luna with a simpler checking interface | Measure the interface change at fixed model capacity. |
-| One stronger model with that same simpler interface | Measure additional capacity at fixed instructions and evidence. |
+| GPT-5.6 Luna, existing checker | Preserve the inexpensive baseline and its concrete failure cases. |
+| GPT-5.6 Luna, simpler checking interface | Measure the interface change at fixed model. |
+| GPT-6 Luna, same simpler interface | Measure the newer model at fixed instructions and evidence. |
 
 Luna remains the default. Before the first paid call, record the exact model IDs,
 current prices/availability, reasoning settings, prompt/schema hashes, image
@@ -85,3 +85,48 @@ support. Choose the next backfill step from that tradeoff. A model-only win,
 extra verbosity or success on exposed examples alone does not authorize automatic
 publication or establish generalization. Negative results still complete the
 bounded experiment and should be recorded on its issue.
+
+## Frozen execution details after the GPT-6 Luna update
+
+The user explicitly requested investigation of GPT-6 Luna after completing the
+review. Current official [GPT-6 Luna documentation](https://developers.openai.com/api/docs/models/gpt-6-luna)
+and [pricing](https://developers.openai.com/api/docs/pricing), checked September
+22, list standard prices of $0.10 input, $0.01 cached input, $0.125 cache writes
+and $0.50 output per million tokens. The
+[GPT-5.6 Luna page](https://developers.openai.com/api/docs/models/gpt-5.6-luna)
+lists $0.20/$0.02/$1.20 for input/cached/output and cache writes at 1.25 times
+input. Both exact model IDs returned successfully from this account's read-only
+models endpoint. GPT-6 Luna supports image input and structured output through
+Responses. Performance remains an experimental question.
+
+The third arm now tests a **model-version upgrade**, superseding the earlier
+unspecified stronger-model condition. Keep three conditions and the original
+phase/total caps. This run does not measure a more expensive capacity tier.
+
+`data/backfill/calibrated-luna-dev-v1/` freezes all 50 human-reviewed originals,
+177 requests, the feedback snapshot identity, code/prompt/schema/input hashes,
+prices and bounds. One 49-frame GIF is an input hold for all arms, without
+silently choosing one frame or replacing it. The other 49 cases receive three
+checks; ten family-distinct cases (five ready, four repair, one unclear) receive
+one repeat per condition. Counts retain the animated item; static-only metrics
+must disclose that exclusion.
+
+All conditions use `reasoning.effort=medium`, high-detail image input, a 2,400-token
+output cap, standard service, no tools/browsing, no automatic retries and at most
+three concurrent requests. Human labels/notes and alternate answers are excluded
+from request payloads. The simplified schema separates answer adequacy from
+substantive comment support; combined acceptance still requires both. Report
+combined-gate results alongside separate adequacy findings, since the old schema
+is not a fully separate human-readiness check.
+
+The published vision table does not yet specify GPT-6 Luna's image multiplier.
+For each GPT-6 request, reserve the entire documented 1.05M context at the
+higher long-context cache-write rate, plus the full output allowance; actual
+usage releases the excess reservation. GPT-5.6 retains its established image
+bound. Unknown usage, unexpected cost or a fatal provider error stops new work.
+No assumptions about cached-input savings are needed to stay within the cap.
+
+The fresh phase may only start after this screen settles, with recipes and
+family-separated sampling frozen before output inspection. Its sample must also
+exclude the newly confirmed monitor and police/curfew families. Full comparison
+results and any coverage shortfall belong in a separate result report.
