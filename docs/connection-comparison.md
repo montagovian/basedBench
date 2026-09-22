@@ -74,3 +74,31 @@ Each run freezes the packet, assets, prompts, code hashes, prices, request bound
 requests, raw responses and usage. Offline replay verifies result hashes and
 reuses calls. Baseline inputs, response artifacts and human feedback are hashed
 before and after. Local inspection and a results report follow the completed run.
+
+## Response-schema correction (declared before continuation calls)
+
+The first pass exposed omitted/duplicate comment IDs and paraphrased connection
+keys. Its strict parser correctly retains these as technical errors, but the
+request schema left these avoidable mistakes expressible. After that pass finishes,
+freeze a **separate `connection-schema-v2` run containing exactly its technical-error
+cases**. Use objects keyed by every supplied comment ID and mapped connection key,
+with all keys required. Preserve the original prompts and semantic validators.
+Do not repeat valid successes or semantic holds to seek better verdicts.
+
+This is an engineering correction, not a semantic prompt revision or new unseen
+experiment. Responses are new samples; differences beyond the schema correction
+cannot be causally attributed to it. Keep the full first pass and report both
+versions, including remaining semantic errors and contradictory outputs.
+
+The second run may use three concurrent case branches. Its frozen allowance is
+**$0.25 minus the first run's entire conservative accounted cost**, including
+any unknown usage. Prior reports are hashed and rechecked on resume. The same
+per-call output limits, one-repair limit and Luna-only/no-retry policy apply.
+No third run is planned. Both runs share the original $0.25 ceiling.
+
+```sh
+uv run python -m basedbench.pipeline.connection_schema_eval prepare \
+  data/backfill/connection-eval-v1 data/backfill/connection-schema-v2
+uv run python -m basedbench.pipeline.connection_schema_eval run \
+  data/backfill/connection-schema-v2
+```
