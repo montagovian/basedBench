@@ -5,7 +5,9 @@ import argparse
 from collections import Counter, defaultdict
 import html
 import json
+import os
 from pathlib import Path
+from urllib.parse import quote
 
 from basedbench.pipeline import connection_eval as evaluation
 from basedbench.pipeline.curation_corpus import file_hash, write_json
@@ -93,6 +95,7 @@ def build(run: Path, output: Path, inspection: Path | None = None, continuation:
         cid = case['case_id']
         result = results[cid]
         path = (run / 'assets' / case['input']['image_sha256']).resolve()
+        image_url = quote(os.path.relpath(path, output.resolve()))
         calls = []
         versions = [(run, initial_results[cid])]
         if result_runs[cid] != run:
@@ -104,7 +107,7 @@ def build(run: Path, output: Path, inspection: Path | None = None, continuation:
                 calls.append(f'<details><summary>{esc(directory.name)}: {esc(stage)} raw model output</summary><pre>{esc(raw.get("output_text", raw.get("error")))}</pre></details>')
         blocks.append(f'''<article id="{esc(cid)}"><h2>{esc(cid)} · {esc(case['group'])}</h2>
         <p>Baseline {esc(row['baseline_verdict'])}; new check {esc(row['variant_verdict'])}; final {esc(row['final_status'])}</p>
-        <div class="pair"><img src="{path.as_uri()}" alt="Source meme {esc(cid)}"><div>
+        <div class="pair"><img src="{image_url}" alt="Source meme {esc(cid)}"><div>
         <h3>Original proposal</h3><p>{esc(case['input']['explanation'])}</p>
         <h3>Final proposal (model approval only)</h3><p>{esc(result['explanation'])}</p>
         <h3>Separate assistant inspection</h3><pre>{esc(json.dumps(row['inspection'],ensure_ascii=False,indent=2))}</pre></div></div>

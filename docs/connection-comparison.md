@@ -4,6 +4,8 @@ Issue [#16](https://github.com/montagovian/basedBench/issues/16). Predeclared
 September 22, 2026, before model calls. This is a separate experiment, not an
 admission-policy update. Frozen runs and all human judgments remain unchanged.
 
+Completed: [results and promotion decision](connection-comparison-results.md).
+
 ## Hypothesis and fixed packet
 
 Establishing essential joke connections, substantive comment contributions and
