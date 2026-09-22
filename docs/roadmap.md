@@ -29,6 +29,16 @@ replays existing calls at zero new model cost: only the bordered pair changes
 from accept to defer, yielding 41 accepts, one rejection and 58 deferrals in a
 separate v2 artifact. The original 43/1/56 outcomes remain frozen.
 
+The approved next step is [#20's human calibration](explanation-calibration.md):
+a prepared 50-case local packet with 20 targeted examples, 30 random cached
+examples and seven blinded answer pairs. It asks whether each explanation is
+sufficient to grade the same joke, with both-acceptable and uncertainty allowed.
+No new model calls were made. Human judgments are pending. The follow-on
+[#21 comparison](calibrated-comparison.md) separates a simpler Luna interface
+from one stronger-model condition, with repeats and a **$10 total ceiling**.
+It remains unlaunched until human calibration informs frozen recipes. The
+50-case packet is development evidence, not an untouched holdout.
+
 Move exact imitation of discretionary historical rejections off the critical
 path. Some valid items can reasonably be omitted from a curated collection.
 Historical disagreement is not automatically a dataset defect. Prioritize
@@ -103,7 +113,9 @@ variant; any further answer experiment needs a separate, simpler comparison plan
 [#19](admission-v2-results.md) completes the duplicate evidence integration with
 explicit packet coverage and unchanged historical model responses. Expansion in
 #9 still requires a later decision. This does not reopen the frozen pilot, tighten
-discretionary suitability, or require a broad human-review queue.
+discretionary suitability, or require a broad human-review queue. The subsequently
+approved, bounded #20 calibration round is the immediate next step; #21 follows
+it. This is evaluation/calibration data, not a new production admission queue.
 
 | Issue | Work item | Done when | Depends on |
 | --- | --- | --- | --- |
@@ -128,6 +140,11 @@ work. They should not delay the first useful backfill batch.
 
 ## Completed foundation
 
+- [Explanation-calibration preparation](explanation-calibration.md): 50 local
+  cases, seven blinded pairs, zero new calls; focused review with append-only
+  feedback is ready. Human collection and the $10 comparison remain pending in
+  [#20](https://github.com/montagovian/basedBench/issues/20) and
+  [#21](https://github.com/montagovian/basedBench/issues/21).
 - [Direct claim comparison](claim-comparison-results.md): 20 exposed paired cases,
   48 Luna calls, 12.1¢; useful targeted findings but nine technical errors and
   failed human-ready retention. Completed negative promotion result.
