@@ -21,6 +21,14 @@ items and target the remaining concrete explanation defects. See the
 and [#17](https://github.com/montagovian/basedBench/issues/17). This remains a
 development candidate set, not publication or proof of unattended quality.
 
+The next bounded [direct-claim comparison, #18](claim-comparison-results.md), is
+also complete: 20 paired cases, 48 Luna calls and 12.1¢. It catches some concrete
+defects but fails reliability, support/intent and human-ready retention targets;
+no unseen admission run follows. The [#19 duplicate integration](admission-v2-results.md)
+replays existing calls at zero new model cost: only the bordered pair changes
+from accept to defer, yielding 41 accepts, one rejection and 58 deferrals in a
+separate v2 artifact. The original 43/1/56 outcomes remain frozen.
+
 Move exact imitation of discretionary historical rejections off the critical
 path. Some valid items can reasonably be omitted from a curated collection.
 Historical disagreement is not automatically a dataset defect. Prioritize
@@ -88,8 +96,14 @@ in [#16](https://github.com/montagovian/basedBench/issues/16) and
 heavier checker or an unseen admission validation yet. The
 [duplicate results](duplicate-comparison-results.md) support broader image
 retrieval and retaining both text evidence views, with explicit adjudication.
-Expansion in #9 still requires a later decision. This does not reopen the frozen
-pilot, tighten discretionary suitability, or require a broad human-review queue.
+The narrower [#18 comparison](claim-comparison-results.md) also does not meet its
+promotion targets. Its quote-heavy contract blocks useful answers for formatting
+errors while semantic misses and human-ready false alarms remain. Stop that
+variant; any further answer experiment needs a separate, simpler comparison plan.
+[#19](admission-v2-results.md) completes the duplicate evidence integration with
+explicit packet coverage and unchanged historical model responses. Expansion in
+#9 still requires a later decision. This does not reopen the frozen pilot, tighten
+discretionary suitability, or require a broad human-review queue.
 
 | Issue | Work item | Done when | Depends on |
 | --- | --- | --- | --- |
@@ -114,6 +128,12 @@ work. They should not delay the first useful backfill batch.
 
 ## Completed foundation
 
+- [Direct claim comparison](claim-comparison-results.md): 20 exposed paired cases,
+  48 Luna calls, 12.1¢; useful targeted findings but nine technical errors and
+  failed human-ready retention. Completed negative promotion result.
+- [Admission v2 duplicate integration](admission-v2-results.md): zero new calls,
+  187 frozen responses reused; the bordered pair now defers, with 98 other
+  outcomes unchanged and all prior retrieval evidence retained.
 - [Targeted explanation comparison](connection-comparison-results.md): 28 exposed
   cases, 92 Luna calls, 20.0¢; three useful verified repairs and retained controls,
   with decoding, intent and substantive-support failures still visible.

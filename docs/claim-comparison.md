@@ -5,6 +5,8 @@ Predeclared September 22, 2026, before calls. This follows the negative promotio
 result in [#16](connection-comparison-results.md). One bounded development
 experiment; no suitability change, automatic expansion, or publication.
 
+Completed: [paired results and decision](claim-comparison-results.md).
+
 ## Hypothesis and comparison
 
 Directly matching required connections to literal answer spans, and substantive

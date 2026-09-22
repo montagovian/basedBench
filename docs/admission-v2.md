@@ -5,6 +5,8 @@ Predeclared September 22, 2026. Local integration following
 [#17](duplicate-comparison-results.md), with **zero paid calls**. The experimental
 claim checker is not promoted by this work.
 
+Completed: [offline replay results](admission-v2-results.md).
+
 Build an explicit versioned admission wrapper around the frozen v1 evaluator.
 Merge the original full-audit evidence with the additional image-window retrieval
 and the union of both semantic views from the completed local comparison. Keep
