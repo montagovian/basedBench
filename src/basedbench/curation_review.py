@@ -281,8 +281,9 @@ class ReviewStore:
                     "context": self.context(request.post_id, request.reveal) if request.kind == "reveal" else None}
 
 
-def make_server(packet: Path, port: int) -> ThreadingHTTPServer:
-    store = ReviewStore(packet)
+def make_server(packet: Path, port: int, *, store: ReviewStore | None = None,
+                static_dir: Path = STATIC) -> ThreadingHTTPServer:
+    store = store if store is not None else ReviewStore(packet)
 
     class Handler(BaseHTTPRequestHandler):
         def log_message(self, *_):
@@ -326,7 +327,8 @@ def make_server(packet: Path, port: int) -> ThreadingHTTPServer:
             try:
                 if path in static:
                     name, mime = static[path]
-                    self.reply(200, (STATIC / name).read_bytes(), mime)
+                    asset = static_dir / name
+                    self.reply(200, (asset if asset.is_file() else STATIC / name).read_bytes(), mime)
                 elif path == "/api/cases":
                     self.reply(200, store.catalog())
                 elif path.startswith("/image/") and path.removeprefix("/image/") in store.cases:
