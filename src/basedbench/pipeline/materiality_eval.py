@@ -37,7 +37,8 @@ minority embellishment, fictional accusation or joke as established fact.
 Use uncertain when an essential connection or competing core readings cannot
 be resolved."""
 _paragraphs = calibrated.SIMPLE.split('\n\n')
-assert _paragraphs[2].startswith('Pass concise paraphrases')
+if not _paragraphs[2].startswith('Pass concise paraphrases'):
+    raise ValueError("Materiality source paragraph has changed")
 MATERIALITY = '\n\n'.join([*_paragraphs[:2], PARAGRAPH, *_paragraphs[3:]])
 
 
@@ -135,7 +136,8 @@ def prepare(source, human, access, output):
                 jobs.append({'key': key, 'case_id': c['case_id'], 'arm': arm, 'repeat': repeat,
                              'model': MODEL, 'request_sha256': digest(body)})
     jobs.sort(key=lambda j: digest([VERSION, 'dispatch', j['key']]))
-    assert len(jobs) == 56
+    if len(jobs) != 56:
+        raise ValueError("Materiality plan must contain exactly 56 jobs")
     plan = {'version': VERSION, 'phase': 'exposed_materiality_development', 'arms': list(ARMS), 'model': MODEL,
             'jobs': jobs, 'max_calls': 56, 'budget_usd': 1., 'max_concurrency': 3, 'automatic_retries': 0,
             'request_bounds_usd': bounds, 'prices': capacity.PRICES[MODEL], 'prices_checked_on': '2026-09-23',
@@ -148,7 +150,7 @@ def prepare(source, human, access, output):
             'human_snapshot_manifest_sha256': file_hash(human / 'manifest.json'),
             'input_hashes': {c['case_id']: digest(c['input']) for c in cases}, 'code_hashes': code_hashes(),
             'plan_document_sha256': file_hash(Path('docs/materiality-comparison-plan.md')),
-            'criteria': {'primary_both_checks': 3, 'ready_first_pass': 8, 'ready_repeat_pass': 5,
+            'criteria': {'primary_both_checks': 3, 'ready_first_pass': 8, 'ready_repeat_pass': 5,  # nosec B105
                          'repair_first_fail_min': 8, 'adequacy_flips_max': 1, 'no_more_flips_than_baseline': True,
                          'technical_errors_max': 0, 'matching_rationale_and_stress_inspection_required': True},
             'files': {str(p.relative_to(output)): file_hash(p) for p in sorted(output.rglob('*')) if p.is_file()}}

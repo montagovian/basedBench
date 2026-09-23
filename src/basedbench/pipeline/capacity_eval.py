@@ -118,7 +118,8 @@ def prepare(source, output, access):
                 jobs.append({'key': key, 'case_id': c['case_id'], 'arm': arm, 'repeat': repeat,
                              'model': model, 'request_sha256': digest(body)})
     jobs.sort(key=lambda j: digest([VERSION, 'dispatch', j['key']]))
-    assert len(jobs) == 52
+    if len(jobs) != 52:
+        raise ValueError("Capacity plan must contain exactly 52 jobs")
     plan = {'version': VERSION, 'phase': 'exposed_capacity_development', 'arms': list(MODELS),
             'models': MODELS, 'jobs': jobs, 'max_calls': 52, 'budget_usd': 10.,
             'max_concurrency': 3, 'automatic_retries': 0, 'request_bounds_usd': bounds,

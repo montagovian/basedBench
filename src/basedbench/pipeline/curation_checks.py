@@ -37,19 +37,19 @@ use it to check visual facts. Do not browse or use knowledge of published benchm
 CHECKS = {
     "content_policy": {
         "instructions": "Is the candidate suitable under the publication content rule? Assess the candidate meme, not unrelated commenters or reference examples. Explicit sexual acts, exposed sexual anatomy, hate/slurs, doxxing and graphic gore fail. Mentioning sex, mild innuendo, dark humor, politics or a historical reference alone do not fail.",
-        "criteria": {"pass": "Available evidence contains no excluded publication content.",
+        "criteria": {"pass": "Available evidence contains no excluded publication content.",  # nosec B105
                      "fail": "Available evidence establishes excluded publication content in the candidate.",
                      "uncertain": "A specific content-policy ambiguity cannot be resolved from the supplied evidence."},
     },
     "ground_truth": {
         "instructions": "Does the existing explanation recover the same core joke supported by the substantive source comments and, when supplied, the image? Check agreement, claim support and visual consistency jointly. Recognition of a person/topic alone is insufficient when the setup or implication is missing. Fail a missing central setup, an invented material claim, a commenter's extra joke promoted to ground truth, or a material contradiction. Do not fail harmless paraphrases or missing nonessential trivia. Vote totals alone are not consensus. Do not rewrite the answer mentally and then pass it.",
-        "criteria": {"pass": "The explanation as written captures the supported core joke, with no material omission, unsupported addition or contradiction.",
+        "criteria": {"pass": "The explanation as written captures the supported core joke, with no material omission, unsupported addition or contradiction.",  # nosec B105
                      "fail": "Evidence establishes a material defect in the stored explanation, including a missing core mechanism, or establishes incompatible interpretations that defeat a single supported answer.",
                      "uncertain": "Evidence is insufficient to establish either a supported current explanation or a specific defect."},
     },
     "benchmark_value": {
         "instructions": "Would understanding this meme make a worthwhile, fairly scorable benchmark task, assuming content-policy issues and explanation defects are handled separately? It should require recovering a reference, implication, contrast, inversion, irony, wordplay or other joke mechanism. Mere transcription, a description of objects, incoherent bait, or indispensable missing private backstory fail. Literal misunderstandings and simple puns can pass when there is a mechanism beyond transcription. Do not grade aesthetic funniness, explain the psychology of humor, reject ordinary cultural knowledge, or reject because models might solve it easily. Do not guess corpus duplication.",
-        "criteria": {"pass": "There is a recoverable joke mechanism or reference suitable for a fairly scorable understanding task.",
+        "criteria": {"pass": "There is a recoverable joke mechanism or reference suitable for a fairly scorable understanding task.",  # nosec B105
                      "fail": "There is no useful recoverable task beyond transcription/description, or it depends on unavailable essential private context.",
                      "uncertain": "Whether there is a meaningful, fairly scorable task remains unresolved."},
     },

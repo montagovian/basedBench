@@ -128,7 +128,7 @@ def parse(case: dict, stage: str, call: dict) -> dict:
         if model != checks.MODEL and not model.startswith(checks.MODEL + '-'):
             raise ValueError('Unexpected model; no fallback')
         value = Suitability.model_validate_json(call['output_text']).model_dump()
-        return result({'pass': 'pass', 'fail': 'fail', 'uncertain': 'defer'}[value['verdict']],
+        return result({'pass': 'pass', 'fail': 'fail', 'uncertain': 'defer'}[value['verdict']],  # nosec B105
                       value['failure_code'] or ('recoverable_task' if value['verdict'] == 'pass' else 'unclear_task'),
                       assessment=value)
     except (ValueError, KeyError, TypeError, AttributeError) as exc:

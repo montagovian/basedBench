@@ -8,13 +8,29 @@ quality gate.
 Run these before publishing code or dataset artifacts:
 
 ```bash
+uv sync --frozen --all-extras
 uv run pytest
-uv run python scripts/release_audit.py --db data/basedbench.db
+uv run python scripts/release_audit.py --db data/basedbench.db --expected-validated 519
 uv run basedbench status
 uv run basedbench cleanup --duplicate-images --dry-run
 uv run basedbench export <snapshot-name> --output export/<snapshot-name>
-uv run python scripts/release_audit.py --db data/basedbench.db --export-dir export/<snapshot-name>
+uv run python scripts/release_audit.py --db data/basedbench.db --export-dir export/<snapshot-name> --expected-validated 519
 ```
+
+The optional curation and encoder dependencies are needed by the complete test
+suite. Historical snapshots use the commands above; new content-frozen releases
+use `basedbench release freeze`, `release verify`, `release report` and
+`release export` as described in [the candidate plan](release-candidate-plan.md).
+The old snapshot command records membership and does not freeze image bytes.
+
+The September 23 checkpoint audit exposed previously unreviewed scanner findings
+and vulnerable locked packages. Six secret findings were inspected: one public
+model revision and five fake test credentials; exact hashes are marked false in
+the scanner baseline. Narrow `B105` annotations cover only assessment labels and
+counts misread as passwords. Four runtime assertions now raise explicit errors
+even under optimized Python. No security rule was globally disabled by this work.
+The lockfile upgrades aiohttp, anyio, click, datasets, Pillow and pip to patched
+versions; full gate results are recorded with the candidate report.
 
 The release audit is non-mutating. It fails if the Git tree is dirty, private
 files are tracked, new secret findings appear, Bandit/pip-audit/pytest fail, DB

@@ -190,7 +190,8 @@ def prepare(human, stress, output):
                 jobs.append({'key': key, 'case_id': c['case_id'], 'arm': arm, 'repeat': repeat,
                              'model': MODEL, 'request_sha256': digest(body)})
     jobs.sort(key=lambda j: digest([VERSION, 'dispatch', j['key']]))
-    assert len(jobs) == 52
+    if len(jobs) != 52:
+        raise ValueError("Focused connection plan must contain exactly 52 jobs")
     plan = {'version': VERSION, 'phase': 'exposed_focused_development', 'arms': list(ARMS),
             'model': MODEL, 'jobs': jobs, 'max_calls': 52, 'budget_usd': 1.0,
             'max_concurrency': 3, 'automatic_retries': 0, 'request_bounds_usd': bounds,
@@ -202,7 +203,7 @@ def prepare(human, stress, output):
             'source_manifests': sources, 'input_errors': {},
             'input_hashes': {c['case_id']: digest(c['input']) for c in cases},
             'code_hashes': code_hashes(), 'plan_document_sha256': file_hash(Path('docs/focused-connection-plan.md')),
-            'criteria': {'primary_both_checks': 3, 'ready_first_pass': 6, 'ready_repeat_pass': 3,
+            'criteria': {'primary_both_checks': 3, 'ready_first_pass': 6, 'ready_repeat_pass': 3,  # nosec B105
                          'repair_first_fail_min': 8, 'adequacy_flips_max': 1,
                          'no_more_flips_than_baseline': True, 'technical_errors_max': 0,
                          'matching_rationale_and_stress_inspection_required': True},

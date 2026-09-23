@@ -33,7 +33,7 @@ PRINCIPLES = [
     "Leave unresolved fields blank or use an unsure option. Repair answer first records a route and optional repair note; it does not change the answer. Revisions preserve previous feedback. All feedback in this gallery is development material, not held-out evaluation.",
 ]
 FIELDS = {
-    "content": {"label": "Is the content suitable?", "hint": "A policy boundary means the rule needs a decision. Need context means you cannot yet tell what the content means.", "options": {"pass": "Pass", "fail": "Fail", "boundary": "Policy boundary", "uncertain": "Need more context"}},
+    "content": {"label": "Is the content suitable?", "hint": "A policy boundary means the rule needs a decision. Need context means you cannot yet tell what the content means.", "options": {"pass": "Pass", "fail": "Fail", "boundary": "Policy boundary", "uncertain": "Need more context"}},  # nosec B105
     "ground_truth": {"label": "Is the stored answer good enough to grade against?", "hint": "Does the evidence support this answer, and does it capture the whole joke in the image?", "options": {"ready": "Ready", "repair": "Repair needed", "uncertain": "Insufficient evidence"}},
     "value": {"label": "Would this be useful with a correct answer?", "hint": "What must a viewer understand beyond the literal description? A simple joke can still qualify.", "options": {"yes": "Yes", "no": "No", "unsure": "Unsure"}},
     "admission": {"label": "Would you include this copy?", "hint": "Your overall decision. A good meme can need an answer repair; duplicates and image quality can matter too.", "options": {"accept": "Accept", "reject": "Reject", "repair": "Repair answer first", "undecided": "Undecided"}},

@@ -127,7 +127,7 @@ def parse(call: dict) -> dict:
             raise ValueError("Choice is inconsistent with scores")
         return {"verdict": answer["choice"], "pass_score": probs["pass"], "probabilities": probs, "error": None}
     except (KeyError, ValueError, TypeError, AttributeError) as exc:
-        return {"verdict": "error", "pass_score": None, "error": str(exc)}
+        return {"verdict": "error", "pass_score": None, "error": str(exc)}  # nosec B105
 
 
 def summarize(output: Path) -> dict:
