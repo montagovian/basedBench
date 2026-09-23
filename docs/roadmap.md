@@ -59,10 +59,12 @@ only 4/6 human-ready originals versus 5/6. Its primary verdicts also conceal
 rationale and source-count problems. Capacity helps diagnosis but does not meet
 the joint quality targets; no challenger is promoted to automatic admission.
 
-The next question is the material-omission boundary: use existing human-ready,
-both-acceptable and repair examples to distinguish needed decoding from optional
-detail. Resolve consequential remaining ambiguities with small targeted human
-adjudication if needed. A larger general annotation round or another capacity
+The approved [#24 material-omission calibration](materiality-boundary.md) now
+uses the 50 human cases / 57 exact answer judgments as anchors for distinguishing
+needed decoding from optional detail. Only two exposed, previously unlabeled
+originals—cans and Fahrenheit—are prepared for targeted human review, with model
+opinions hidden and a separate journal. Preparation costs $0 and introduces no
+model or admission changes. A larger general annotation round or another capacity
 increase is not the immediate need. #9 stays pending an explicit later expansion
 decision; any subsequent checker change still needs fresh human validation.
 
