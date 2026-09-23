@@ -53,8 +53,10 @@ def exposure_ids(value):
 
 def exposure_ledger(root, conn, selected):
     blocked = {r[0] for r in conn.execute('SELECT post_id FROM reviews UNION SELECT post_id FROM consensus_eval_items UNION SELECT post_id FROM consensus_regression UNION SELECT post_id FROM gate_feedback')}
-    blocked.update(r[0] for r in conn.execute("SELECT DISTINCT post_id FROM llm_calls WHERE role != 'consensus' AND post_id IS NOT NULL"))
-    ledger = [{'path': 'data/basedbench.db', 'kind': 'review_evaluation_and_non_generation_calls', 'ids': sorted(blocked)}]
+    blocked.update(r[0] for r in conn.execute("SELECT DISTINCT post_id FROM llm_calls WHERE role NOT IN ('consensus', 'safety_gate') AND post_id IS NOT NULL"))
+    safety_ids = {r[0] for r in conn.execute("SELECT DISTINCT post_id FROM llm_calls WHERE role='safety_gate' AND post_id IS NOT NULL")}
+    ledger = [{'path': 'data/basedbench.db', 'kind': 'review_evaluation_and_calls_outside_legacy_generation',
+               'ids': sorted(blocked), 'legacy_safety_gate_ids': sorted(safety_ids)}]
     names = {'cases.json', 'plan.json', 'events.jsonl', 'reassessments.jsonl', 'inspection.json',
              'assistant-inspection.json', 'decisions.jsonl', 'components.jsonl', 'selection-before-screen.json'}
     for base in ('data/curation', 'data/backfill'):
@@ -211,7 +213,7 @@ def build_packet(output, candidates, screening, selection, source_hashes, root):
     return summary | {'packet_id': manifest['packet_id']}
 
 
-def prepare(root: Path, output: Path):
+def prepare(root: Path, output: Path, *, selection_source: Path | None = None):
     if output.exists():
         raise FileExistsError('Never overwrite or resample the frozen audit')
     root, output = root.resolve(), output.resolve()
@@ -231,6 +233,16 @@ def prepare(root: Path, output: Path):
     original = json.loads((previous/'selection.json').read_text())
     prior_selected = json.loads((fresh/'selection-before-screen.json').read_text())['selected_ids']
     selected = remaining_pool(original, prior_selected)
+    if selection_source is not None:
+        selection_source = selection_source.resolve()
+        if ((selection_source.parent/'cases.json').exists()
+                or (selection_source.parent/'manifest.json').exists()
+                or (selection_source.parent/'events.jsonl').exists()):
+            raise ValueError('Only an unserved failed preparation can supply the same frozen selection')
+        prior = json.loads(selection_source.read_text())
+        if prior['selected_ids'] != selected or prior['source_hashes'] != source_hashes:
+            raise ValueError('Frozen selection or original sources changed')
+        source_hashes[str(selection_source.relative_to(root))] = file_hash(selection_source)
     selection = {'version': VERSION, 'selected_ids': selected, 'seed': VERSION,
                  'original_eligible': sum(r['eligible'] for r in original['eligibility']),
                  'prior_human_random_ids': original['random_ids'], 'prior_fresh_selected_ids': prior_selected,
@@ -250,7 +262,10 @@ def prepare(root: Path, output: Path):
         blocked, ledger = exposure_ledger(root, conn, selected)
         # The just-written selection belongs to this audit, not prior exposure.
         own = str((output/'selection-before-screen.json').relative_to(root))
-        ledger = [r for r in ledger if r['path'] != own]
+        ignored = {own}
+        if selection_source is not None:
+            ignored.add(str(selection_source.relative_to(root)))
+        ledger = [r for r in ledger if r['path'] not in ignored]
         blocked = {pid for row in ledger for pid in row['ids']}
         blocked.update(prior_selected)
         for pid in selected:
@@ -265,7 +280,7 @@ def prepare(root: Path, output: Path):
         if row['post_id'] in input_holds:
             row['retrieval_status'] = row['status']; row['status'] = 'input_hold'
             row['input_error'] = input_holds[row['post_id']]
-    if source_hashes != {str(p.relative_to(root)):file_hash(p) for p in sources}:
+    if any(file_hash(root/name) != sha for name,sha in source_hashes.items()):
         raise ValueError('Source changed during preparation; frozen selection retained')
     for row in ledger:
         if 'sha256' in row and file_hash(root/row['path']) != row['sha256']:
@@ -277,10 +292,11 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     sub = parser.add_subparsers(dest='command', required=True)
     p = sub.add_parser('prepare'); p.add_argument('output', type=Path)
+    p.add_argument('--selection-source', type=Path)
     p = sub.add_parser('serve'); p.add_argument('packet', type=Path); p.add_argument('--port', type=int, default=9878)
     args = parser.parse_args()
     if args.command == 'prepare':
-        print(json.dumps(prepare(Path.cwd(), args.output), indent=2))
+        print(json.dumps(prepare(Path.cwd(), args.output, selection_source=args.selection_source), indent=2))
     else:
         server = make_server(args.packet, args.port, store=review.CalibrationStore(args.packet), static_dir=args.packet/'ui')
         print(f'Fresh answer audit: http://127.0.0.1:{server.server_port}/', flush=True)

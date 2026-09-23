@@ -133,3 +133,17 @@ def test_all_holds_are_recorded_without_substitutions(tmp_path):
         audit.build_packet(out,{},rows,{'selected_ids':['held']},{},Path.cwd())
     assert json.loads((out/'screening.json').read_text())==rows
     assert not (out/'manifest.json').exists()
+
+
+def test_legacy_safety_gate_is_recorded_but_does_not_become_answer_evaluation(tmp_path):
+    conn=sqlite3.connect(':memory:')
+    for table in ['reviews','consensus_eval_items','consensus_regression','gate_feedback']:
+        conn.execute(f'CREATE TABLE {table}(post_id TEXT)')
+    conn.execute('CREATE TABLE llm_calls(post_id TEXT, role TEXT)')
+    conn.executemany('INSERT INTO llm_calls VALUES(?,?)', [('candidate','consensus'),('candidate','safety_gate'),('evaluated','answer_check')])
+    try:
+        blocked,ledger=audit.exposure_ledger(tmp_path,conn,['candidate','evaluated'])
+        assert blocked=={'evaluated'}
+        assert ledger[0]['legacy_safety_gate_ids']==['candidate']
+        assert ledger[0]['ids']==['evaluated']
+    finally:conn.close()
