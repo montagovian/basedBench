@@ -1,6 +1,6 @@
 # BasedBench roadmap and work backlog
 
-Updated September 22, 2026. This is the short work index; detailed plans and
+Updated September 23, 2026. This is the short work index; detailed plans and
 experiment reports remain the design record. The
 [GitHub roadmap tracker](https://github.com/montagovian/basedBench/issues/15)
 links all twelve work items. GitHub issues are the source of truth for work
@@ -59,14 +59,19 @@ only 4/6 human-ready originals versus 5/6. Its primary verdicts also conceal
 rationale and source-count problems. Capacity helps diagnosis but does not meet
 the joint quality targets; no challenger is promoted to automatic admission.
 
-The approved [#24 material-omission calibration](materiality-boundary.md) now
-uses the 50 human cases / 57 exact answer judgments as anchors for distinguishing
-needed decoding from optional detail. Only two exposed, previously unlabeled
-originals—cans and Fahrenheit—are prepared for targeted human review, with model
-opinions hidden and a separate journal. Preparation costs $0 and introduces no
-model or admission changes. A larger general annotation round or another capacity
-increase is not the immediate need. #9 stays pending an explicit later expansion
-decision; any subsequent checker change still needs fresh human validation.
+The [#24 material-omission calibration](materiality-boundary-results.md) is
+complete: both cans and Fahrenheit originals are human-ready. Fahrenheit's note
+separately questions joke/benchmark fit. These two judgments are frozen apart
+from the existing 50 cases / 57 answer judgments, at zero new model cost. They
+confirm additional false alarms in the old checkers without relabeling old runs.
+
+The next [#25 comparison](materiality-comparison-plan.md) is planned: one narrow
+materiality instruction change versus the current simple GPT-6 Luna checker,
+with the same schema and 20 exposed identities. The two newly ready controls
+also receive repeats: 56 calls maximum, proposed $1 cap. No run has launched.
+A larger annotation round or another capacity increase is not the immediate
+need. #9 stays pending an explicit later expansion decision; a promising
+diagnostic result still needs separately frozen fresh human validation.
 
 Move exact imitation of discretionary historical rejections off the critical
 path. Some valid items can reasonably be omitted from a curated collection.
@@ -181,6 +186,10 @@ work. They should not delay the first useful backfill batch.
 
 ## Completed foundation
 
+- [Targeted materiality calibration](materiality-boundary-results.md): existing
+  50-case human anchors plus two separately frozen ready judgments; no new model
+  calls. Adequacy stays separate from Fahrenheit's fit concern. Prior runs and
+  18,253 protected files remain unchanged.
 - [Sol versus Luna capacity comparison](capacity-comparison-results.md): 20
   exposed cases, 52 calls, 28.9¢; Sol flags all nine repair originals with no
   adequacy flips, but rejects two human-ready answers and fails the joint targets.

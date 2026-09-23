@@ -1,13 +1,15 @@
 # Material omissions and acceptable concise answers
 
-September 22, 2026 · [#24](https://github.com/montagovian/basedBench/issues/24)
+Prepared September 22; completed September 23, 2026 · [#24](https://github.com/montagovian/basedBench/issues/24)
 · Follow-up to the [capacity comparison](capacity-comparison-results.md)
 
-**Use the existing human judgments to define the boundary before changing the
-checker again.** The approved work reuses 50 reviewed cases / 57 exact answer
-judgments and prepares just two unresolved original answers for human review.
-Preparation makes zero model calls and costs $0. The admission checker, frozen
-experiments, suitability rules and historical labels remain unchanged.
+**Complete: both targeted originals are human-ready.** The work reuses 50
+reviewed cases / 57 exact answer judgments and adds two separately frozen
+judgments. Fahrenheit's note questions joke/benchmark fit while accepting the
+explanation. See the [results and next comparison](materiality-boundary-results.md).
+Preparation and analysis make zero model calls and cost $0. The admission
+checker, frozen experiments, suitability rules and historical labels remain
+unchanged.
 
 ## Working rule
 
@@ -45,6 +47,7 @@ pair, revise the guidance rather than silently relabeling the pair.
 | Essential sequence versus one decoded item | State puns: original needs repair; the four-part rewrite is ready. | Cover the sequence's essential puns. The accepted rewrite permits “Mary land” or “merry land”; Sol's later preference for only one wording is not human gold. |
 | Meme implication versus a comment's extra joke | Freddie Mercury: original needs repair; rewrite is ready. The note calls the lyric parody extraneous. | Recover the pictured implication without promoting a comment-only riff into the meme's meaning or a joke into historical fact. |
 | Concision versus suitability | Dog-supplement, algae, sub-5 and decoded-rebus originals are ready. The sub-5 note separately questions benchmark fit. | Do not turn source-support or selection uncertainty into an explanation defect. |
+| Decoded meaning versus exhaustive cues | The new cans and Fahrenheit originals are both ready. Fahrenheit's note separately questions whether the item is a joke; cans has no note. | On these exact texts, explicit restatement of the pictured cans and the additional “100%” wording are optional. This interpretation of the saved labels is not a universal exception for visual details or wordplay. |
 | Accepted text versus assistant reconstruction | R.E.M.: original needs repair; saved rewrite is ready, without a free-text human rationale. | Preserve those exact judgments. A later assistant explanation of the improvement is not a new human requirement. |
 
 These are observations about the saved texts, not universal exceptions for their
@@ -73,7 +76,7 @@ Mystique remains unclear; another random repair has no note. Do not recode those
 as confidently diagnosed factual errors. The two known duplicate pairs remain
 50 posts / 48 families, without deleting either member's feedback.
 
-## Only two new judgments
+## The two completed judgments
 
 `data/curation/materiality-boundary-v1/` contains two already exposed cases:
 
@@ -83,7 +86,13 @@ as confidently diagnosed factual errors. The two known duplicate pairs remain
   premise. The remaining boundary is whether the additional “100%” phrasing
   changes adequacy. Comment-only freezing/boiling arguments are not image text.
 
-These selection explanations are assistant hypotheses. They are **not shown in
+Both originals were marked ready on September 23, without comment reveals.
+The exact events and qualifying Fahrenheit note are preserved in the separate
+`data/curation/materiality-boundary-feedback-v1/` snapshot. The selection
+questions above describe the original review, not unresolved labels. Interface
+instructions below remain for reference; no additional review is needed.
+
+These selection explanations were assistant hypotheses. They are **not shown in
 the review page**, which presents the image and untouched original answer with
 the existing neutral rubric. Neither case has a prefilled judgment or a generated
 rewrite. Other stress cases remain unadjudicated; this is not an expanded queue.
@@ -137,11 +146,12 @@ uv run python -m basedbench.materiality_review \
   data/curation/materiality-boundary-NEW
 ```
 
-After actual feedback arrives, freeze a separate snapshot using the existing
-`calibration_analysis` workflow, with an explicit duplicate-inspection list
-(empty if no duplicate is identified). Preserve unclear judgments as unresolved.
-Then record whether these cases clarify or limit the working rule. Do not
-merge them into old frozen reports or call this a fresh accuracy estimate.
+The actual feedback is now frozen with the existing `calibration_analysis`
+workflow and an empty duplicate-inspection list; neither reviewed case was
+identified as a duplicate. The [completion report](materiality-boundary-results.md)
+records exact provenance and how the new judgments constrain the working rule.
+They are not merged into old frozen reports or presented as a fresh accuracy
+estimate.
 
 Any subsequent checker change needs its own frozen recipe and comparison plan.
 Retain both accepted originals, all confirmed repair examples, separate evidence
