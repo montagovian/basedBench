@@ -128,6 +128,12 @@ flagged a deliberate privacy-test sentinel as a possible secret; its exact
 non-credential value was inspected and recorded in the baseline before the final
 clean gate rerun.
 
+The final clean gate at `1d6cab2` **passed**: 554 tests, no new secret findings,
+Bandit, no known dependency vulnerabilities, original read-only database checks,
+and exported metadata privacy plus exact image/answer hashes. The audit log is
+saved in the local preparation directory. Subsequent changes only record these
+verified outcomes and update tracking; the tested implementation is unchanged.
+
 The real candidate replays byte-for-byte: **520 frozen files, 526 exported files,
 and the complete baseline report** match a second creation. Every copied image
 matches its pre-freeze inventory hash, all 519 image-only input records have only
