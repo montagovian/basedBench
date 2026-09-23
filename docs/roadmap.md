@@ -73,13 +73,17 @@ Fahrenheit image-grounding errors and source-count weaknesses remain. Stop the
 variant; neither checker is promoted. All 491 tests pass and all 18,257 protected
 prior files remain unchanged.
 
-The next recommended decision is a small, separately planned fresh human audit
-to measure usable candidate yield and correction work, with selection frozen
-before checker outcomes and model criticism hidden during review. Further
-tuning on the same 20 cases or another capacity increase is not the immediate
-need. No new audit, paid run or repair queue has launched. #9 stays pending an
-explicit expansion decision; answer readiness, source support, duplicates and
-joke/fit concerns remain separate.
+The approved [#26 fresh human audit](fresh-human-audit-preparation.md) is now
+prepared: all 18 remaining cached identities were frozen before screening, with
+ten original answers ready for blinded review and eight possible family overlaps
+held without replacement. Preparation cost $0 with no model calls. These are
+legacy-generated answers, so the audit measures conditional cached-pool readiness
+and correction work, not new Luna generation quality or full admission yield.
+Actual human feedback is the next step; all 500 tests pass and all 24,253 protected
+prior files remain unchanged. Further tuning on the same diagnostic cases or
+another capacity increase is not the immediate need. #9 stays pending an explicit
+expansion decision; answer readiness, source support, duplicates and joke/fit
+concerns remain separate.
 
 Move exact imitation of discretionary historical rejections off the critical
 path. Some valid items can reasonably be omitted from a curated collection.
@@ -170,10 +174,11 @@ Neither a larger checklist nor capacity alone has resolved the acceptance
 boundary. The completed [#24 feedback](materiality-boundary-results.md) adds two
 ready controls; the subsequent [#25 prompt-only test](materiality-comparison-results.md)
 still fails its joint targets. Stop repeated tuning on these exposed cases.
-A separately planned fresh human audit is the recommended next decision to
-measure practical yield, without promoting the failed variant or expanding
-chronological collection. Keep source support and assistant inspection separate
-from human answer judgments throughout.
+The separately approved [#26 audit](fresh-human-audit-preparation.md) is prepared
+and awaiting human judgments on ten unheld cached originals; its full selection
+retains eight overlap holds. It measures conditional practical yield without
+promoting the failed variant or expanding chronological collection. Keep source
+support and assistant inspection separate from human answer judgments throughout.
 
 | Issue | Work item | Done when | Depends on |
 | --- | --- | --- | --- |
