@@ -65,13 +65,21 @@ separately questions joke/benchmark fit. These two judgments are frozen apart
 from the existing 50 cases / 57 answer judgments, at zero new model cost. They
 confirm additional false alarms in the old checkers without relabeling old runs.
 
-The next [#25 comparison](materiality-comparison-plan.md) is planned: one narrow
-materiality instruction change versus the current simple GPT-6 Luna checker,
-with the same schema and 20 exposed identities. The two newly ready controls
-also receive repeats: 56 calls maximum, proposed $1 cap. No run has launched.
-A larger annotation round or another capacity increase is not the immediate
-need. #9 stays pending an explicit later expansion decision; a promising
-diagnostic result still needs separately frozen fresh human validation.
+The [#25 materiality comparison](materiality-comparison-results.md) is complete:
+56 GPT-6 Luna calls for 3.9¢, with zero technical errors. The revision flags
+7/9 repair originals versus 6/9, but both retain only 6/8 ready originals and
+the revision retains fewer ready repeats (2/5 versus 3/5). Quiz/closet misses,
+Fahrenheit image-grounding errors and source-count weaknesses remain. Stop the
+variant; neither checker is promoted. All 491 tests pass and all 18,257 protected
+prior files remain unchanged.
+
+The next recommended decision is a small, separately planned fresh human audit
+to measure usable candidate yield and correction work, with selection frozen
+before checker outcomes and model criticism hidden during review. Further
+tuning on the same 20 cases or another capacity increase is not the immediate
+need. No new audit, paid run or repair queue has launched. #9 stays pending an
+explicit expansion decision; answer readiness, source support, duplicates and
+joke/fit concerns remain separate.
 
 Move exact imitation of discretionary historical rejections off the critical
 path. Some valid items can reasonably be omitted from a curated collection.
@@ -159,9 +167,13 @@ its predeclared targets. The completed [#23 capacity test](capacity-comparison-r
 improves defect sensitivity and repeat stability with Sol, but retains false
 alarms on human-ready answers and questionable rationales/support counts.
 Neither a larger checklist nor capacity alone has resolved the acceptance
-boundary. Use the existing human examples to clarify that boundary before a
-separately planned change and fresh validation. Keep source support and assistant
-inspection separate from human answer judgments throughout.
+boundary. The completed [#24 feedback](materiality-boundary-results.md) adds two
+ready controls; the subsequent [#25 prompt-only test](materiality-comparison-results.md)
+still fails its joint targets. Stop repeated tuning on these exposed cases.
+A separately planned fresh human audit is the recommended next decision to
+measure practical yield, without promoting the failed variant or expanding
+chronological collection. Keep source support and assistant inspection separate
+from human answer judgments throughout.
 
 | Issue | Work item | Done when | Depends on |
 | --- | --- | --- | --- |
@@ -186,6 +198,11 @@ work. They should not delay the first useful backfill batch.
 
 ## Completed foundation
 
+- [Prompt-only materiality comparison](materiality-comparison-results.md): 20
+  exposed cases, 56 Luna calls, 3.9¢; one additional repair detected but no gain
+  in ready retention and worse ready repeats. Completed negative result; 491
+  tests pass, zero-call replay preserves 140 files, and all 18,257 prior-file
+  hashes verify.
 - [Targeted materiality calibration](materiality-boundary-results.md): existing
   50-case human anchors plus two separately frozen ready judgments; no new model
   calls. Adequacy stays separate from Fahrenheit's fit concern. Prior runs and
