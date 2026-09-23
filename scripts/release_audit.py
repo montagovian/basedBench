@@ -8,6 +8,7 @@ if a release-blocking hygiene, privacy, security, or correctness check fails.
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import sqlite3
 import subprocess
@@ -34,6 +35,7 @@ TRACKED_PRIVATE_SUFFIXES = (
     ".log",
 )
 FORBIDDEN_EXPORT_KEYS = {
+    "answer_provenance",
     "author",
     "authors",
     "body",
@@ -359,7 +361,8 @@ def _check_forbidden_keys(audit: Audit, path: Path, value: Any) -> None:
         if isinstance(item, dict):
             bad.update(k for k in item if k in FORBIDDEN_EXPORT_KEYS)
     if bad:
-        audit.fail(f"{path.relative_to(ROOT)} contains forbidden keys: {sorted(bad)}")
+        display = path.relative_to(ROOT) if path.is_relative_to(ROOT) else path
+        audit.fail(f"{display} contains forbidden keys: {sorted(bad)}")
 
 
 def _load_jsonl(path: Path) -> list[dict[str, Any]]:
@@ -409,6 +412,22 @@ def check_export(
         return
     for row in meme_rows:
         _check_forbidden_keys(audit, memes_path, row)
+        filename = row.get("image_filename")
+        if not isinstance(filename, str) or Path(filename).name != filename:
+            audit.fail("export contains an unsafe image filename")
+            continue
+        image_path = export_dir / "images" / filename
+        if image_path.is_symlink() or not image_path.is_file():
+            audit.fail(f"export image is missing or linked: {filename}")
+            continue
+        if "image_sha256" in row and hashlib.sha256(image_path.read_bytes()).hexdigest() != row["image_sha256"]:
+            audit.fail(f"export image hash mismatch: {filename}")
+        if "answer_sha256" in row:
+            answer = row.get("ground_truth")
+            if not isinstance(answer, str) or hashlib.sha256(answer.encode("utf-8")).hexdigest() != row["answer_sha256"]:
+                audit.fail(f"export answer hash mismatch: {row.get('post_id')}")
+    if len({row.get("post_id") for row in meme_rows}) != len(meme_rows):
+        audit.fail("export contains duplicate meme IDs")
     if expected_validated is not None and len(meme_rows) != expected_validated:
         audit.fail(
             f"export memes row count is {len(meme_rows)}, expected {expected_validated}"
@@ -454,6 +473,19 @@ def check_export(
     else:
         audit.ok(f"judgments table checked ({len(judgment_rows)} rows)")
     audit.ok(f"leaderboard table checked ({len(leaderboard_rows)} rows)")
+
+    # New release reports and metadata must pass the same recursive privacy
+    # check as legacy tables. A table-only audit misses sidecar leaks.
+    table_paths = {memes_path, predictions_path, judgments_path, leaderboard_path}
+    for path in sorted(export_dir.rglob("*")):
+        if not path.is_file() or path in table_paths or path.suffix not in {".json", ".jsonl"}:
+            continue
+        try:
+            values = _load_jsonl(path) if path.suffix == ".jsonl" else [_load_json(path)]
+            for value in values:
+                _check_forbidden_keys(audit, path, value)
+        except (OSError, ValueError) as exc:
+            audit.fail(f"could not inspect export metadata {path.name}: {exc}")
 
     readme = readme_path.read_text().lower()
     required_note_terms = (

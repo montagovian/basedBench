@@ -22,6 +22,7 @@ from basedbench.pipeline import judge as judge_pipe
 from basedbench.pipeline import predict as predict_pipe
 from basedbench.pipeline import snapshot as snapshot_pipe
 from basedbench.pipeline import tracer as tracer_pipe
+from basedbench.release_cli import app as release_app
 
 app = typer.Typer(
     name="basedbench",
@@ -36,6 +37,7 @@ consensus_eval_app = typer.Typer(
 )
 app.add_typer(snapshot_app, name="snapshot")
 app.add_typer(consensus_eval_app, name="consensus-eval")
+app.add_typer(release_app, name="release")
 curation_app = typer.Typer(help="Freeze historical curation evidence and run local baselines.", no_args_is_help=True)
 app.add_typer(curation_app, name="curation")
 
@@ -516,7 +518,7 @@ def snapshot_create(
     name: str = typer.Option(..., help="Snapshot name."),
     description: str | None = typer.Option(None, help="Free-text description."),
 ) -> None:
-    """Freeze validated memes into an immutable snapshot."""
+    """Record legacy membership; use `release freeze` to freeze exact content."""
     db, _ = _load()
     snapshot_pipe.create(db, name=name, description=description)
 

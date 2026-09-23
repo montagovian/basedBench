@@ -59,7 +59,8 @@ Reddit → safety gate → consensus → human review → prediction → judge �
   correct/incorrect, with a cross-judge agreement rate as a robustness signal.
   Judges ask whether the model got the same joke as the ground truth, not
   whether it explained the psychology of why humor works.
-- **Snapshot**: freezes the validated set as a content-addressed dataset version
+- **Legacy snapshot**: records validated membership and an answer-based version;
+  use the immutable release commands below to preserve exact answer and image bytes
 - **Push**: publishes the snapshot to HF Hub (memes + per-model predictions + leaderboard)
 
 The gates and consensus are deliberately tunable — see [Feedback loops](#feedback-loops)
@@ -153,6 +154,40 @@ for pressure-testing false positives, but they are less reliable than flagged or
 validated rows.
 
 ## Snapshot and publish
+
+New release candidates use a self-contained frozen directory. These commands are
+offline and do not require provider credentials or publish a dataset:
+
+```bash
+# Prepare from the existing private legacy/pilot/feedback artifacts.
+uv run python scripts/prepare_release_candidate.py --source-root "$PWD" \
+  --output data/release-candidate-inputs --name candidate-v1
+uv run basedbench release freeze data/release-candidate-inputs/selection.json \
+  --source-root "$PWD" --output data/candidate-v1
+uv run basedbench release verify data/candidate-v1
+uv run basedbench release inputs data/candidate-v1
+uv run basedbench release report data/candidate-v1 \
+  --evidence data/release-candidate-inputs/evidence.json \
+  --output data/release-candidate-inputs/baseline-report.json
+uv run basedbench release export data/candidate-v1 \
+  --evidence data/release-candidate-inputs/evidence.json --output export/candidate-v1
+```
+
+The adapter is specifically for the existing 519-item release and fixed #26/#27
+and June pilot artifacts; a clean clone does not contain those private sources.
+It preserves legacy membership and records newer candidates' unresolved gates
+in a private ledger. All commands refuse to overwrite existing artifacts.
+Frozen releases copy and verify exact image bytes and answers, keep admission
+provenance separate from scoring, and report legacy/development cohorts and
+exposure explicitly. Cached scores require matching image, answer, prompt and
+scoring versions; unbound historical aggregates stay labeled as historical.
+Predictor inputs contain only image identity/path/hash. Further provider calls
+need a separately specified evaluation panel and spending cap.
+
+The older membership snapshots and historical exports remain available below.
+They resolve current database content and are not immutable image archives.
+See [the release contract](docs/release-candidate-plan.md) and
+[readiness checks](docs/release-readiness.md) before publication.
 
 ```bash
 uv run basedbench snapshot create --name v0.1 --description "initial cut"

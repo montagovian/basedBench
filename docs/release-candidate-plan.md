@@ -85,7 +85,7 @@ remains distinct from prediction/judge provenance.
 Frozen manifest has `schema_version: "basedbench.release.v1"`, `name`,
 `description`, `policy_version`, `evaluation`, `membership_sha256`,
 `content_sha256`, and sorted `items`. Items retain selected metadata except
-`image_path`; add `image_filename` (safe `post_id` plus validated image extension),
+`image_path`; add `image_filename` (safe `post_id` plus extension from decoded format),
 `image_sha256`, `answer_sha256`. Images live under `images/`. Membership digest is
 SHA256(canonical_bytes(sorted post ID list)); answer digest is SHA256(exact UTF-8
 answer); image digest is SHA256(exact copied bytes). Overall digest is SHA256 of
@@ -173,3 +173,30 @@ June 27 onward and prior source gaps remain unprocessed. Risks include absent
 legacy image bindings, unqualified automation, incomplete historical provenance,
 missing assets, and privacy leakage through free-form records. Fail explicitly
 or preserve unknown, never infer a successful release gate from answer readiness.
+
+## Integration clarifications
+
+The implemented scorer accepts only `majority-v1`; a new algorithm requires a
+versioned implementation rather than an arbitrary label on the current formula.
+Reports include an `evidence_sha256` over normalized, sorted evidence and the
+private historical summary. Public reports expose this digest without copying
+that arbitrary private summary. Copied export images are rehashed before final
+publication to the local destination, and every image frame is decoded while
+freezing/verifying. Image filenames use the actual decoded format.
+
+The #26/#27 source ledgers use SHA256 of a canonical JSON string, whereas release
+answers use SHA256 of exact UTF-8 text. The adapter preserves and verifies both
+conventions explicitly, with frozen packet/journal/event references. Legacy
+answer pairs must still match their original dataset version; current image
+hashes cannot establish historical image identity. Historical prediction counts
+and scores are distinguished by dataset version or explicitly labeled as
+cross-version member history. Neither type is a current score without image
+bindings. Read-only SQLite transactions include committed WAL data.
+
+The original dataset/publication policy remains mixed-rights. Missing proof of
+individual ownership and absence of a human label are not new mandatory gates.
+Pilot outcomes remain held because the automation has not qualified for release;
+the known individual failures/deferrals and unavailable evidence stay distinct.
+The bounded expansion draft is in
+[chronological-expansion-proposal.md](chronological-expansion-proposal.md), with
+all proposed parameters explicitly awaiting a later decision.
