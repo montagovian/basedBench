@@ -8,6 +8,23 @@ status; this document records direction and scope.
 
 ## Current direction
 
+The [immutable existing-pool candidate](release-candidate-results.md) is now
+frozen: 519 legacy items, zero newly admitted development items, an exact-byte
+export and a reproducible offline baseline. The eight #26/#27 ready versions
+remain available privately; the 18 cached identities and 100 pilot identities
+stay outside membership with separate gate findings. No paid calls, collection,
+checker promotion, database adoption, merge or dataset publication occurred.
+
+The [release implementation plan](release-candidate-plan.md) settles the schema,
+privacy, provenance and cached-evidence contract. [Draft PR #32](https://github.com/montagovian/basedBench/pull/32)
+checkpoints the earlier foundation and implements #28–#31. The original 24,370
+inventoried files remain unchanged. #10 stays open for qualified new membership
+and a fully version-bound evaluation: historical image hashes are absent, so
+stored legacy history is reported separately and current certified score coverage
+is zero. The [#9 expansion proposal](chronological-expansion-proposal.md) is
+concrete but unapproved and unlaunched. This release engineering milestone
+supersedes the old sequencing that waited for expansion before freezing content.
+
 The first bounded newer-content pilot is complete: 100 June 20–26 candidates,
 43 automatic accepts, one rejection and 56 deferrals for about 23.3¢, within
 the frozen $1 admission-model cap. The bounded follow-ups are complete:
@@ -302,7 +319,8 @@ work. They should not delay the first useful backfill batch.
   keeping 17 positives. This is completed research, not a production-quality gate.
 
 Fresh source collection and the first bounded development admission assessment
-are complete. No candidate release has been completed.
+are complete. An immutable legacy-only candidate and offline baseline are now
+complete; a larger qualified and freshly scored candidate remains pending #10/#9.
 
 ## Ticket workflow
 

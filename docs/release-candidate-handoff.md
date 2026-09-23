@@ -1,5 +1,24 @@
 # Fresh-agent handoff: freeze and evaluate a release candidate
 
+## Execution update — September 23, 2026
+
+This handoff has now been executed through the zero-cost existing-pool engineering
+milestone. Start future work from [the results](release-candidate-results.md) and
+[settled contract](release-candidate-plan.md), not by repeating the checklist below.
+[Draft PR #32](https://github.com/montagovian/basedBench/pull/32) is on
+`backfill-foundation`; implementation lives in the isolated worktree, leaving the
+original dirty app/test files and all prior private artifacts unchanged.
+
+The local candidate freezes 519 legacy items; 118 development identities stay
+outside membership, with eight exact human-ready versions preserved. Historical
+image bindings are unavailable, so the report separates stored legacy history
+from zero current certified score coverage. #10 remains open for the qualified
+new cohort/evaluation. #9 is unlaunched; its
+[bounded proposal](chronological-expansion-proposal.md) still needs a scope,
+policy/model and spending decision. No dataset publication or merge occurred.
+
+The remainder is the original pre-execution handoff record.
+
 Prepared September 23, 2026. The current task produces this handoff and updates global/local agent instructions. The recommended next assignment is a remote checkpoint followed by a working release candidate. No remote checkpoint, release implementation, or new collection run has been performed by this documentation task.
 
 ## Copy/paste starter prompt
