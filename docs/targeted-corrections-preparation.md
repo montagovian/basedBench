@@ -3,7 +3,11 @@
 September 23, 2026 · [#27](https://github.com/montagovian/basedBench/issues/27)
 · [Frozen scope](targeted-corrections-plan.md)
 
-**Four original/proposal pairs are ready at `http://127.0.0.1:9879/`.**
+**The review pass is now complete:** see the [results](targeted-corrections-results.md)
+for three regraded pairs, two human-ready proposals and the explicitly unresolved
+Pride case. The preparation record below describes the four-pair gallery as opened.
+
+Four original/proposal pairs were prepared at `http://127.0.0.1:9879/`.
 Mamdani and philosophers are correction targets; Bowsette and Pride Month are
 interpretation cases. The one proposal per case is assistant-authored from the
 saved evidence, not a validated repair or a measured Luna output. Preparation
@@ -85,7 +89,8 @@ code/input/result hashes.
 Local verification: `data/backfill/targeted-corrections-verification-v1.json`.
 Raw evidence, images, proposal files and feedback remain local and uncommitted.
 
-**#27 stays open for actual human feedback.** After review, freeze the new
-journal separately and report the two correction targets separately from the
-two interpretation cases. Keep both-acceptable, partial and unclear outcomes.
+At preparation, #27 remained open for actual human feedback and a separate
+freeze. That [analysis is now complete](targeted-corrections-results.md), with
+three saved regrades and Pride's conversational uncertainty preserved separately.
+The two correction targets and two interpretation cases remain distinct.
 No proposal is adopted automatically, and #9 expansion remains pending.

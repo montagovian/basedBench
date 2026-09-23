@@ -80,22 +80,24 @@ judgment is explicitly tentative, and one repair note questions consistent
 ground truth. All exact labels, notes and five pre-comment checkpoints are
 preserved. Preparation and analysis cost $0 with no model calls; 24,294 protected
 prior files remain unchanged. This is conditional cached-pool readiness, not
-new Luna generation quality or full admission yield. The next useful proposal
-is a small correction/adjudication pass: address the wrong-person and specific
-referent failures, preserving ambiguity in the Bowsette/Pride cases. Further
-checker tuning or another capacity increase is not the immediate need. #9 stays
-pending an explicit expansion decision; answer readiness, source support,
-duplicates and joke/fit concerns remain separate.
+new Luna generation quality or full admission yield. It motivated the bounded
+correction/adjudication pass below. Further checker tuning or another capacity
+increase is not the immediate need. #9 stays pending an explicit expansion
+decision; answer readiness, source support, duplicates and joke/fit concerns
+remain separate.
 
-The separately approved [#27 correction review](targeted-corrections-preparation.md)
-is prepared: four original/proposal pairs, with two concrete grounding targets
-and two interpretation cases. One assistant-authored proposal per case uses
-saved evidence and bounded reference checks, with zero paid calls. The gallery
-awaits actual human judgments; none of the proposals is a validated repair yet.
-Prior labels and the eight overlap holds remain unchanged. All 508 tests pass;
-24,313 prior files are byte-identical, with two absent SQLite runtime sidecars
-accounted for and the database itself unchanged. No checker promotion or
-expansion is implied by preparing the review.
+The [#27 correction review](targeted-corrections-results.md) is complete with
+**three regraded pairs and Pride explicitly unresolved**. The Mamdani and
+Bowsette proposals are human-ready; the preferred philosopher proposal remains
+defective because it frames the confirmed ground truth as something merely
+discussed in comments. Put that provenance in metadata and state the answer
+directly in the next correction. Bowsette's accepted version preserves competing
+readings; Pride has no new saved answer labels. Across #26/#27, eight of ten
+reviewed identities have a ready answer version available (one tentative), with
+the eight overlap holds unchanged in the full 18. This is manual curation
+progress, not a model-quality result or database adoption. The zero-call
+analysis preserves all 24,346 prior files and the 508-test preparation baseline.
+Park Pride and keep #9 expansion pending.
 
 Move exact imitation of discretionary historical rejections off the critical
 path. Some valid items can reasonably be omitted from a curated collection.
@@ -188,13 +190,14 @@ ready controls; the subsequent [#25 prompt-only test](materiality-comparison-res
 still fails its joint targets. Stop repeated tuning on these exposed cases.
 The completed [#26 audit](fresh-human-audit-results.md) adds ten human judgments:
 six ready (one tentative), three repair (one with interpretation uncertainty)
-and one unclear, with eight overlap holds retained in the full 18. The next
-proposal targets two concrete grounding corrections and narrow unresolved
-interpretations, preserving exact originals for comparison. Its separately
-approved [#27 paired review](targeted-corrections-preparation.md) is now prepared
-and awaiting actual feedback. It does not promote the failed checker or authorize
-chronological collection. Keep source support and assistant inspection separate
-from human answer judgments throughout.
+and one unclear, with eight overlap holds retained in the full 18. The subsequent
+[#27 paired review](targeted-corrections-results.md) confirms the Mamdani and
+Bowsette proposals, leaves both philosopher versions defective, and preserves
+Pride's explicit uncertainty without fabricating new labels. Keep the accepted
+versions and the user's direct-framing correction as development evidence.
+Neither this manual progress nor a preferred but rejected rewrite promotes a
+checker or authorizes chronological collection. Source support and assistant
+inspection remain separate from human answer judgments.
 
 | Issue | Work item | Done when | Depends on |
 | --- | --- | --- | --- |
@@ -219,6 +222,12 @@ work. They should not delay the first useful backfill batch.
 
 ## Completed foundation
 
+- [Targeted correction review](targeted-corrections-results.md): three regraded
+  pairs / six judgments and one explicitly unresolved pair; Mamdani and Bowsette
+  proposals ready, philosopher proposal preferred but still repair. Partial
+  feedback and prior labels remain exact; zero calls and 24,346 prior-file hashes
+  verify. Eight reviewed identities now have a ready version available across
+  #26/#27, including the tentative ready original.
 - [Fresh cached-answer human audit](fresh-human-audit-results.md): ten original
   answers reviewed, six ready / three repair / one unclear, with eight overlap
   holds retained across 18 selected identities. Literal qualifications and all
