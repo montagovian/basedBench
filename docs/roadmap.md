@@ -73,17 +73,19 @@ Fahrenheit image-grounding errors and source-count weaknesses remain. Stop the
 variant; neither checker is promoted. All 491 tests pass and all 18,257 protected
 prior files remain unchanged.
 
-The approved [#26 fresh human audit](fresh-human-audit-preparation.md) is now
-prepared: all 18 remaining cached identities were frozen before screening, with
-ten original answers ready for blinded review and eight possible family overlaps
-held without replacement. Preparation cost $0 with no model calls. These are
-legacy-generated answers, so the audit measures conditional cached-pool readiness
-and correction work, not new Luna generation quality or full admission yield.
-Actual human feedback is the next step; all 500 tests pass and all 24,253 protected
-prior files remain unchanged. Further tuning on the same diagnostic cases or
-another capacity increase is not the immediate need. #9 stays pending an explicit
-expansion decision; answer readiness, source support, duplicates and joke/fit
-concerns remain separate.
+The [#26 fresh human audit](fresh-human-audit-results.md) is complete:
+**six ready, three repair and one unclear** among ten reviewed legacy originals;
+the full 18-case selection retains eight unresolved overlap holds. One ready
+judgment is explicitly tentative, and one repair note questions consistent
+ground truth. All exact labels, notes and five pre-comment checkpoints are
+preserved. Preparation and analysis cost $0 with no model calls; 24,294 protected
+prior files remain unchanged. This is conditional cached-pool readiness, not
+new Luna generation quality or full admission yield. The next useful proposal
+is a small correction/adjudication pass: address the wrong-person and specific
+referent failures, preserving ambiguity in the Bowsette/Pride cases. Further
+checker tuning or another capacity increase is not the immediate need. #9 stays
+pending an explicit expansion decision; answer readiness, source support,
+duplicates and joke/fit concerns remain separate. No follow-on run has launched.
 
 Move exact imitation of discretionary historical rejections off the critical
 path. Some valid items can reasonably be omitted from a curated collection.
@@ -174,11 +176,13 @@ Neither a larger checklist nor capacity alone has resolved the acceptance
 boundary. The completed [#24 feedback](materiality-boundary-results.md) adds two
 ready controls; the subsequent [#25 prompt-only test](materiality-comparison-results.md)
 still fails its joint targets. Stop repeated tuning on these exposed cases.
-The separately approved [#26 audit](fresh-human-audit-preparation.md) is prepared
-and awaiting human judgments on ten unheld cached originals; its full selection
-retains eight overlap holds. It measures conditional practical yield without
-promoting the failed variant or expanding chronological collection. Keep source
-support and assistant inspection separate from human answer judgments throughout.
+The completed [#26 audit](fresh-human-audit-results.md) adds ten human judgments:
+six ready (one tentative), three repair (one with interpretation uncertainty)
+and one unclear, with eight overlap holds retained in the full 18. The next
+proposal should target two concrete grounding corrections and narrow unresolved
+interpretations, preserving exact originals for comparison. It does not promote
+the failed checker or authorize chronological collection. Keep source support
+and assistant inspection separate from human answer judgments throughout.
 
 | Issue | Work item | Done when | Depends on |
 | --- | --- | --- | --- |
@@ -203,6 +207,10 @@ work. They should not delay the first useful backfill batch.
 
 ## Completed foundation
 
+- [Fresh cached-answer human audit](fresh-human-audit-results.md): ten original
+  answers reviewed, six ready / three repair / one unclear, with eight overlap
+  holds retained across 18 selected identities. Literal qualifications and all
+  15 journal events preserved; zero new calls and 24,294 prior-file hashes verify.
 - [Prompt-only materiality comparison](materiality-comparison-results.md): 20
   exposed cases, 56 Luna calls, 3.9¢; one additional repair detected but no gain
   in ready retention and worse ready repeats. Completed negative result; 491

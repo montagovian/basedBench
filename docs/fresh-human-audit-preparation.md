@@ -3,9 +3,10 @@
 September 23, 2026 · [#26](https://github.com/montagovian/basedBench/issues/26)
 · [Frozen scope and review plan](fresh-human-audit.md)
 
-**Ready for actual human review:** ten original answers at
-`http://127.0.0.1:9878/`, with eight conservative overlap holds retained in the
-full 18-case accounting. No replacements, paid calls, repairs or new labels.
+**Review and analysis are now complete:** see the
+[results](fresh-human-audit-results.md) for six ready / three repair / one unclear
+judgments and the eight unchanged holds. The preparation record below describes
+the gallery as opened, before those actual human events were collected.
 
 ## Frozen packet and limits
 
@@ -39,11 +40,11 @@ concerns remain separate from answer readiness. Comments are optional and reveal
 only after a saved draft checkpoint. The page resumes unsaved work and keeps
 every durable revision. Old galleries and their journals remain intact.
 
-Preparation is complete; #26 stays open pending actual human feedback and its
-analysis. Freeze the new journal into a separate snapshot after review, retaining
-the original 18-case selection and eight holds alongside the ten answer judgments.
-Keep new duplicate flags and assistant inspection separately attributed. There
-is no automatic follow-on model run or #9 expansion.
+At preparation, #26 remained open for actual feedback and a separate freeze and
+analysis retaining the original 18-case selection and eight holds. That step is
+now [complete](fresh-human-audit-results.md); the original packet remains intact.
+Human judgments and assistant inspection remain separately attributed. There is
+no automatic follow-on model run or #9 expansion.
 
 ## Verification
 
