@@ -85,7 +85,17 @@ is a small correction/adjudication pass: address the wrong-person and specific
 referent failures, preserving ambiguity in the Bowsette/Pride cases. Further
 checker tuning or another capacity increase is not the immediate need. #9 stays
 pending an explicit expansion decision; answer readiness, source support,
-duplicates and joke/fit concerns remain separate. No follow-on run has launched.
+duplicates and joke/fit concerns remain separate.
+
+The separately approved [#27 correction review](targeted-corrections-preparation.md)
+is prepared: four original/proposal pairs, with two concrete grounding targets
+and two interpretation cases. One assistant-authored proposal per case uses
+saved evidence and bounded reference checks, with zero paid calls. The gallery
+awaits actual human judgments; none of the proposals is a validated repair yet.
+Prior labels and the eight overlap holds remain unchanged. All 508 tests pass;
+24,313 prior files are byte-identical, with two absent SQLite runtime sidecars
+accounted for and the database itself unchanged. No checker promotion or
+expansion is implied by preparing the review.
 
 Move exact imitation of discretionary historical rejections off the critical
 path. Some valid items can reasonably be omitted from a curated collection.
@@ -179,10 +189,12 @@ still fails its joint targets. Stop repeated tuning on these exposed cases.
 The completed [#26 audit](fresh-human-audit-results.md) adds ten human judgments:
 six ready (one tentative), three repair (one with interpretation uncertainty)
 and one unclear, with eight overlap holds retained in the full 18. The next
-proposal should target two concrete grounding corrections and narrow unresolved
-interpretations, preserving exact originals for comparison. It does not promote
-the failed checker or authorize chronological collection. Keep source support
-and assistant inspection separate from human answer judgments throughout.
+proposal targets two concrete grounding corrections and narrow unresolved
+interpretations, preserving exact originals for comparison. Its separately
+approved [#27 paired review](targeted-corrections-preparation.md) is now prepared
+and awaiting actual feedback. It does not promote the failed checker or authorize
+chronological collection. Keep source support and assistant inspection separate
+from human answer judgments throughout.
 
 | Issue | Work item | Done when | Depends on |
 | --- | --- | --- | --- |
