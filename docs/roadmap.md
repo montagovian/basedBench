@@ -45,12 +45,19 @@ win. All three still miss human-confirmed defects and object to some ready
 answers. The fresh sample retains 30 selected identities: 14 exposure/family
 holds, 16 paired checks, no replacements or fresh human accuracy labels.
 
-The immediate next experiment should address required decoding and visible
-referents while preserving human-ready controls and separating source support.
-These 50 human reviews provide direction; another broad annotation round or
-larger backfill is not yet justified. A more expensive capacity tier remains
-untested and would need a separately frozen comparison. #9 stays pending an
-explicit expansion decision. No challenger is promoted to automatic admission.
+The focused [#22 connection audit](focused-connection-results.md) is complete:
+20 exposed cases, 52 Luna 6 calls and 4.8¢. Quiz-name decoding is more consistent,
+but ready retention drops from 5/6 to 4/6, adequacy flips rise from 1/6 to 2/6,
+and a response-validation error and faulty rationale remain. Stop that variant.
+The saved human judgments remain authoritative; extra structured findings do
+not establish that a checker understands the image or knows which detail matters.
+
+The next informative experiment is a small, separately priced higher-capacity
+comparison on the same known defects and ready controls, with rationale checks
+and repeats. That capacity question remains untested. The current human data
+provide enough direction; a larger general annotation round is not the immediate
+need. #9 stays pending an explicit later expansion decision. No challenger is
+promoted to automatic admission.
 
 Move exact imitation of discretionary historical rejections off the critical
 path. Some valid items can reasonably be omitted from a curated collection.
@@ -133,6 +140,11 @@ human-confirmed decoding/specificity defects and false alarms, plus broader
 duplicate retrieval coverage. The model-version upgrade lowers cost but does
 not remove those defects. This remains evaluation/calibration evidence, not
 a new production admission queue or proof of unattended quality.
+The subsequent [#22 focused screen](focused-connection-results.md) also fails
+its predeclared targets. A further expansion of the Luna checklist is not
+supported; test capacity in a separately bounded comparison before a broader
+validation. Keep source support and assistant inspection separate from human
+answer judgments throughout.
 
 | Issue | Work item | Done when | Depends on |
 | --- | --- | --- | --- |
@@ -157,6 +169,10 @@ work. They should not delay the first useful backfill batch.
 
 ## Completed foundation
 
+- [Focused connection audit](focused-connection-results.md): 20 exposed cases,
+  52 Luna 6 calls, 4.8¢; more consistent quiz decoding but worse ready retention,
+  repeat instability, one validation error and faulty rationales. Completed
+  negative result; 473 tests pass and all prior data remain unchanged.
 - [Human-calibrated Luna comparison](calibrated-comparison-results.md): three
   development conditions, ten repeats each, 16 fresh paired cases after 14
   exposure/family holds; 209 calls, 22.2¢, no API/validation errors. Simpler
