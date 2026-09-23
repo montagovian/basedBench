@@ -3,7 +3,7 @@
 September 23, 2026 · [#25](https://github.com/montagovian/basedBench/issues/25)
 · Follows [completed targeted feedback](materiality-boundary-results.md)
 
-**Planned; not launched.** Test whether a prompt-only materiality change can
+**Approved for bounded execution on September 23.** Test whether a prompt-only materiality change can
 retain the human-ready concise answers while detecting the confirmed missing
 decodings, referents and contrasts. Implement and freeze the executable recipes,
 requests, provenance, prices and tests before any inference. This document does
@@ -68,12 +68,22 @@ families; none becomes held out because it has a new human label.
 
 ## Ceiling and execution constraints
 
-Proposed hard ceiling: **$1 total**, including attempted calls and failures.
+Hard ceiling: **$1 total**, including attempted calls and failures.
 Historical all-Luna runs suggest only a few cents; the ceiling is not a spending
 target. Recheck official Luna pricing and account access before launching.
 Use conservative reservations before dispatch, at most three concurrent calls,
 no automatic retries, and stop new dispatch on unknown usage, fatal provider
 errors or an allowance violation. Retain any resulting incomplete coverage.
+
+Preflight on September 23 verified read-only account access and the official
+[Luna pricing](https://developers.openai.com/api/docs/models/gpt-6-luna):
+$0.10 input, $0.01 cached, $0.125 cache writes and $0.50 output per million
+tokens, with the documented long-context multipliers unchanged. The
+[vision table](https://developers.openai.com/api/docs/guides/images-vision)
+still omits Luna's image multiplier. Reserve the full 1.05M-token context at
+long-context cache-write pricing plus 4,000 output tokens: **$0.2655 per call**,
+settled against returned usage. This permits up to three concurrent reservations
+within the cap. These prices and reservations are frozen before inference.
 
 Create a new local run directory and freeze plan/input/request/code hashes.
 Verify that paired bodies differ only in instructions and prompt-cache identity,
