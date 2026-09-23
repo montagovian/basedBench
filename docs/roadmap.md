@@ -52,12 +52,19 @@ and a response-validation error and faulty rationale remain. Stop that variant.
 The saved human judgments remain authoritative; extra structured findings do
 not establish that a checker understands the image or knows which detail matters.
 
-The next informative experiment is a small, separately priced higher-capacity
-comparison on the same known defects and ready controls, with rationale checks
-and repeats. That capacity question remains untested. The current human data
-provide enough direction; a larger general annotation round is not the immediate
-need. #9 stays pending an explicit later expansion decision. No challenger is
-promoted to automatic admission.
+The [#23 capacity comparison](capacity-comparison-results.md) is now complete:
+52 calls for 28.9¢, using the same simple checker on GPT-6 Sol and Luna. Sol flags
+9/9 human repair originals versus Luna's 6/9 and has no adequacy flips, but keeps
+only 4/6 human-ready originals versus 5/6. Its primary verdicts also conceal
+rationale and source-count problems. Capacity helps diagnosis but does not meet
+the joint quality targets; no challenger is promoted to automatic admission.
+
+The next question is the material-omission boundary: use existing human-ready,
+both-acceptable and repair examples to distinguish needed decoding from optional
+detail. Resolve consequential remaining ambiguities with small targeted human
+adjudication if needed. A larger general annotation round or another capacity
+increase is not the immediate need. #9 stays pending an explicit later expansion
+decision; any subsequent checker change still needs fresh human validation.
 
 Move exact imitation of discretionary historical rejections off the critical
 path. Some valid items can reasonably be omitted from a curated collection.
@@ -141,10 +148,13 @@ duplicate retrieval coverage. The model-version upgrade lowers cost but does
 not remove those defects. This remains evaluation/calibration evidence, not
 a new production admission queue or proof of unattended quality.
 The subsequent [#22 focused screen](focused-connection-results.md) also fails
-its predeclared targets. A further expansion of the Luna checklist is not
-supported; test capacity in a separately bounded comparison before a broader
-validation. Keep source support and assistant inspection separate from human
-answer judgments throughout.
+its predeclared targets. The completed [#23 capacity test](capacity-comparison-results.md)
+improves defect sensitivity and repeat stability with Sol, but retains false
+alarms on human-ready answers and questionable rationales/support counts.
+Neither a larger checklist nor capacity alone has resolved the acceptance
+boundary. Use the existing human examples to clarify that boundary before a
+separately planned change and fresh validation. Keep source support and assistant
+inspection separate from human answer judgments throughout.
 
 | Issue | Work item | Done when | Depends on |
 | --- | --- | --- | --- |
@@ -169,6 +179,10 @@ work. They should not delay the first useful backfill batch.
 
 ## Completed foundation
 
+- [Sol versus Luna capacity comparison](capacity-comparison-results.md): 20
+  exposed cases, 52 calls, 28.9¢; Sol flags all nine repair originals with no
+  adequacy flips, but rejects two human-ready answers and fails the joint targets.
+  All 478 tests pass; zero-call replay and 18,098 prior-file hashes verify.
 - [Focused connection audit](focused-connection-results.md): 20 exposed cases,
   52 Luna 6 calls, 4.8¢; more consistent quiz decoding but worse ready retention,
   repeat instability, one validation error and faulty rationales. Completed
