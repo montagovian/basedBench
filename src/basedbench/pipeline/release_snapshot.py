@@ -217,7 +217,7 @@ def _image_bytes(path: Path) -> tuple[bytes, str]:
         extension = _FORMAT_EXTENSIONS.get(image_format)
         if extension is None:
             raise ValueError(f"unsupported image format: {image_format}")
-    except (OSError, UnidentifiedImageError, ValueError, EOFError,
+    except (OSError, UnidentifiedImageError, ValueError, EOFError, SyntaxError,
             Image.DecompressionBombWarning, Image.DecompressionBombError) as exc:
         raise ValueError(f"invalid image: {path}") from exc
     return payload, extension

@@ -1,19 +1,20 @@
 from __future__ import annotations
 
 import hashlib
+import io
 import json
 import sqlite3
 from pathlib import Path
 
 import pytest
+from PIL import Image
 
 from scripts.prepare_release_candidate import MODEL_PANEL, prepare
 
 
-PNG = bytes.fromhex(
-    "89504e470d0a1a0a0000000d49484452000000010000000108060000001f15c489"
-    "0000000b49444154789c636000020000050001a5f645400000000049454e44ae426082"
-)
+_image_buffer = io.BytesIO()
+Image.new("RGB", (2, 2), "blue").save(_image_buffer, format="PNG")
+PNG = _image_buffer.getvalue()
 
 
 def _sha(text: str) -> str:
@@ -153,6 +154,11 @@ def test_prepare_keeps_legacy_and_holds_newer_with_exact_private_versions(tmp_pa
     result = prepare(source, output)
 
     selection = json.loads((output / "selection.json").read_text())
+    from basedbench.pipeline.release_snapshot import freeze_release, load_release
+    frozen_path = tmp_path / "frozen"
+    frozen = freeze_release(selection, frozen_path, source_root=source)
+    assert len(load_release(frozen_path)["items"]) == 519
+    assert frozen["items"][0]["answer_provenance"]["exposure_basis"].startswith("published legacy")
     evidence = json.loads((output / "evidence.json").read_text())
     held = json.loads((output / "held-ledger.json").read_text())
     provenance = json.loads((output / "provenance-inventory.json").read_text())

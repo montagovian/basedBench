@@ -25,6 +25,17 @@ def _png(color: str) -> bytes:
     return buffer.getvalue()
 
 
+def test_corrupt_png_checksum_has_explicit_error(source, selection, tmp_path):
+    path = source / "assets/a.png"
+    damaged = bytearray(path.read_bytes())
+    damaged[damaged.index(b"IDAT") + 4] ^= 1
+    path.write_bytes(damaged)
+    output = tmp_path / "invalid-release"
+    with pytest.raises(ValueError, match="invalid image"):
+        freeze_release(selection, output, source_root=source)
+    assert not output.exists()
+
+
 def _jpeg(color: str) -> bytes:
     buffer = io.BytesIO()
     Image.new("RGB", (8, 8), color).save(buffer, format="JPEG")

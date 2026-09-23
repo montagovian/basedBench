@@ -420,7 +420,6 @@ def _legacy_items(source_root: Path, rows: list[sqlite3.Row], snapshot_id: str) 
             "image_path": raw_path,
             "cohort": "legacy",
             "exposure": "exposed",
-            "exposure_basis": "published legacy benchmark and known evaluation history; no inference about model training exposure",
             "admission_origin": "legacy_human_validated",
             "policy_version": POLICY_VERSION,
             "answer_readiness": "unknown",
@@ -430,6 +429,7 @@ def _legacy_items(source_root: Path, rows: list[sqlite3.Row], snapshot_id: str) 
             "duplicate_status": "unknown",
             "rights_status": "mixed_rights",
             "answer_provenance": {
+                "exposure_basis": "published legacy benchmark and known evaluation history; no inference about model training exposure",
                 "legacy_snapshot_id": snapshot_id,
                 "legacy_answer_hash_sha256": sha256_bytes(answer.encode("utf-8")),
                 "historical_actor": "unknown",
