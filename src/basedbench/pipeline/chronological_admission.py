@@ -82,7 +82,7 @@ def parse(case: dict, stage: str, call: dict) -> dict:
             return {**content.decision(value), 'assessment': value.model_dump()}
         if stage == 'suitability':
             value = pilot.Suitability.model_validate_json(call['output_text']).model_dump()
-            return pilot.result({'pass': 'pass', 'fail': 'fail', 'uncertain': 'defer'}[value['verdict']],
+            return pilot.result({'pass': 'pass', 'fail': 'fail', 'uncertain': 'defer'}[value['verdict']],  # nosec B105: assessment labels
                                 value['failure_code'] or ('recoverable_task' if value['verdict'] == 'pass' else 'unclear_task'),
                                 assessment=value)
         schema = answers.Draft if stage == 'generate' or stage.endswith('repair') else answers.AnswerCheck
