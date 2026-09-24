@@ -21,9 +21,23 @@ checkpoints the earlier foundation and implements #28–#31. The original 24,370
 inventoried files remain unchanged. #10 stays open for qualified new membership
 and a fully version-bound evaluation: historical image hashes are absent, so
 stored legacy history is reported separately and current certified score coverage
-is zero. The [#9 expansion proposal](chronological-expansion-proposal.md) is
-concrete but unapproved and unlaunched. This release engineering milestone
-supersedes the old sequencing that waited for expansion before freezing content.
+is zero. This release engineering milestone superseded the old sequencing that
+waited for expansion before freezing content.
+
+The user subsequently authorized the [#9 chronological run](chronological-backfill-plan.md):
+June 27–July 26, two accessible communities, at most 1,000 new posts, and a $10
+total model-call ceiling. [Collection results](chronological-backfill-results.md)
+record 251 new posts from June 27–July 15. An explicit archive-service refusal on
+July 16 stopped discovery; 21 later source/day partitions remain unattempted and
+PeterExplainsTheJoke remains a separate access gap. [#33](https://github.com/montagovian/basedBench/issues/33)
+is complete. [Draft PR #35](https://github.com/montagovian/basedBench/pull/35) adds
+the bounded collector, duplicate adapter and shared-budget processing workflow.
+The later processing result belongs to this authorized development run; it does
+not promote any previously failed checker or change the immutable release.
+
+The following milestones preserve the earlier evidence and decisions. References
+to expansion being pending describe those earlier checkpoints; the authorization
+above is the current collection scope.
 
 The first bounded newer-content pilot is complete: 100 June 20–26 candidates,
 43 automatic accepts, one rejection and 56 deferrals for about 23.3¢, within
@@ -176,7 +190,9 @@ absence of a detected defect should be reported as independent proof of quality.
 
 ## After a useful pilot
 
-The decision from #8 remains to revise before expanding. The bounded experiments
+The historical decision from #8 was to revise before expanding; the explicitly
+authorized #9 development run above supersedes its collection hold without
+promoting a checker or qualifying automatic release admission. The bounded experiments
 in [#16](https://github.com/montagovian/basedBench/issues/16) and
 [#17](https://github.com/montagovian/basedBench/issues/17) are complete. The
 [answer results](connection-comparison-results.md) do not justify promoting the
@@ -188,8 +204,9 @@ promotion targets. Its quote-heavy contract blocks useful answers for formatting
 errors while semantic misses and human-ready false alarms remain. Stop that
 variant; any further answer experiment needs a separate, simpler comparison plan.
 [#19](admission-v2-results.md) completes the duplicate evidence integration with
-explicit packet coverage and unchanged historical model responses. Expansion in
-#9 still requires a later decision. This does not reopen the frozen pilot, tighten
+explicit packet coverage and unchanged historical model responses. At that
+checkpoint, #9 still required the later authorization recorded above. This does
+not reopen the frozen pilot, tighten
 discretionary suitability, or require a broad human-review queue. The subsequently
 approved, bounded #20 calibration and #21 model comparison are now complete.
 Their [results](calibrated-comparison-results.md) narrow the remaining work to
