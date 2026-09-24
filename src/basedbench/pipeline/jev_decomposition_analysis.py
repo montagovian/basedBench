@@ -350,12 +350,21 @@ def _render(rows: list[dict], summary: dict, output: Path, dataset: Path) -> Non
     asset_dir = output / "assets"
     asset_dir.mkdir()
     cards = []
-    prioritized = {r["case_id"] for r in sorted(rows, key=_priority)[:12]}
+    ordered = sorted(rows, key=_priority)
+    # The review shortlist must include failures as well as apparent wins.
+    shortlist = [r for r in ordered if _priority(r)[0] == 0][:6]
+    shortlist += [r for r in ordered if _priority(r)[0] == 1][:6]
+    prioritized = {r["case_id"] for r in shortlist}
+    for row in ordered:
+        if len(prioritized) >= 12:
+            break
+        prioritized.add(row["case_id"])
     for row in sorted(rows, key=_priority):
         tags = [row["gold"]]
         if row["case_id"] in prioritized:
             tags.append("priority")
-        if any(v["state"] == "technical_error" for v in row["methods"].values()):
+        if any(v["state"] in ("technical_error", "held", "missing", "excluded_incomplete")
+               for v in row["methods"].values()):
             tags.append("technical")
         image_markup = ""
         image = row.get("image_path")
@@ -377,6 +386,8 @@ def _render(rows: list[dict], summary: dict, output: Path, dataset: Path) -> Non
             value = row["methods"].get(name, {"state": "missing"})
             raw = row["arms"].get(name, {})
             signal = raw.get("features", {})
+            if raw.get("error"):
+                signal = {"error": raw["error"], "features": signal}
             score = value.get("score") if name != "atomic" else value.get("broad_choice_score")
             method_rows.append(f'<tr><th>{_display(name)}</th><td>{_display(value.get("state"))}</td>'
                                f'<td>{_display(value.get("prediction"))}</td><td>{"—" if score is None else f"{score:.3f}"}{" (broad)" if name == "atomic" and score is not None else ""}</td>'
@@ -387,7 +398,7 @@ def _render(rows: list[dict], summary: dict, output: Path, dataset: Path) -> Non
         comments = "".join(f'<li class="{"selected" if c.get("id") in selected_ids else ""}"><b>{_display(c.get("id"))}</b> '
                            f'{"<em>selected</em> " if c.get("id") in selected_ids else ""}{_display(c.get("text"))}</li>'
                            for c in row["comments"])
-        cards.append(f'<article class="case" data-tags="{html.escape(" ".join(tags), quote=True)}">'
+        cards.append(f'<article class="case" id="{html.escape(str(row["case_id"]), quote=True)}" data-tags="{html.escape(" ".join(tags), quote=True)}">'
                      f'<header><h2>Post {_display(row["post_id"])}</h2>'
                      f'<p>{_display(row["gold"])}{" · priority review" if "priority" in tags else ""}<br>'
                      f'Answer version {_display(row["case_id"])} · group {_display(row["group_id"])}</p></header>'

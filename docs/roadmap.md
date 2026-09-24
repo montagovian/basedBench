@@ -66,14 +66,16 @@ policy, frozen outcomes, human labels or release membership changed. #9 and #10
 retain their coverage and qualification gaps.
 
 The user then requested a broader Jev architecture experiment. The
-[#38 implementation plan](jev-decomposition-plan.md) compares broad decisions,
-48 atomic predicates, an answer-span/comment evidence matrix, a focused second
-pass, and fixed group-separated learned combinations. The research and additive
-implementation are ready; the same 99 labeled versions are prepared without
-changing their judgments. The user approved a $5 total cap and explicitly
-authorized the image and answer/comment payloads sent to OpenAI and TypeSafe.
-The frozen live comparison is running. There are no new performance results
-yet. **Keep #38 open until the user
+[#38 comparison](jev-decomposition-results.md) is complete: 706 calls and 16,294
+typed judgments for an estimated $0.107015 within the approved $5 cap. Native
+49-question batches took a median 119 ms. On 94 matched known cases, the combined
+learned features caught 6/17 repairs versus 2/17 for the broad image-aware check,
+but rejected 16/77 ready answers versus 10/77. The atomic rule deferred 83/94;
+focusing evidence did not improve decisions. One dense-image helper incomplete
+response and one animated-image hold are retained. All 630 tests pass, completed
+replay makes zero calls, and 39,381 protected files are unchanged. No checker or
+release membership changed. [Draft PR #39](https://github.com/montagovian/basedBench/pull/39)
+contains the additive implementation and findings. **Keep #38 open until the user
 reviews the experiment and explicitly approves closure.**
 
 The following milestones preserve the earlier evidence and decisions. References

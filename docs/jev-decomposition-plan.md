@@ -228,6 +228,12 @@ recorded privately alongside the frozen execution manifest. Human labels, notes
 and provenance are excluded by the request allowlist and remain local. The
 authorized live run has now started; the rejected attempt made no calls.
 
+The [completed results](jev-decomposition-results.md) account for 706 calls and
+16,294 Jev judgments at an estimated $0.107015. The final report and local review
+are ready; the finite run is complete and issue #38 remains open for human review.
+The balanced review rendering changes presentation only: case records, folds and
+numeric summaries are byte-identical to the original saved analysis.
+
 Implementation validation: 630 tests pass using the project's existing complete
 environment (including optional encoder dependencies). Bandit reports no findings
 in the four new modules; `git diff --check` is clean. Browser inspection of an
