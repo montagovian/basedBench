@@ -40,6 +40,9 @@ curation = [
 encoder = [
     "sentence-transformers>=5",
 ]
+optimization = [
+    "gepa==0.1.4",
+]
 
 [build-system]
 requires = ["uv_build>=0.9.18,<0.10.0"]
