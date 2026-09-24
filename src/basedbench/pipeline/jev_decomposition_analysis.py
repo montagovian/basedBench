@@ -388,8 +388,9 @@ def _render(rows: list[dict], summary: dict, output: Path, dataset: Path) -> Non
                            f'{"<em>selected</em> " if c.get("id") in selected_ids else ""}{_display(c.get("text"))}</li>'
                            for c in row["comments"])
         cards.append(f'<article class="case" data-tags="{html.escape(" ".join(tags), quote=True)}">'
-                     f'<header><div><small>{_display(row["case_id"])} · group {_display(row["group_id"])}</small>'
-                     f'<h2>{_display(row["gold"])} <span>{" · priority review" if "priority" in tags else ""}</span></h2></div></header>'
+                     f'<header><h2>Post {_display(row["post_id"])}</h2>'
+                     f'<p>{_display(row["gold"])}{" · priority review" if "priority" in tags else ""}<br>'
+                     f'Answer version {_display(row["case_id"])} · group {_display(row["group_id"])}</p></header>'
                      f'<div class="body"><div class="visual">{image_markup}<p>{_display(row.get("image_error") or "")}</p></div>'
                      f'<div class="narrative"><h3>Exact candidate answer</h3><p>{_display(row["input"].get("explanation", ""))}</p>'
                      f'{_human_markup(row["human"], row["gold"])}'

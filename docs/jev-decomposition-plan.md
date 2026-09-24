@@ -67,10 +67,11 @@ count; retain provider usage and a conservative full-context reservation.
 ## Frozen experiment design
 
 One finite comparison; no post-result prompt edits, helper regeneration or
-automatic second experiment. API budget awaits the user's separate answer
-($5 recommended, $10 alternative, or no paid calls). Implement and test while
-pending; do not dispatch paid work until supplied. Record the answer in the
-execution manifest and this plan before dispatch.
+automatic second experiment. On September 24 the user approved the proposed
+**$5 total API cap**, including Jev and helper calls, with “yep lets do it”.
+Freeze that allowance in the execution manifest before dispatch. Stop when the
+finite comparison completes, the cap cannot cover the next reservation, or a
+call's usage/delivery is unresolved.
 
 For each supported image, generate one neutral text observation using pinned
 GPT-6 Luna, medium reasoning, high image detail, maximum 2,000 output tokens.
@@ -213,9 +214,19 @@ Preflight counts 5,440 matrix questions and 9,408 atomic/focused predicates,
 before broad controls and repeat/batching measurements. These are planned
 workload counts, not dispatched calls or evidence of accuracy improvement.
 
-New paid execution is pending the user's spending-cap answer. No performance
+The user has now approved the separate $5 cap for the live comparison. No performance
 claim can be made from request construction or mocked-provider tests. The
 implementation includes no automatic admissions or changes to existing gates.
+
+The first launch was rejected by automatic approval review before execution.
+The reviewer requested explicit authorization of the outgoing payloads and
+destinations: 87 meme images to OpenAI for observations; 99 candidate-answer and
+comment bundles, with those observations where available, to TypeSafe's Jev API.
+The user explicitly answered **“Yes, send those inputs”**, authorizing both
+destinations and their stated inputs under the same $5 cap. This confirmation is
+recorded privately alongside the frozen execution manifest. Human labels, notes
+and provenance are excluded by the request allowlist and remain local. The
+authorized live run has now started; the rejected attempt made no calls.
 
 Implementation validation: 630 tests pass using the project's existing complete
 environment (including optional encoder dependencies). Bandit reports no findings
@@ -228,13 +239,12 @@ the implementation, not Jev's live performance.
 Use the project's Python environment with the `curation` extra. The source
 corpus and new root below are private local paths; never commit their contents.
 The dataset preparation has already run and must not be repeated into the same
-directory. After recording the authorized cap here, freeze a plan with an
-explicit `--budget-usd` and run the finite workload:
+directory. Freeze the approved cap and run the finite workload:
 
 ```sh
 uv run --extra curation python -m basedbench.pipeline.jev_decomposition_run prepare \
   /Users/alexanthony/aoa_dev/basedBench5/data/backfill/jev-decomposition-v1 \
-  --budget-usd AUTHORIZED_CAP
+  --budget-usd 5
 uv run --extra curation python -m basedbench.pipeline.jev_decomposition_run run \
   /Users/alexanthony/aoa_dev/basedBench5/data/backfill/jev-decomposition-v1
 uv run --extra curation python -m basedbench.pipeline.jev_decomposition_analysis \
