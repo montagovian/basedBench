@@ -78,6 +78,20 @@ release membership changed. [Draft PR #39](https://github.com/montagovian/basedB
 contains the additive implementation and findings. **Keep #38 open until the user
 reviews the experiment and explicitly approves closure.**
 
+The user next suggested GEPA / `optimize_anything` and a deeper data investigation.
+[#40's groundwork](jev-optimization-findings.md) audits all 18 repair versions and
+16 combined false alarms, six controlled repair/ready families, and seven images
+in detail. It proposes candidate-blind evidence roles followed by explicit answer
+coverage checks, with a constrained GEPA policy search. The saved-score frontier
+also exposes a possible calibration opportunity, so a training-only calibration
+control is included before attributing gains to prompt/program search. That
+control restores three ready answers and catches one additional repair, reaching
+64/77 ready passed and 7/17 repair caught; its one new repair catch has an
+ambiguous-ground-truth note, and only one of six corrected pairs separates. This is
+zero-provider-call development work; a new capped search is proposed, not launched.
+The [plan](jev-optimization-plan.md) preserves all labels and old runs, separates
+adaptive validation from outer evaluation, and keeps #38 and #40 open for review.
+
 The following milestones preserve the earlier evidence and decisions. References
 to expansion being pending describe those earlier checkpoints; the authorization
 above is the current collection scope.
