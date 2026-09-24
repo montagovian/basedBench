@@ -10,6 +10,7 @@ from typing import Any
 
 EXPERIMENTS = (
     "calibrated-luna-dev-v1",
+    "calibrated-luna-fresh-v1",
     "focused-connection-v1",
     "capacity-comparison-v1",
     "materiality-comparison-v1",
@@ -170,7 +171,7 @@ def _parse_result(experiment: str, case: dict[str, Any], legacy_case: dict[str, 
     """Use the original parser for a matching model/prompt family only."""
     from basedbench.pipeline import calibrated_eval, capacity_eval, claim_eval, connection_eval, focused_connection_eval
 
-    if experiment == "calibrated-luna-dev-v1":
+    if experiment in {"calibrated-luna-dev-v1", "calibrated-luna-fresh-v1"}:
         parsed = calibrated_eval.parse(legacy_case, arm, call)
     elif experiment == "focused-connection-v1":
         parsed = focused_connection_eval.parse(legacy_case, arm, call)
@@ -335,12 +336,20 @@ def prepare(data_root: str | Path, dataset: str | Path, output: str | Path) -> d
         if case_id not in matched_ids and not unmatched[case_id]:
             unmatched[case_id].append("no_exact_verified_cached_request")
     report = {
-        "version": "source-evidence-baselines-v1",
+        "version": "source-evidence-baselines-v2",
         "case_count": len(cases),
         "matched_case_count": len(matched_ids),
         "matched_trial_count": len(matches),
         "unmatched_case_count": sum(case_id not in matched_ids for case_id in cases),
         "experiments": experiments,
+        "completeness_correction": {
+            "included_cache": "calibrated-luna-fresh-v1",
+            "rationale": (
+                "An earlier baseline snapshot omitted this frozen calibrated run. Include every "
+                "verified exact-input condition and repeat from the cache, regardless of its verdict."
+            ),
+            "superseded_snapshot": _superseded_snapshot(output.parent / "baselines"),
+        },
         "unmatched": [{"case_id": case_id, "reasons": reasons} for case_id, reasons in unmatched.items()
                       if case_id not in matched_ids],
         "limits": ["Only exact explanation, comment-packet, and image-byte matches are reused.",
@@ -353,3 +362,13 @@ def prepare(data_root: str | Path, dataset: str | Path, output: str | Path) -> d
     manifest = {name: _file_hash(output / name) for name in ("matches.json", "report.json")}
     (output / "manifest.json").write_text(json.dumps(manifest, indent=2) + "\n", encoding="utf-8")
     return report
+
+
+def _superseded_snapshot(path: Path) -> dict[str, Any] | None:
+    if not path.is_dir():
+        return None
+    hashes = {name: _file_hash(path / name) for name in ("matches.json", "report.json", "manifest.json")
+              if (path / name).is_file()}
+    if not hashes:
+        return None
+    return {"path": str(path), "sha256": hashes}

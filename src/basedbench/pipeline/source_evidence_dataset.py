@@ -115,8 +115,10 @@ def _append_case(rows: dict, packet: dict, answer: dict, event: dict, source: di
         rows[key] = {"case_id": f"{pid}-{sha[:16]}", "post_id": pid, "input": inp,
                      "input_sha256": sha, "image_path": None, "image_error": None,
                      "group_id": packet.get("group_id", pid),
+                     "family_weight": packet.get("family_weight", 1.0),
+                     "stratum": packet.get("stratum"),
                      "human": {"quality": "unclear", "events": []},
-                     "provenance": {"sources": [], "answer_versions": []}}
+                     "provenance": {"sources": [], "answer_versions": [], "review_selections": []}}
     row = rows[key]
     if row["input"] != inp:
         raise ValueError("Input digest collision")
@@ -133,6 +135,28 @@ def _append_case(rows: dict, packet: dict, answer: dict, event: dict, source: di
         ("snapshot", "manifest_sha256", "cases_sha256", "events_sha256", "event_id", "packet_input_sha256")})
     row["provenance"]["answer_versions"].append({"source": answer["source"],
         "text_sha256": source["answer_text_sha256"], "slot": source["slot"]})
+    row["provenance"]["review_selections"].append(source.get("group_metadata") or {
+        "snapshot": source["snapshot"], "group_id": packet.get("group_id", pid),
+        "family_weight": packet.get("family_weight", 1.0), "stratum": packet.get("stratum"),
+        "cases_sha256": source["cases_sha256"]})
+
+
+def _verify_feedback_groups(source_packets: dict, feedback_packets: dict, directory: Path) -> None:
+    """Require later family corrections to have an explicit inspected duplicate pair."""
+    inspections = _json(directory / "duplicate-inspection.json")
+    inspected_pairs = {frozenset((item["left"], item["right"])) for item in inspections
+                       if item.get("relation") == "same_image_and_joke"}
+    members: dict[str, set[str]] = defaultdict(set)
+    for pid, row in feedback_packets.items():
+        members[row["group_id"]].add(pid)
+    for pid, row in feedback_packets.items():
+        group = row["group_id"]
+        if (row.get("case_id") != pid or row.get("stratum") != source_packets[pid].get("stratum")
+                or row.get("family_weight") != 1 / len(members[group])):
+            raise ValueError("Feedback family metadata changed")
+        if group != source_packets[pid].get("group_id", pid):
+            if group not in members[group] or frozenset((pid, group)) not in inspected_pairs:
+                raise ValueError("Feedback family correction lacks inspected pair")
 
 
 def _load_snapshot(root: Path, name: str, rows: dict, exclusions: list[dict],
@@ -155,6 +179,10 @@ def _load_snapshot(root: Path, name: str, rows: dict, exclusions: list[dict],
     feedback_packets = {p["post_id"]: p for p in feedback_list}
     if len(source_packets) != len(source_list) or len(feedback_packets) != len(feedback_list):
         raise ValueError("Duplicate post in source packet")
+    if set(source_packets) != set(feedback_packets):
+        raise ValueError("Source and feedback post sets differ")
+    if name in PACKETS:
+        _verify_feedback_groups(source_packets, feedback_packets, directory)
     if name == "targeted-corrections-feedback-v1":
         source_manifest = directory / "source-packet-manifest.json"
         if file_hash(source_manifest) != manifest["source_packet_manifest_sha256"]:
@@ -196,11 +224,15 @@ def _load_snapshot(root: Path, name: str, rows: dict, exclusions: list[dict],
         feedback_packet = feedback_packets.get(pid)
         if feedback_packet is None:
             raise ValueError("Feedback packet missing post")
+        case_packet = packet
         if name in PACKETS:
             if digest(feedback_packet["input"]) != feedback_packet["input_sha256"]:
                 raise ValueError("Feedback triplet changed")
             if _triplet(packet["input"]["explanation"], packet) != feedback_packet["input"]:
                 raise ValueError("Feedback original differs from source packet")
+            case_packet = {**packet, "group_id": feedback_packet["group_id"],
+                           "family_weight": feedback_packet["family_weight"],
+                           "stratum": feedback_packet["stratum"]}
         terminal_events = [e for e in feedbacks[pid] if e["event_id"] not in superseded]
         if not terminal_events:
             exclusions.append({"snapshot": name, "post_id": pid, "reason": "no_feedback_event"})
@@ -243,7 +275,15 @@ def _load_snapshot(root: Path, name: str, rows: dict, exclusions: list[dict],
                     "answer_text_sha256": digest(answer["text"]), "slot": slot, "answer_source": answer["source"],
                     "event": event, "revision_history": history,
                 }
-                _append_case(rows, packet, answer, event, source, asset, quality)
+                if name in PACKETS:
+                    source["group_metadata"] = {
+                        "snapshot": name, "group_id": feedback_packet["group_id"],
+                        "family_weight": feedback_packet["family_weight"],
+                        "stratum": feedback_packet["stratum"],
+                        "source_packet_group_id": packet.get("group_id", pid),
+                        "cases_sha256": file_hash(directory / "cases.json"),
+                        "duplicate_inspection_sha256": file_hash(directory / "duplicate-inspection.json")}
+                _append_case(rows, case_packet, answer, event, source, asset, quality)
 
 
 def _reassessments(root: Path, rows: dict, exclusions: list[dict], source_hashes: dict[str, str]):
@@ -306,9 +346,11 @@ def prepare(data_root: Path, output: Path) -> dict:
         row["human"]["events"].sort(key=lambda e: (e["snapshot"], e["event_id"], e["slot"]))
         row["provenance"]["sources"].sort(key=lambda s: (s["snapshot"], s["event_id"]))
         row["provenance"]["answer_versions"].sort(key=lambda s: (s["source"], s["slot"]))
+        row["provenance"]["review_selections"].sort(key=lambda s: (s["snapshot"], s["group_id"]))
         cases.append(row)
     cases.sort(key=lambda c: (c["post_id"], c["input_sha256"]))
     report = {"version": VERSION, "cases": len(cases), "posts": len({c["post_id"] for c in cases}),
+              "known_groups": len({c["group_id"] for c in cases}),
               "quality": dict(sorted(Counter(c["human"]["quality"] for c in cases).items())),
               "image_holds": dict(sorted(Counter(c["image_error"] for c in cases if c["image_error"]).items())),
               "human_judgments": sum(len(c["human"]["events"]) for c in cases),
@@ -317,7 +359,8 @@ def prepare(data_root: Path, output: Path) -> dict:
     write_json(output / "cases.json", cases)
     write_json(output / "report.json", report)
     manifest = {"version": VERSION, "files": {name: file_hash(output / name)
-                 for name in ("cases.json", "report.json")}, "source_manifest_hashes": source_hashes}
+                 for name in ("cases.json", "report.json")}, "source_manifest_hashes": source_hashes,
+                 "producer_code_sha256": file_hash(Path(__file__))}
     manifest["dataset_id"] = digest(manifest)
     write_json(output / "manifest.json", manifest)
     return report

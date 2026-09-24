@@ -2,6 +2,7 @@ import base64
 import hashlib
 import json
 from pathlib import Path
+import shutil
 from unittest.mock import patch
 
 import pytest
@@ -112,6 +113,48 @@ def test_prepare_keeps_repeats_and_never_pairs_different_models(tmp_path):
     assert any("image_bytes_differ" in item for item in unmatched["changed-image"])
     with pytest.raises(FileExistsError):
         baselines.prepare(data_root, dataset, output)
+
+
+def test_fresh_calibrated_cache_is_included_without_verdict_filtering(tmp_path):
+    data_root, dataset, development = _fixture(tmp_path)
+    fresh = development.parent / "calibrated-luna-fresh-v1"
+    shutil.copytree(development, fresh)
+    previous = tmp_path / "baselines"
+    for name in ("matches.json", "report.json", "manifest.json"):
+        (previous / name).parent.mkdir(parents=True, exist_ok=True)
+        (previous / name).write_text(name)
+
+    output = tmp_path / "baselines-complete"
+    with patch.object(baselines, "_parse_result", side_effect=_fake_parse):
+        report = baselines.prepare(data_root, dataset, output)
+
+    rows = json.loads((output / "matches.json").read_text())
+    fresh_rows = [row for row in rows if row["experiment"] == "calibrated-luna-fresh-v1"]
+    assert report["experiments"]["calibrated-luna-fresh-v1"]["verified"] is True
+    assert len(fresh_rows) == 3
+    assert {row["condition"] for row in fresh_rows} == {"simple_6", "simple_56"}
+    assert {row["repeat"] for row in fresh_rows if row["condition"] == "simple_6"} == {0, 1}
+    assert {row["answer_quality"] for row in fresh_rows} == {"pass", "fail"}
+    correction = report["completeness_correction"]
+    assert correction["included_cache"] == "calibrated-luna-fresh-v1"
+    assert "regardless of its verdict" in correction["rationale"]
+    assert set(correction["superseded_snapshot"]["sha256"]) == {"matches.json", "report.json", "manifest.json"}
+
+
+def test_fresh_cache_uses_the_original_calibrated_parser():
+    from basedbench.pipeline import calibrated_eval
+
+    legacy_case = {"case_id": "post-1"}
+    call = {"response": {"model": "gpt-6-luna"}, "status": "completed", "output_text": "{}"}
+    with patch.object(calibrated_eval, "parse", return_value={"answer_quality": "fail",
+                                                                 "evidence_status": "supported",
+                                                                 "verdict": "fail"}) as parser:
+        parsed = baselines._parse_result("calibrated-luna-fresh-v1", {}, legacy_case,
+                                         "simple_6", call)
+    parser.assert_called_once_with(legacy_case, "simple_6", call)
+    assert parsed["answer_quality"] == "fail"
+    assert parsed["evidence_status"] == "supported"
+    assert parsed["joint_verdict"] == "fail"
 
 
 @pytest.mark.parametrize("damage", ["tamper", "missing"])

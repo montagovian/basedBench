@@ -175,3 +175,61 @@ def test_independent_feedback_chains_keep_conflicting_judgments(tmp_path, monkey
     assert row["human"]["quality"] == "conflicting"
     assert {e["event_id"] for e in row["human"]["events"]} == {"independent-1", "independent-2"}
     assert all(len(e["revision_history"]) == 1 for e in row["human"]["events"])
+
+
+def test_later_feedback_family_metadata_replaces_source_packet_group(tmp_path, monkeypatch):
+    packet_dir = tmp_path / "curation/explanation-calibration-v1"
+    packet_dir.mkdir(parents=True)
+    source_cases = []
+    feedback_cases = []
+    events = []
+    summaries = []
+    for pid in ("pA", "pB"):
+        original = _case(pid, f"Answer for {pid}", answers=[{"source": "original", "text": f"Answer for {pid}"}])
+        original["stratum"] = "random_cached"
+        original["case_id"] = pid
+        source_cases.append(original)
+        triplet = {k: original["input"][k] for k in ("explanation", "comment_evidence", "image_sha256")}
+        event = _event(original, f"feedback-{pid}", {"quality_a": "ready"})
+        events.append(event)
+        feedback_cases.append({"post_id": pid, "case_id": pid, "group_id": "pA",
+                               "stratum": "random_cached", "family_weight": .5,
+                               "human_event_id": event["event_id"],
+                               "input": triplet, "input_sha256": digest(triplet)})
+        summaries.append({"post_id": pid, "event": event,
+                          "answers": [{"source": "original", "quality": "ready",
+                                       "text_sha256": digest(f"Answer for {pid}")}]})
+    write_json(packet_dir / "cases.json", source_cases)
+    write_json(packet_dir / "manifest.json", {"files": {"cases.json": file_hash(packet_dir / "cases.json")}})
+    folder = tmp_path / "curation/explanation-calibration-feedback-v1"
+    folder.mkdir()
+    write_json(folder / "cases.json", feedback_cases)
+    (folder / "events.jsonl").write_text("".join(json.dumps(e) + "\n" for e in events))
+    write_json(folder / "human-feedback.json", summaries)
+    write_json(folder / "duplicate-inspection.json", [{"left": "pA", "right": "pB",
+                 "relation": "same_image_and_joke"}])
+    files = {name: file_hash(folder / name) for name in
+             ("cases.json", "events.jsonl", "human-feedback.json", "duplicate-inspection.json")}
+    manifest = {"files": files, "packet_id": "packet",
+                "packet_manifest_sha256": file_hash(packet_dir / "manifest.json")}
+    manifest["snapshot_id"] = digest(manifest)
+    write_json(folder / "manifest.json", manifest)
+    monkeypatch.setattr(dataset, "SNAPSHOTS", ("explanation-calibration-feedback-v1",))
+    report = dataset.prepare(tmp_path, tmp_path / "out")
+    rows = json.loads((tmp_path / "out/cases.json").read_text())
+    assert report["known_groups"] == 1
+    assert {r["group_id"] for r in rows} == {"pA"}
+    assert {r["family_weight"] for r in rows} == {.5}
+    assert {r["stratum"] for r in rows} == {"random_cached"}
+    changed = next(r for r in rows if r["post_id"] == "pB")
+    assert changed["provenance"]["review_selections"][0]["source_packet_group_id"] == "pB"
+    assert changed["human"]["quality"] == "ready"
+    assert changed["input_sha256"] == digest(changed["input"])
+    frozen_manifest = json.loads((tmp_path / "out/manifest.json").read_text())
+    assert frozen_manifest["producer_code_sha256"] == file_hash(Path(dataset.__file__))
+    write_json(folder / "duplicate-inspection.json", [])
+    manifest["files"]["duplicate-inspection.json"] = file_hash(folder / "duplicate-inspection.json")
+    manifest["snapshot_id"] = digest({k: v for k, v in manifest.items() if k != "snapshot_id"})
+    write_json(folder / "manifest.json", manifest)
+    with pytest.raises(ValueError, match="lacks inspected pair"):
+        dataset.prepare(tmp_path, tmp_path / "out2")
