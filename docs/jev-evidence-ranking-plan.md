@@ -102,12 +102,17 @@ record whether they were opened. No new semantic labels are inferred from empty
 ratings. Persist feedback locally with revision checks, append-only events and
 reload; reveal method names only after saving. This is 16 reviews, not a new broad
 annotation set. Do not expose the reveal mapping to the frontend before save.
+Record method exposure too, so subsequent revised ratings are identifiable as
+unblinded; preserve the initial judgment and every revision.
 
 On the 12 sampled families, a follow-up is warranted when at least eight have
-decisive preferences, one Jev arm wins at least twice as often as order among its
-decisive head-to-head comparisons, and its count of full-clue retention is no lower
+decisive preferences, one Jev arm is chosen as most useful at least once and at
+least twice as often as order, and its count of full-clue retention is no lower
 and misleading-pack count no higher than order. Ties and uncertainty remain visible;
-report counts, not significance. Diagnostic examples cannot satisfy this rule.
+report best-pack counts, not pairwise preferences or significance. A vote for the
+third arm says nothing about the relative preference between the other two.
+Use the latest judgment saved before method exposure for this screen; report later
+revisions separately. Diagnostic examples cannot satisfy this rule.
 Before human input, report preparation/coverage/cost only, with effectiveness pending.
 Stop after this fixed comparison; no GEPA fitting or repeated tuning.
 
