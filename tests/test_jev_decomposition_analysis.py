@@ -114,6 +114,10 @@ def test_technical_denominators_and_escaped_review(tmp_path: Path) -> None:
     assert "&lt;b&gt;scene&lt;/b&gt;" in page and "uncertain text" in page
     assert "<script>alert" not in page
     assert "<svg onload" not in page
+    # One method failed on a labeled case: the headline must compare the
+    # intersection, not reuse the broader method's eleven-case denominator.
+    assert "Same 10 answers in both columns" in page
+    assert "2 other versions lack a clear human judgment or a completed comparison" in page
     assert (out / "assets" / "image.png").read_bytes() == b"frozen image"
 
 

@@ -97,10 +97,13 @@ rule changed once. Consistency is not independent evidence of correctness.
 
 ## Concrete review examples
 
-The local review page retains every image, unchanged answer, exact human note,
-method decision and selected comment. Its twelve-case shortlist includes both
-apparent wins and learned-model errors. The following are assistant inspections,
-not new human labels:
+The local review page leads with the matched-case tradeoff and three contrasting
+examples: Freddie Mercury, the Resident Evil 4 reference, and the revised wedding
+answer. Each shows the earlier human judgment beside the single-check and combined
+decisions. Exact notes, comments and model details expand on demand; all 99
+versions remain searchable. This presentation change preserves byte-identical
+case records, folds and numeric summaries. The following are assistant
+inspections, not new human labels:
 
 - **`1jley2r-5021e767b2de5d4b`**, Freddie Mercury: the combined model fails the
   answer where the broad check passes it. This agrees with feedback that the

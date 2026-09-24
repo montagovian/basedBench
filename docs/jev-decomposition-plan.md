@@ -234,6 +234,16 @@ are ready; the finite run is complete and issue #38 remains open for human revie
 The balanced review rendering changes presentation only: case records, folds and
 numeric summaries are byte-identical to the original saved analysis.
 
+The human-review page needs a simpler entry point following user feedback.
+Keep this bounded presentation change local: lead with the matched-case tradeoff,
+show three contrasting examples by default, translate verdicts into plain
+language, and collapse model internals. Retain all cases, exact notes, comments,
+and technical details for inspection. Compute displayed counts from the same
+completed cases for both compared methods. Render into a new private directory;
+verify case records, folds, and numeric summaries against the saved analysis,
+run focused renderer tests, and inspect the live page in a browser. No provider
+calls, label changes, new experiment, or issue closure are part of this change.
+
 Implementation validation: 630 tests pass using the project's existing complete
 environment (including optional encoder dependencies). Bandit reports no findings
 in the four new modules; `git diff --check` is clean. Browser inspection of an

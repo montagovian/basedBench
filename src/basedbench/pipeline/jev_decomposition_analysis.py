@@ -33,6 +33,27 @@ LEARNED = ("learned_atomic", "learned_combined")
 ROUTE_THRESHOLDS = (0.5, 0.6, 0.7, 0.8, 0.9)
 SEED = 3801
 
+# Editorial reading order only. These notes never enter fitting or case records.
+REVIEW_EXAMPLES = {
+    "1jley2r-5021e767b2de5d4b": (
+        "Freddie Mercury: a useful correction",
+        "Your earlier note says the answer misses the specific event implied by the photo. "
+        "The new method flags it for work; the single check accepted it. "
+        "Does that flag capture the omission you meant?",
+    ),
+    "1u9z5ho-4237a9eb2faa29be": (
+        "Resident Evil 4: a missed reference",
+        "Your earlier note calls out the missing Resident Evil 4 connection. "
+        "The answer explains square packing, but the new method accepts it anyway. "
+        "Is the game reference necessary to get this joke?",
+    ),
+    "1u8acxi-89c345571e8428b9": (
+        "Wedding question: a false alarm",
+        "You previously marked this revised answer ready. The single check agrees, "
+        "but the new method flags it for work. Do you still consider this answer complete?",
+    ),
+}
+
 
 def _sha(path: Path) -> str:
     return hashlib.sha256(path.read_bytes()).hexdigest()
@@ -346,6 +367,44 @@ def _observation_markup(observation: Any) -> str:
             f'<details><summary>Full machine observation JSON</summary><pre>{_display(observation)}</pre></details>')
 
 
+def _comparison_markup(rows: list[dict]) -> str:
+    """Compare both methods on the same available, human-labeled cases."""
+    names = ("broad_observation", "learned_combined")
+    matched = [r for r in rows if r["gold"] in ("ready", "repair") and all(
+        r["methods"].get(name, {}).get("state") == "completed"
+        and r["methods"][name].get("prediction") in ("pass", "fail", "uncertain") for name in names)]
+    if not matched:
+        return '<p>No completed matched comparison is available.</p>'
+    counts = {name: {gold: sum(r["gold"] == gold and r["methods"][name]["prediction"] == "fail"
+                              for r in matched) for gold in ("ready", "repair")} for name in names}
+    totals = Counter(r["gold"] for r in matched)
+    caught_delta = counts[names[1]]["repair"] - counts[names[0]]["repair"]
+    false_delta = counts[names[1]]["ready"] - counts[names[0]]["ready"]
+    def change(value: int) -> str:
+        return f'{abs(value)} {"more" if value >= 0 else "fewer"}'
+    comparison = (f'The combined method caught <strong>{change(caught_delta)} answers needing work</strong> '
+                  f'and wrongly flagged <strong>{change(false_delta)} previously accepted answers</strong>.')
+    uncertain = sum(r["methods"][name]["prediction"] == "uncertain" for r in matched for name in names)
+    exclusions = len(rows) - len(matched)
+    return (f'<p class="takeaway">{comparison}</p>'
+            '<table class="comparison"><thead><tr><th scope="col">Compared with your earlier judgments</th>'
+            '<th scope="col">One overall check</th><th scope="col">Many checks combined</th></tr></thead><tbody>'
+            f'<tr><th scope="row">Answers needing work caught<br><small>Higher is better</small></th>'
+            f'<td>{counts[names[0]]["repair"]} of {totals["repair"]}</td>'
+            f'<td>{counts[names[1]]["repair"]} of {totals["repair"]}</td></tr>'
+            f'<tr><th scope="row">Accepted answers wrongly flagged<br><small>Lower is better</small></th>'
+            f'<td>{counts[names[0]]["ready"]} of {totals["ready"]}</td>'
+            f'<td>{counts[names[1]]["ready"]} of {totals["ready"]}</td></tr></tbody></table>'
+            f'<p class="quiet">Same {len(matched)} answers in both columns. '
+            f'{exclusions} other versions lack a clear human judgment or a completed comparison.'
+            f'{" Uncertain decisions count as neither a catch nor a false alarm." if uncertain else ""}</p>')
+
+
+def _verdict(value: str | None) -> str:
+    return {"ready": "Looks complete", "pass": "Looks complete", "repair": "Needs work",
+            "fail": "Needs work", "unclear": "Uncertain", "uncertain": "Uncertain"}.get(value, "Unavailable")
+
+
 def _render(rows: list[dict], summary: dict, output: Path, dataset: Path) -> None:
     asset_dir = output / "assets"
     asset_dir.mkdir()
@@ -359,8 +418,14 @@ def _render(rows: list[dict], summary: dict, output: Path, dataset: Path) -> Non
         if len(prioritized) >= 12:
             break
         prioritized.add(row["case_id"])
-    for row in sorted(rows, key=_priority):
+    guided_ids = [case_id for case_id in REVIEW_EXAMPLES if any(r["case_id"] == case_id for r in rows)]
+    if not guided_ids:
+        guided_ids = [r["case_id"] for r in shortlist[:3] or ordered[:3]]
+    guide_order = {case_id: i for i, case_id in enumerate(guided_ids)}
+    for row in sorted(rows, key=lambda r: (guide_order.get(r["case_id"], len(guided_ids)), _priority(r))):
         tags = [row["gold"]]
+        if row["case_id"] in guide_order:
+            tags.append("guided")
         if row["case_id"] in prioritized:
             tags.append("priority")
         if any(v["state"] in ("technical_error", "held", "missing", "excluded_incomplete")
@@ -398,26 +463,121 @@ def _render(rows: list[dict], summary: dict, output: Path, dataset: Path) -> Non
         comments = "".join(f'<li class="{"selected" if c.get("id") in selected_ids else ""}"><b>{_display(c.get("id"))}</b> '
                            f'{"<em>selected</em> " if c.get("id") in selected_ids else ""}{_display(c.get("text"))}</li>'
                            for c in row["comments"])
-        cards.append(f'<article class="case" id="{html.escape(str(row["case_id"]), quote=True)}" data-tags="{html.escape(" ".join(tags), quote=True)}">'
-                     f'<header><h2>Post {_display(row["post_id"])}</h2>'
-                     f'<p>{_display(row["gold"])}{" · priority review" if "priority" in tags else ""}<br>'
-                     f'Answer version {_display(row["case_id"])} · group {_display(row["group_id"])}</p></header>'
+        example = REVIEW_EXAMPLES.get(row["case_id"])
+        title = example[0] if example else f'Post {row["post_id"]}'
+        if row["case_id"] in guide_order:
+            title = f'{guide_order[row["case_id"]] + 1}. {title}'
+        note = f'<p class="review-note">{_display(example[1])}</p>' if example else ""
+        decisions = [("Your earlier judgment", _verdict(row["gold"]))]
+        decisions += [(label, _verdict(row["methods"].get(name, {}).get("prediction"))) for name, label in
+                      (("broad_observation", "One overall check"), ("learned_combined", "Many checks combined"))]
+        decisions_markup = "".join(f'<tr><th scope="row">{label}</th><td>{verdict}</td></tr>'
+                                   for label, verdict in decisions)
+        cards.append(f'<article class="case" id="{html.escape(str(row["case_id"]), quote=True)}" data-tags="{html.escape(" ".join(tags), quote=True)}"'
+                     f'{"" if "guided" in tags else " hidden"}>'
+                     f'<header><h2>{_display(title)}</h2></header>'
                      f'<div class="body"><div class="visual">{image_markup}<p>{_display(row.get("image_error") or "")}</p></div>'
-                     f'<div class="narrative"><h3>Exact candidate answer</h3><p>{_display(row["input"].get("explanation", ""))}</p>'
-                     f'{_human_markup(row["human"], row["gold"])}'
+                     f'<div class="narrative"><h3>Answer being checked</h3><p>{_display(row["input"].get("explanation", ""))}</p>'
+                     f'<table class="decisions" aria-label="Answer judgments"><tbody>{decisions_markup}</tbody></table>{note}'
+                     f'<details><summary>Your earlier notes</summary>{_human_markup(row["human"], row["gold"])}</details>'
+                     f'<details><summary>Supporting comments ({len(row["comments"])})</summary><ol>{comments}</ol></details>'
+                     f'<details class="technical"><summary>Model details and exact record</summary>'
+                     f'<p>Post {_display(row["post_id"])} · answer version {_display(row["case_id"])} · group {_display(row["group_id"])}</p>'
                      f'{_observation_markup(row.get("observation"))}'
                      f'<h3>Method decisions</h3><table><thead><tr><th>Method</th><th>State</th><th>Decision</th><th>P(pass)</th><th>Detail</th></tr></thead>'
                      f'<tbody>{"".join(method_rows)}</tbody></table>'
+                     '<p class="quiet">Combined verdicts use the fixed 0.5 threshold. These scores are not calibrated probabilities of correctness. '
+                     'The atomic score belongs to its separate broad check, not its rule verdict.</p>'
                      f'<h3>Selected evidence IDs</h3><p>{_display(row.get("selected_comment_ids"))}</p>'
                      f'<details><summary>Selection scores and repeat measurements</summary><pre>{_display({"selection": row.get("selection_metadata"), "repeats": repeats, "batch_vs_single": singles})}</pre></details>'
-                     f'<details><summary>All supplied comments ({len(row["comments"])})</summary><ol>{comments}</ol></details></div></div></article>')
-    css = """*{box-sizing:border-box}body{margin:0;background:#f4f1eb;color:#211f1a;font:15px/1.5 system-ui,sans-serif}main{max-width:1420px;margin:auto;padding:2rem}h1{font-size:2.3rem;margin:.2rem 0}h2{margin:.2rem 0;color:#204c42}h2 span{font-size:.8rem;color:#a5482e}h3{margin:1.2rem 0 .3rem;font-size:1rem}h3 small{font-weight:400;color:#625f57}.intro{max-width:72ch;color:#514d45}.toolbar{position:sticky;top:0;z-index:2;background:#f4f1eb;padding:.7rem 0;border-bottom:1px solid #cbc4b7;display:flex;gap:.6rem;flex-wrap:wrap}button,input{font:inherit;border:1px solid #adab9f;border-radius:7px;background:white;padding:.5rem .8rem}button.active{background:#204c42;color:white}.case{background:white;border:1px solid #d8d2c6;border-radius:12px;margin:1.3rem 0;overflow:hidden;box-shadow:0 3px 15px #0000000a}.case header{background:#e9e5db;padding:.8rem 1.2rem}.body{display:grid;grid-template-columns:minmax(240px,32%) 1fr;gap:1.4rem;padding:1.2rem}.visual img{width:100%;height:auto;object-fit:contain;max-height:520px;background:#eee}.narrative p,.narrative pre{overflow-wrap:anywhere;white-space:pre-wrap}pre{background:#f7f6f2;padding:.7rem;border-radius:6px;font:12px/1.5 ui-monospace,monospace}.judgment{display:inline-block;margin:.2rem 0;padding:.2rem .7rem;background:#e4f2eb;color:#204c42;border-radius:2rem;font-weight:700}.human-notes{margin:.3rem 0 1rem;padding-left:1.3rem}.human-notes li{margin:.5rem 0;padding:.6rem;background:#f9f6ef;border-left:3px solid #bd9761}.human-notes p{margin:.2rem 0;white-space:pre-wrap}.human-notes small,.quiet{color:#67635c}.observation{display:grid;grid-template-columns:7.5rem 1fr;gap:.4rem .8rem;margin:.4rem 0 1rem;padding:.8rem;background:#f2f5f4;border-radius:6px}.observation dt{font-weight:700;color:#29534b}.observation dd{margin:0;white-space:pre-wrap;overflow-wrap:anywhere}.observation ul{margin:0;padding-left:1.2rem}table{width:100%;border-collapse:collapse;font-size:.88rem}th,td{text-align:left;border-bottom:1px solid #e5e1d9;padding:.35rem;vertical-align:top}td pre{max-height:180px;overflow:auto}summary{cursor:pointer;color:#205b51}.selected{background:#e4f2eb}.selected em{color:#1c694c;font-weight:700;font-style:normal}.stats{display:flex;gap:1rem;flex-wrap:wrap}.stats b{font-size:1.4rem;display:block}@media(max-width:800px){main{padding:1rem}.body{grid-template-columns:1fr}.observation{grid-template-columns:1fr}table{display:block;overflow-x:auto}}"""
-    script = """const buttons=[...document.querySelectorAll('[data-filter]')];const cards=[...document.querySelectorAll('.case')];const query=document.querySelector('#search');let filter='all';function refresh(){const q=query.value.toLowerCase();let count=0;for(const c of cards){const ok=(filter==='all'||c.dataset.tags.split(' ').includes(filter))&&c.textContent.toLowerCase().includes(q);c.hidden=!ok;if(ok)count++}document.querySelector('#shown').textContent=count}for(const b of buttons)b.addEventListener('click',()=>{filter=b.dataset.filter;for(const x of buttons)x.classList.toggle('active',x===b);refresh()});query.addEventListener('input',refresh);refresh();"""
+                     '</details></div></div></article>')
+    css = """
+*{box-sizing:border-box}body{margin:0;background:#f4f1eb;color:#211f1a;font:16px/1.55 system-ui,sans-serif}
+main{max-width:1160px;margin:auto;padding:2rem}h1{font-size:2.3rem;line-height:1.2;margin:.2rem 0 1rem}
+h2{margin:.2rem 0;color:#204c42;font-size:1.3rem}h3{margin:1.1rem 0 .3rem;font-size:1rem}
+h3 small,th small{font-weight:400;color:#625f57}.intro{max-width:75ch;font-size:1.1rem}
+.takeaway{max-width:75ch}.conclusion{padding:1.1rem 1.4rem;border-left:4px solid #204c42;background:#e8eeea;margin:1.5rem 0}
+.conclusion p{margin:.3rem 0}.review-intro{margin:2rem 0 1rem;max-width:78ch}
+.toolbar{display:flex;gap:.6rem;flex-wrap:wrap;align-items:center;margin:1rem 0}
+button,input{font:inherit;border:1px solid #adab9f;border-radius:7px;background:white;padding:.5rem .8rem}
+button{cursor:pointer}button.active{background:#204c42;color:white}input{max-width:100%}
+:focus-visible{outline:3px solid #a66b23;outline-offset:3px}[hidden]{display:none!important}
+.case{background:white;border:1px solid #d8d2c6;border-radius:12px;margin:1.3rem 0;overflow:hidden;scroll-margin-top:1rem}
+.case header{background:#e9e5db;padding:.9rem 1.2rem}.body{display:grid;grid-template-columns:minmax(240px,36%) 1fr;gap:1.5rem;padding:1.2rem}
+.visual img{width:100%;height:auto;object-fit:contain;max-height:560px;background:#eee}
+.narrative>h3:first-child{margin-top:0}.narrative p,.narrative pre{overflow-wrap:anywhere;white-space:pre-wrap}
+.review-note{padding:.85rem 1rem;background:#f8f3e7;border-left:3px solid #bd9761}
+pre{background:#f7f6f2;padding:.7rem;border-radius:6px;font:12px/1.5 ui-monospace,monospace;overflow-wrap:anywhere;white-space:pre-wrap}
+.judgment{display:inline-block;margin:.2rem 0;padding:.2rem .7rem;background:#e4f2eb;color:#204c42;border-radius:2rem;font-weight:700}
+.human-notes{margin:.3rem 0 1rem;padding-left:1.3rem}.human-notes li{margin:.5rem 0;padding:.6rem;background:#f9f6ef}
+.human-notes p{margin:.2rem 0;white-space:pre-wrap}.human-notes small,.quiet{color:#67635c}.quiet{font-size:.9rem}
+.observation{display:grid;grid-template-columns:7.5rem 1fr;gap:.4rem .8rem;margin:.4rem 0 1rem;padding:.8rem;background:#f2f5f4;border-radius:6px}
+.observation dt{font-weight:700;color:#29534b}.observation dd{margin:0;white-space:pre-wrap;overflow-wrap:anywhere}.observation ul{margin:0;padding-left:1.2rem}
+table{width:100%;border-collapse:collapse;font-size:.9rem}th,td{text-align:left;border-bottom:1px solid #ddd8cc;padding:.55rem;vertical-align:top}
+.comparison{max-width:850px}.comparison td{font-size:1.2rem;font-weight:650}.comparison th:first-child{width:48%}
+.decisions{margin:1.2rem 0}.decisions td{font-weight:650}.decisions tr:last-child{background:#e8eeea}
+td pre{max-height:180px;overflow:auto}details{margin:.7rem 0}summary{cursor:pointer;color:#205b51}
+.selected{background:#e4f2eb}.selected em{color:#1c694c;font-weight:700;font-style:normal}.technical{font-size:.9rem}
+@media(max-width:760px){main{padding:1rem}h1{font-size:1.9rem}.body{grid-template-columns:1fr}.observation{grid-template-columns:1fr}table{font-size:.8rem}.technical table{display:block;overflow-x:auto}.comparison th:first-child{width:44%}.comparison td{font-size:1rem}}
+"""
+    script = """
+const buttons=[...document.querySelectorAll('[data-filter]')];
+const cards=[...document.querySelectorAll('.case')];
+const query=document.querySelector('#search');let filter='guided';
+function refresh(){
+  const q=query.value.toLowerCase();let count=0;
+  for(const c of cards){const ok=(filter==='all'||c.dataset.tags.split(' ').includes(filter))&&c.textContent.toLowerCase().includes(q);c.hidden=!ok;if(ok)count++}
+  for(const b of buttons)b.classList.toggle('active',b.dataset.filter===filter);
+  document.querySelector('#search-controls').hidden=filter!=='all';
+  document.querySelector('#shown').textContent=`${count} example${count===1?'':'s'} shown`;
+}
+for(const b of buttons)b.addEventListener('click',()=>{filter=b.dataset.filter;query.value='';refresh()});
+query.addEventListener('input',refresh);
+function revealLink(){
+  let id;try{id=decodeURIComponent(location.hash.slice(1))}catch{return}
+  const target=cards.find(c=>c.id===id);if(!target)return;
+  if(!target.dataset.tags.split(' ').includes(filter)){filter='all'}
+  query.value='';refresh();target.scrollIntoView({block:'start'});
+}
+window.addEventListener('hashchange',revealLink);refresh();revealLink();
+"""
     runtime = summary.get("runtime", {})
     cost = runtime.get("accounted_usd")
-    cost_text = f"${cost:.3f}" if isinstance(cost, (int, float)) else "unavailable"
-    markup = f'''<!doctype html><html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Jev architecture review</title><style>{css}</style><main><h1>Jev architecture review</h1><p class="intro">Frozen, exposed human review cases. Ready and repair refer to whether the unchanged answer gets the same joke. Scores are out of fold for learned methods. Technical holds remain visible.</p><div class="stats"><div><b>{len(rows)}</b>cases</div><div><b>{sum(r["gold"]=="ready" for r in rows)}</b>ready</div><div><b>{sum(r["gold"]=="repair" for r in rows)}</b>repair</div><div><b>{sum(r["gold"]=="unclear" for r in rows)}</b>unclear</div><div><b>{_display(runtime.get("calls", "—"))}</b>calls</div><div><b>{_display(runtime.get("questions", "—"))}</b>questions</div><div><b>{cost_text}</b>accounted cost</div></div><details><summary>Latency and call accounting by stage</summary><pre>{_display(runtime.get("latency_by_stage", {}))}</pre></details><div class="toolbar"><button data-filter="all" class="active">All</button><button data-filter="priority">Priority 12</button><button data-filter="ready">Ready</button><button data-filter="repair">Repair</button><button data-filter="unclear">Unclear</button><button data-filter="technical">Technical</button><input id="search" type="search" placeholder="Find text or ID" aria-label="Search cases"><span><b id="shown"></b> shown</span></div>{''.join(cards)}</main><script>{script}</script></html>'''
+    cost_text = f"about ${cost:.2f}" if isinstance(cost, (int, float)) else "cost unavailable"
+    question_count = runtime.get("questions")
+    question_text = f"{question_count:,}" if isinstance(question_count, int) else "many"
+    guide_count = len(guided_ids)
+    markup = f"""<!doctype html>
+<html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>What did we learn from Jev?</title><style>{css}</style><main>
+<h1>What did we learn from Jev?</h1>
+<p class="intro">Lots of small checks are cheap. Combining them into a reliable answer judge still needs work.</p>
+<p>We asked Jev to <strong>check existing meme explanations</strong>: does each answer get the joke?
+We compared one overall check with a method that combines many smaller checks.</p>
+{_comparison_markup(rows)}
+<div class="conclusion"><p><strong>My recommendation: keep experimenting with Jev; keep human review for answer quality.</strong></p>
+<p>The whole experiment ran {question_text} Jev judgments for {cost_text}, including image descriptions.
+The current combined method still makes too many mistakes to use automatically.</p></div>
+<details><summary>What these results do and don’t establish</summary>
+<p>This used existing development labels. It tells us how the methods behaved on these cases; it does not establish accuracy on new memes.
+Both columns used the same machine image descriptions. Those descriptions can miss details.
+The combined method used checks of the answer, its supporting comments, and a second pass with selected comments.</p>
+<p>Related meme versions were kept together when training and checking the combined method.
+Its displayed decisions use the predeclared 0.5 threshold. Your labels and exact notes are unchanged.</p>
+<details><summary>Call counts, latency and accounting</summary><pre>{_display(runtime)}</pre></details></details>
+<section class="review-intro"><h2>Start with these {guide_count} examples</h2>
+<p>Look at each meme and the answer being checked. <strong>Tell me in chat whether the new decision makes sense</strong>
+and what the answer misses, if anything. You can reply with the example number and a sentence.</p>
+<p class="quiet">The short prompts below are my interpretation of your earlier feedback, for you to check.
+You don’t need to review all {len(rows)} versions. Issue #38 remains open for your review.</p></section>
+<div class="toolbar" aria-label="Review examples">
+<button data-filter="guided" class="active">Start here ({guide_count})</button>
+<button data-filter="all">Browse all {len(rows)}</button><span id="shown" class="quiet" aria-live="polite"></span></div>
+<div id="search-controls" hidden><input id="search" type="search" placeholder="Find text or a post ID" aria-label="Search all cases"></div>
+{''.join(cards)}
+</main><script>{script}</script></html>"""
     (output / "index.html").write_text(markup, encoding="utf-8")
+
 
 
 def prepare(root: Path | str, output: Path | str) -> dict:
