@@ -4,6 +4,11 @@ September 24, 2026. **Proposed, not adopted.** Parent context: #9; follows the
 [chronological results](chronological-backfill-results.md). No code, active policy,
 paid experiment, frozen result, human label or release membership changes.
 
+Subsequent authorization: the user approved the retrospective reconstruction and
+bounded comparison in [#36's execution plan](source-evidence-replay-plan.md).
+The policy remains a candidate pending that result; the paragraphs below preserve
+the proposal and its rationale.
+
 ## Recommendation
 
 Replace the universal requirement for three agreeing Reddit comments with a
