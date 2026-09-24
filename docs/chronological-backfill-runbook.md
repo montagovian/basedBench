@@ -72,3 +72,23 @@ Reports retain the whole selected denominator, technical failures, independent
 content/answer/suitability/duplicate findings and actual versus conservatively
 accounted model cost. Automatic acceptance does not qualify release membership.
 The original database and immutable 519-item release remain unchanged.
+
+## Optional human validation after the completed run
+
+The user subsequently asked what they could validate. A private standalone
+worksheet at `data/backfill/chronological-june27-july26-v1/human-validation-v1/index.html`
+contains the same predeclared 22-case inspection sample: 12 accepts, six deferrals
+and four rejections. Open it in a browser and start with the proposed accepts.
+Review the image/answer before revealing the automatic reasons, then separately
+check three substantive source supporters and any content, suitability or
+duplicate concerns. Available duplicate counterparts and the frozen policy text
+are embedded. Assistant judgments are not shown as suggested labels.
+
+Use **Export notes** to preserve exact human input with the frozen run, image and
+input hashes. Browser storage is convenient but the downloaded JSON is the portable
+record. Keep it under private `data/` when incorporating feedback; preserve it
+unchanged and record any subsequent interpretation separately. The worksheet does
+not write SQLite, revise outcomes, declare human gold or add release membership.
+Human feedback requires a separate evidence review before any candidate version
+or release decision. The completed processing run must not be reopened or tuned
+merely because this optional worksheet exists.

@@ -32,8 +32,19 @@ July 16 stopped discovery; 21 later source/day partitions remain unattempted and
 PeterExplainsTheJoke remains a separate access gap. [#33](https://github.com/montagovian/basedBench/issues/33)
 is complete. [Draft PR #35](https://github.com/montagovian/basedBench/pull/35) adds
 the bounded collector, duplicate adapter and shared-budget processing workflow.
-The later processing result belongs to this authorized development run; it does
-not promote any previously failed checker or change the immutable release.
+The completed processing run records 94 automatic development accepts, nine
+rejections and 148 deferrals. All 251 identities remain accounted for; 150 reached
+models, using 503 GPT-6 Luna calls for an estimated $0.354214875 within the $10
+cap. Completed replay is identical at zero additional calls, all 580 tests pass,
+and all 26,994 protected prior files are unchanged. The 22-case assistant sample
+finds one clear setup error and one unresolved reference omission among 12 accepts,
+plus two potential content over-exclusions among four rejections. A private
+worksheet presents that sample for the human validation the user asked about;
+no new human labels exist yet. [#34](https://github.com/montagovian/basedBench/issues/34)
+completes the bounded processing milestone. These results do not promote
+a previously failed checker or change the immutable 519-item release. #9 remains
+open for the recorded coverage and qualification gaps; #10 still needs qualified
+new membership and version-bound evaluation.
 
 The following milestones preserve the earlier evidence and decisions. References
 to expansion being pending describe those earlier checkpoints; the authorization
