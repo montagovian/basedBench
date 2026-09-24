@@ -31,7 +31,7 @@ uv run python -m basedbench.pipeline.chronological_duplicates prepare \
   --database data/basedbench.db \
   --inventory data/backfill/chronological-june27-july26-v1/inventory \
   --prior-inventory data/backfill/inventory-june20-26-v1 \
-  --families data/backfill/duplicate-audit-v1/known_families.json \
+  --families data/backfill/chronological-june27-july26-v1/known-families.json \
   --output data/backfill/chronological-june27-july26-v1/duplicates
 
 uv run python -m basedbench.pipeline.chronological_duplicates run \
@@ -52,6 +52,10 @@ uv run python -m basedbench.pipeline.chronological_admission run \
 The duplicate encoder is pinned and loads locally. Exact image copies and
 uncertain image, crop and text matches remain distinct. Crops are searched on a
 bounded set of coarse image neighbors; this is not exhaustive family detection.
+This run's private known-family file preserves the original three groups and the
+two subsequently human-flagged, image-inspected pairs. Its adjacent provenance
+file binds the original feedback, inspection records and source hashes. Unresolved
+overlap findings are not added as confirmed groups.
 
 Admission uses one frozen ledger for every case and stage. The cap is a maximum,
 not a target. `--stop-after-new-calls N` can deliberately checkpoint processing;
