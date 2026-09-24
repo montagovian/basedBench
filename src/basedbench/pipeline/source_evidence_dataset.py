@@ -261,7 +261,7 @@ def _reassessments(root: Path, rows: dict, exclusions: list[dict], source_hashes
             if not dimension:
                 continue
             verdict = dimension.get("verdict")
-            quality = {"fail": "repair", "ready": "ready", "pass": "ready",
+            quality = {"fail": "repair", "ready": "ready", "pass": "ready",  # nosec B105: human verdict labels, not credentials
                        "unresolved": "unclear", "unclear": "unclear"}.get(verdict)
             pid = item["post_id"]
             packet = reviewed.get(pid)
