@@ -100,6 +100,17 @@ spent or reserved; no final comparison decisions exist. This does not establish
 a GEPA gain. Preserve the attempt and review a case-abstention policy for malformed
 typed responses before a new run. Both #38 and #40 remain open; no policy promotion.
 
+The approved [#41 evidence-ranking comparison](jev-evidence-ranking-results.md)
+now tests a different Jev role directly: informativeness ranking and duplicate
+collation under the same reading budget as saved comment order. All 81 families
+and 760 comments completed: 213 calls, 11,608 typed decisions, $0.075391344 within
+the new $1 cap, zero abstentions and no pending charges. Credential-free replay
+reproduces every pack and verifies 516 frozen artifacts. A 16-family blinded
+review is ready, with exact excerpts, locally saved ratings and method reveal
+after saving. Fifteen review cases have differing packs; usefulness remains
+pending human judgment. Keep #41 open for review alongside #38/#40. No promotion
+or automatic tuning follows.
+
 The following milestones preserve the earlier evidence and decisions. References
 to expansion being pending describe those earlier checkpoints; the authorization
 above is the current collection scope.
