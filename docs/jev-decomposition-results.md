@@ -25,8 +25,8 @@ All 99 exact answer/evidence versions remain accounted for: 88 posts, 86 known
 groups, 78 ready, 18 repair and three unclear. The image-aware matched comparison
 contains **94 known-label versions in 81 groups: 77 ready and 17 repair**. One
 ready animated image was held by the frozen interface. One repair case's dense
-image exhausted the helper's 2,000-token output allowance; its image-aware arms
-were held without a retry. The three unclear labels remain visible and were
+image received an incomplete helper response with provider reason `content_filter`
+and zero output tokens; its image-aware arms were held without a retry. The three unclear labels remain visible and were
 excluded from fitting and accuracy. All 99 text-only controls completed.
 
 The 87 unique supported images received image-only GPT-6 Luna requests; 86
