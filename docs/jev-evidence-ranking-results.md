@@ -1,9 +1,13 @@
-# Jev evidence ranking: model run complete, human review pending
+# Jev evidence ranking: completed model run
 
 September 24, 2026. [Issue #41](https://github.com/montagovian/basedBench/issues/41)
 tracks the [frozen comparison plan](jev-evidence-ranking-plan.md). Keep it open
 until the user reviews the evidence packs and explicitly approves closure.
-The model run finished under its new $1 cap. **Usefulness is not yet established.**
+The model run finished under its new $1 cap. The subsequent
+[13-case human-review analysis](jev-evidence-ranking-human-results.md) finds a
+preliminary preference for plain ranking and concrete selection-policy problems;
+the predeclared success screen is not met. The report below records the initial
+model-run handoff, before that feedback. **Usefulness is not yet established.**
 
 ## What ran
 

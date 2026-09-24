@@ -148,3 +148,29 @@ nontransitive duplicate groups, conflict preservation, invalid-response abstenti
 budget boundaries, pending settlement and cache tampering, immutable inputs,
 zero-call replay, server origin/payload validation, rating persistence and reveal.
 Commit the implementation before paid dispatch; return a browser-verified review.
+
+## Human-review analysis addendum — September 24, 2026
+
+The user returned partial review feedback. Analyze it at zero provider cost;
+this does not amend the frozen methods, selection or decision rule above.
+
+- Snapshot the exact append-only journal and packet/manifest into a new private
+  analysis directory. Validate packet identity, revisions and reveal chronology;
+  retain every event, count each family once, and record unreviewed cases.
+- Select the latest feedback before method reveal for the predeclared screen.
+  Show sampled and diagnostic strata separately, exact button counts, full-clue
+  and misleading ratings, unsure values, context exposure and later revisions.
+- Inspect exact excerpt equality and qualifying notes separately. A button choice
+  between identical lists does not establish a unique preference. Preserve the
+  original choices and notes; do not silently relabel them or invent preferences
+  between nonwinning lists. Explain shared preferences as a sensitivity analysis.
+- The primary agent owns the analysis helper/tests, frozen snapshot, counts,
+  decision-rule evaluation, report and issue/PR update. A bounded independent
+  agent audits concrete cases against saved comments and outputs, writes private
+  assistant hypotheses only, and does not modify ratings or score the user.
+- Acceptance: reproducible accounting of all journal events and 16 review IDs;
+  focused tests for revisions, exposure, missing cases and identical selections;
+  human notes stay local while public documentation contains aggregate findings
+  and paraphrased implementation lessons. Verify the original model run remains
+  unchanged. Stop at analysis; no new inference, retuning, promotion or issue
+  closure without the user's subsequent direction.

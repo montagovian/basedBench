@@ -107,9 +107,14 @@ and 760 comments completed: 213 calls, 11,608 typed decisions, $0.075391344 with
 the new $1 cap, zero abstentions and no pending charges. Credential-free replay
 reproduces every pack and verifies 516 frozen artifacts. A 16-family blinded
 review is ready, with exact excerpts, locally saved ratings and method reveal
-after saving. Fifteen review cases have differing packs; usefulness remains
-pending human judgment. Keep #41 open for review alongside #38/#40. No promotion
-or automatic tuning follows.
+after saving. The subsequent [human analysis](jev-evidence-ranking-human-results.md)
+accounts for 13 reviewed families and three skips. On nine reviewed sampled
+families, clue retention is 8/9 for saved order and 9/9 for both Jev methods;
+misleading flags are 5/9, 4/9 and 5/9. Five decisive sampled button choices fall
+short of the required eight, and identical lists qualify two preferences across
+the full review. Plain ranking is the most promising preliminary direction;
+irrelevance, useful stopping points and the fixed word cap need separate attention.
+Keep #41 open for review alongside #38/#40. No promotion or automatic tuning follows.
 
 The following milestones preserve the earlier evidence and decisions. References
 to expansion being pending describe those earlier checkpoints; the authorization
