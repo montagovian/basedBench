@@ -46,6 +46,14 @@ a previously failed checker or change the immutable 519-item release. #9 remains
 open for the recorded coverage and qualification gaps; #10 still needs qualified
 new membership and version-bound evaluation.
 
+September 24 feedback questions the universal three-comment support gate using
+the Seinfeld case and researched external references. The
+[source-evidence proposal](source-evidence-policy-proposal.md) recommends support
+for essential claims through images, verified references and/or substantive
+comments, with researched KYM entries as preferred sources and a bounded
+comparison before adoption. It remains a proposal: no code, active policy, frozen
+outcomes, human labels or release membership changed.
+
 The following milestones preserve the earlier evidence and decisions. References
 to expansion being pending describe those earlier checkpoints; the authorization
 above is the current collection scope.
