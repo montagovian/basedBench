@@ -96,6 +96,14 @@ see the [curation evaluation workflow](docs/curation-evaluation.md) and the
 [automated backfill plan](docs/automated-backfill-plan.md). These local experiments
 do not change the live review or ingestion pipeline.
 
+The [authorized chronological backfill](docs/chronological-backfill-plan.md) uses
+separate `chronological_inventory`, `chronological_duplicates`, and
+`chronological_admission` modules. It records source gaps and exact/uncertain
+overlap, preserves all earlier runs, and processes one frozen selection under a
+shared model-call cap. Its automatic accepts remain local development candidates.
+See the [run instructions](docs/chronological-backfill-runbook.md) for preparation,
+execution, resume, and the boundary between collection and release membership.
+
 The pipeline's automated decisions — the gates, consensus, and the consensus
 *gloss* itself — are wrong sometimes. Two feedback loops turn those mistakes into
 a labelled corpus you use to improve the prompts, instead of tuning from intuition.
