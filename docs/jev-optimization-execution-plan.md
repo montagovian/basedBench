@@ -5,6 +5,10 @@ September 24, 2026. Related to #40 and #38, both kept open. The user reviewed th
 we could give it a try.” This authorizes implementing the proposed finite $5
 comparison. Preserve old artifacts, human labels/notes, active policy and release.
 
+Implementation and the first attempt are recorded in the
+[run results](jev-optimization-run-results.md). The attempt hit the declared
+provider-schema stop before final evaluation; it was not automatically restarted.
+
 ## Frozen scope and interfaces
 
 Use the 99 exact source versions and saved observations from the Jev experiment;

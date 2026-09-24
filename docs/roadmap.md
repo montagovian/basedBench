@@ -88,9 +88,17 @@ control is included before attributing gains to prompt/program search. That
 control restores three ready answers and catches one additional repair, reaching
 64/77 ready passed and 7/17 repair caught; its one new repair catch has an
 ambiguous-ground-truth note, and only one of six corrected pairs separates. This is
-zero-provider-call development work; a new capped search is proposed, not launched.
+zero-provider-call development groundwork.
 The [plan](jev-optimization-plan.md) preserves all labels and old runs, separates
 adaptive validation from outer evaluation, and keeps #38 and #40 open for review.
+
+The reviewed [bounded implementation](jev-optimization-execution-plan.md) is now
+complete and tested. Its [first paid attempt](jev-optimization-run-results.md)
+stopped in fold one when a Jev selected choice disagreed with its probability
+maximum. It made 118 calls, including two OpenAI reflections, with $0.06565371
+spent or reserved; no final comparison decisions exist. This does not establish
+a GEPA gain. Preserve the attempt and review a case-abstention policy for malformed
+typed responses before a new run. Both #38 and #40 remain open; no policy promotion.
 
 The following milestones preserve the earlier evidence and decisions. References
 to expansion being pending describe those earlier checkpoints; the authorization
