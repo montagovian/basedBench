@@ -50,8 +50,10 @@ September 24 feedback questions the universal three-comment support gate using
 the Seinfeld case and researched external references. The
 [source-evidence proposal](source-evidence-policy-proposal.md) recommends support
 for essential claims through images, verified references and/or substantive
-comments, with researched KYM entries as preferred sources and a bounded
-comparison before adoption. It remains a proposal: no code, active policy, frozen
+comments, with researched KYM entries as preferred sources. Following further
+user feedback, validation should reconstruct the existing labeled corpus and
+reuse compatible saved checks before considering supplemental examples.
+It remains a proposal: no code, active policy, frozen
 outcomes, human labels or release membership changed.
 
 The following milestones preserve the earlier evidence and decisions. References

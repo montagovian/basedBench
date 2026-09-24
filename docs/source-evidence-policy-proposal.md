@@ -176,39 +176,72 @@ or its research dossier. Source-family relationships may inform later duplicate
 review; sharing an antecedent does not automatically make two different jokes
 duplicates.
 
-## One bounded validation before adoption
+## Reconstruct validation from existing labeled data
 
-Propose a fixed 20-case development calibration, chosen before new judgments:
-four thin-comment/strong-reference examples (including Seinfeld), four existing
-well-supported controls, four image/comment-only jokes, four misleading-link or
-wrong-variant examples, and four disagreements/minority embellishments. Use real
-available cases and record selection limits; if an appropriate KYM-linked example
-cannot be located, leave that slot unresolved rather than invent the user's case.
-Preserve known human labels and distinguish them from new assistant hypotheses.
+The user's subsequent feedback questions the need for a special test set.
+**Use the existing human-labeled corpus first.** This supersedes the initial
+20-case/five-stratum proposal and its arbitrary 60-call limit. A new collection
+or annotation round is not a prerequisite.
 
-Freeze images, comments, candidate answers and external evidence separately.
-Compare (A) the current policy on original evidence, (B) the proposed policy on
-that same evidence, and (C) the proposed policy with verified external evidence.
-This separates the effects of the threshold change and additional information.
-Keep candidate answers fixed for the first comparison so better rewrites do not
-conceal evidence-check failures. Unsupported historical embellishments should
-remain failures under all conditions unless the new evidence actually supports
-them.
+Available material includes the [50-case calibration covering 57 answer
+texts](explanation-calibration-results.md), [two later materiality
+judgments](materiality-boundary-results.md), [ten further reviewed
+originals](fresh-human-audit-results.md) and [exact correction
+regrades](targeted-corrections-results.md). These are overlapping/versioned
+resources, not counts to sum into independent examples. Frozen records retain
+image hashes, source comments, answer text/hashes, human events and qualifying
+notes. The Breaking Bad/Pride review already contains a KYM reference; its human
+judgment remains unclear. That link does not create a new gold label.
 
-The proposed paid comparison ceiling is **$1 total, at most 60 new check calls,
-no repairs, one fixed round**, with conservative reservations. This is a future
-proposal, not remaining authorization from the completed $10 backfill. Stop at
-the limit or a source/provider failure; preserve missing results and do not
-replace difficult cases. No paid calls were made for this proposal.
+Join each actual human judgment to its exact answer version, image, comment
+packet and compatible saved model checks. Include all usable records under a
+declared eligibility rule before seeing new policy outputs. Preserve repeated
+answer versions, shared meme families, ambiguous labels and missing inputs.
+Older overall admission labels and model-generated judgments have different
+meanings; do not convert them into answer or source-sufficiency gold.
 
-For adoption, require recovery of genuinely supported reference cases, retention
-of the known-ready controls, and no newly accepted unsupported interpretation in
-the reviewed trap/control set. Material disagreements must be explained, with a
-small targeted human calibration where no existing judgment resolves them; no
-whole-archive human queue is proposed. Report false passes, false deferrals,
-reference omissions, access failures and cost separately. This small diagnostic
-exercise cannot establish a population error rate. A failure triggers a policy
-reassessment, not repeated tuning on the same sample.
+This supports two evaluations:
+
+- **Answer regression:** retain human-ready answers and detect human-confirmed
+  wrong/missing connections. Existing answer labels directly support this check;
+  no fresh human annotation is needed for unchanged answer/image versions.
+- **Evidence-policy effects:** identify decisions that change when the source
+  quota is removed or a reference is retrieved, and inspect whether the source
+  chain establishes the interpretation. Existing notes may resolve this. Otherwise
+  report an unadjudicated evidence question rather than inventing a human label.
+  An answer marked ready does not independently certify its research process.
+
+Reuse cached baseline outputs when their exact input/model/policy provenance
+fits. Where new comparison is needed, separate the proposed policy on original
+evidence from the proposed policy with a newly frozen external-evidence packet.
+Keep candidate answers fixed first so rewrites do not conceal checker regressions.
+Newly retrieved sources are a dated overlay, not evidence supposedly inspected
+in the earlier review. New answer versions need their own evaluation; readiness
+does not automatically transfer to an enriched or rewritten explanation.
+
+Before a paid implementation run, inventory reconstructable coverage and freeze
+the exact input manifest and resulting maximum call count. Retain a **proposed
+$1 total ceiling, one fixed comparison and no repair loop**, with conservative
+reservations and reuse of compatible saved results. If the corpus cannot fit
+that cap, report the deterministic unfinished portion and required budget before
+proposing more work. This is a future proposal, not remaining authorization from
+the completed backfill. No new model calls were made.
+
+Report answer errors against actual labels separately from evidence-sufficiency
+changes. Adoption should retain known-ready controls, catch known material defects
+and explain newly passing interpretations with traceable support. Existing labels
+may not cover wrong-variant links, circular sourcing or strong-reference cases
+excluded by old filters. Identify actual gaps after reconstruction; supplement
+only a consequential uncovered behavior, using an existing unlabeled example or
+a clearly marked technical fixture where appropriate. Neither assistant review
+nor a synthetic fixture becomes human gold. Request a small human judgment only
+if an unresolved decision truly depends on it; otherwise retain uncertainty.
+
+These are exposed development examples, so this is a retrospective regression
+and evidence audit, not an untouched estimate of generalization or archive
+accuracy. That limitation does not require a new benchmark for every policy
+change. A failure should trigger reassessment rather than repeated tuning on
+the same examples.
 
 ## Implementation boundary if adopted
 
