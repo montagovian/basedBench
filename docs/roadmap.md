@@ -65,6 +65,15 @@ zero further calls, and 39,023 protected prior files remain unchanged. No active
 policy, frozen outcomes, human labels or release membership changed. #9 and #10
 retain their coverage and qualification gaps.
 
+The user then requested a broader Jev architecture experiment. The
+[#38 implementation plan](jev-decomposition-plan.md) compares broad decisions,
+48 atomic predicates, an answer-span/comment evidence matrix, a focused second
+pass, and fixed group-separated learned combinations. The research and additive
+implementation are ready; the same 99 labeled versions are prepared without
+changing their judgments. New paid execution awaits a separate spending cap,
+so there are no new performance results yet. **Keep #38 open until the user
+reviews the experiment and explicitly approves closure.**
+
 The following milestones preserve the earlier evidence and decisions. References
 to expansion being pending describe those earlier checkpoints; the authorization
 above is the current collection scope.

@@ -203,3 +203,46 @@ small selected data cannot qualify automatic admission. Finish when the finite
 comparison completes or safely stops, costs reconcile, artifacts replay, and
 the user receives reviewable wins/failures plus a recommendation. Leave #38
 open at that handoff. Human review and explicit closure approval are required.
+
+## Implementation checkpoint and execution
+
+The four additive modules implement the dataset adapter, native question bank,
+capped runner, and saved-run analysis/review page. The prepared private dataset
+contains all 99 versions / 88 posts / 86 groups and 87 distinct supported images.
+Preflight counts 5,440 matrix questions and 9,408 atomic/focused predicates,
+before broad controls and repeat/batching measurements. These are planned
+workload counts, not dispatched calls or evidence of accuracy improvement.
+
+New paid execution is pending the user's spending-cap answer. No performance
+claim can be made from request construction or mocked-provider tests. The
+implementation includes no automatic admissions or changes to existing gates.
+
+Use the project's Python environment with the `curation` extra. The source
+corpus and new root below are private local paths; never commit their contents.
+The dataset preparation has already run and must not be repeated into the same
+directory. After recording the authorized cap here, freeze a plan with an
+explicit `--budget-usd` and run the finite workload:
+
+```sh
+uv run --extra curation python -m basedbench.pipeline.jev_decomposition_run prepare \
+  /Users/alexanthony/aoa_dev/basedBench5/data/backfill/jev-decomposition-v1 \
+  --budget-usd AUTHORIZED_CAP
+uv run --extra curation python -m basedbench.pipeline.jev_decomposition_run run \
+  /Users/alexanthony/aoa_dev/basedBench5/data/backfill/jev-decomposition-v1
+uv run --extra curation python -m basedbench.pipeline.jev_decomposition_analysis \
+  /Users/alexanthony/aoa_dev/basedBench5/data/backfill/jev-decomposition-v1 \
+  /Users/alexanthony/aoa_dev/basedBench5/data/backfill/jev-decomposition-v1/analysis
+```
+
+Credentials come from environment variables or local `.env`; do not log them.
+`run` verifies the frozen code and input hashes. Completed replay requires no
+credentials and makes no new calls. A pending or unknown-cost call stops further
+dispatch rather than being retried. A budget stop remains a partial comparison,
+with all denominators visible. Analysis refuses an unresolved provider stop.
+
+Before the human-review handoff, reconcile the ledger, inspect concrete changed
+decisions and observations, verify protected prior file hashes, and present
+quality, coverage, cost and observed latency together. Conditional predicates
+may conflate an inapplicable requirement with its absence; learned weights and
+repeat consistency do not turn that signal into independent evidence. Report
+such failures without changing prompts or adding another paid experiment.
