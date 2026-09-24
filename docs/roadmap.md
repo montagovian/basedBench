@@ -116,6 +116,21 @@ the full review. Plain ranking is the most promising preliminary direction;
 irrelevance, useful stopping points and the fixed word cap need separate attention.
 Keep #41 open for review alongside #38/#40. No promotion or automatic tuning follows.
 
+The user explicitly chose a [bounded selection follow-up](jev-comment-selection-plan.md).
+Its [completed results](jev-comment-selection-results.md) do not justify adoption:
+the relevance/riff filter retains 6/7 explicitly praised comments, versus 7/7 for
+cached ranking. It excludes both unwanted comments from the full lists, but both
+were already outside the baseline's initial three under the revised display.
+Pointwise ordering retains 6/7 praised comments in the initial three and fixes the
+one first-position constraint; pairwise achieves 4/7 and misses that constraint.
+Both new methods fail the development rule. All 81 families completed with 249
+calls / 13,128 decisions for $0.100736118; cumulative #41 spending is $0.176127462
+within $1. All 742 tests pass, and replay verifies 589 new frozen artifacts plus
+the unchanged prior run and human journal. A simpler eight-case review is ready;
+the known regression already rejects adoption without requiring all eight reviews.
+Stop this fixed comparison, retain the private case analysis, and keep #41 open
+for human review. No automatic retuning; VLM #43 remains separate.
+
 The following milestones preserve the earlier evidence and decisions. References
 to expansion being pending describe those earlier checkpoints; the authorization
 above is the current collection scope.
