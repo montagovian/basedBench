@@ -1,0 +1,426 @@
+"""Reproducible, group-separated analysis and local visual review for issue 38.
+
+This module reads saved experiment files only. It never makes model requests.
+"""
+from __future__ import annotations
+
+import argparse
+from collections import Counter, defaultdict
+import hashlib
+import html
+import json
+import math
+from pathlib import Path
+import shutil
+import tempfile
+from typing import Any
+
+import numpy as np
+from sklearn.linear_model import LogisticRegression
+from sklearn.metrics import balanced_accuracy_score, roc_auc_score
+from sklearn.model_selection import StratifiedGroupKFold
+from sklearn.pipeline import make_pipeline
+from sklearn.preprocessing import StandardScaler
+
+from basedbench.pipeline.curation_corpus import digest
+from basedbench.pipeline import jev_decomposition_questions as questions
+
+
+VERSION = "jev-decomposition-analysis-v1"
+ARM_ORDER = ("broad_text", "broad_observation", "atomic", "matrix", "focused")
+LEARNED = ("learned_atomic", "learned_combined")
+ROUTE_THRESHOLDS = (0.5, 0.6, 0.7, 0.8, 0.9)
+SEED = 3801
+
+
+def _sha(path: Path) -> str:
+    return hashlib.sha256(path.read_bytes()).hexdigest()
+
+
+def _json(path: Path) -> Any:
+    return json.loads(path.read_text(encoding="utf-8"))
+
+
+def _write(path: Path, value: Any) -> None:
+    path.write_text(json.dumps(value, indent=2, ensure_ascii=False, sort_keys=True, allow_nan=False) + "\n", encoding="utf-8")
+
+
+def _check_manifest(root: Path, manifest_name: str) -> dict:
+    manifest = _json(root / manifest_name)
+    identity_key = "dataset_id" if manifest_name == "manifest.json" else "manifest_id"
+    if identity_key in manifest and manifest[identity_key] != digest({k: v for k, v in manifest.items() if k != identity_key}):
+        raise ValueError(f"Invalid {manifest_name} identity")
+    files = manifest.get("files")
+    if not isinstance(files, dict) or not files:
+        raise ValueError(f"Invalid {manifest_name}: no file hashes")
+    for name, expected in files.items():
+        path = (root / name).resolve()
+        if not path.is_relative_to(root.resolve()) or not path.is_file() or _sha(path) != expected:
+            raise ValueError(f"Hash mismatch or missing file: {name}")
+    return manifest
+
+
+def _label(human: Any) -> str:
+    if not isinstance(human, dict):
+        raise ValueError("Human judgment must be an object")
+    for key in ("quality", "answer_quality", "original_quality", "label"):
+        if human.get(key) in ("ready", "repair", "unclear"):
+            return human[key]
+    raise ValueError("Missing ready/repair/unclear human answer judgment")
+
+
+def _number(value: Any) -> float:
+    if isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(value):
+        raise ValueError("Feature or score is not a finite number")
+    return float(value)
+
+
+def _features(arm: dict) -> dict[str, float] | None:
+    if arm.get("state") != "completed":
+        return None
+    raw = arm.get("features")
+    if not isinstance(raw, dict):
+        return None
+    # A flat numeric map is the normalized runner contract. Nested maps are
+    # accepted only so the saved report remains readable across runner versions.
+    if any(isinstance(v, dict) for v in raw.values()):
+        raw = {f"{k}.{sub}": val for k, v in raw.items() if isinstance(v, dict) for sub, val in v.items()}
+    if not raw:
+        return None
+    return {str(k): _number(v) for k, v in raw.items()}
+
+
+def _prediction(arm: dict) -> str | None:
+    if arm.get("state") != "completed":
+        return None
+    answer = arm.get("answer_quality")
+    if answer in ("pass", "ready"):
+        return "pass"
+    if answer in ("fail", "repair"):
+        return "fail"
+    if answer in ("uncertain", "unclear"):
+        return "uncertain"
+    return None
+
+
+def _score(arm: dict) -> float | None:
+    if arm.get("state") != "completed" or arm.get("score") is None:
+        return None
+    score = _number(arm["score"])
+    if not 0 <= score <= 1:
+        raise ValueError("Probability score outside [0,1]")
+    return score
+
+
+def _route(score: float, threshold: float = 0.8) -> str:
+    if score >= threshold:
+        return "pass"
+    if score <= 1 - threshold:
+        return "fail"
+    return "uncertain"
+
+
+def _metric(rows: list[dict], method: str) -> dict:
+    """Use exact class and technical denominators, including unscored examples."""
+    labeled = [r for r in rows if r["gold"] != "unclear"]
+    unclear = [r for r in rows if r["gold"] == "unclear"]
+    states = Counter(r["methods"].get(method, {}).get("state", "missing") for r in rows)
+    scored = [(r, r["methods"][method]) for r in labeled
+              if r["methods"].get(method, {}).get("state") == "completed"
+              and r["methods"][method].get("prediction") in ("pass", "fail", "uncertain")]
+    raw = [(r, m) for r, m in scored if m["prediction"] in ("pass", "fail")]
+    matrix = {gold: {pred: sum(r["gold"] == gold and m["prediction"] == pred for r, m in scored)
+                     for pred in ("pass", "fail", "uncertain")}
+              for gold in ("ready", "repair")}
+    result = {
+        "all_cases": len(rows), "known": len(labeled), "unclear": len(unclear),
+        "gold_counts": dict(Counter(r["gold"] for r in rows)),
+        "state_counts": dict(states), "completed_known": len(scored),
+        "excluded_known": len(labeled) - len(scored),
+        "confusion_with_uncertain": matrix,
+        "raw_binary_n": len(raw),
+        "raw_binary_accuracy": (sum((r["gold"] == "ready") == (m["prediction"] == "pass") for r, m in raw) / len(raw)) if raw else None,
+        "raw_binary_balanced_accuracy": None,
+        "per_class_error_counts": {
+            gold: {"n": sum(r["gold"] == gold for r, _ in scored),
+                   "wrong": sum(r["gold"] == gold and m["prediction"] == opposite for r, m in scored),
+                   "uncertain": matrix[gold]["uncertain"]}
+            for gold, opposite in (("ready", "fail"), ("repair", "pass"))},
+    }
+    if raw and len({r["gold"] for r, _ in raw}) == 2:
+        result["raw_binary_balanced_accuracy"] = float(balanced_accuracy_score(
+            [r["gold"] == "ready" for r, _ in raw], [m["prediction"] == "pass" for _, m in raw]))
+    probabilities = [(r, m["score"]) for r, m in scored if m.get("score") is not None]
+    result["auroc_n"] = len(probabilities)
+    result["auroc"] = (float(roc_auc_score([r["gold"] == "ready" for r, _ in probabilities],
+                                       [s for _, s in probabilities]))
+                       if len({r["gold"] for r, _ in probabilities}) == 2 else None)
+    routed = [(r, m.get("route_08") or _route(score)) for r, score in probabilities for m in [r["methods"][method]]]
+    result["route_08"] = {
+        "n": len(routed),
+        "confusion": {gold: {pred: sum(r["gold"] == gold and route == pred for r, route in routed)
+                             for pred in ("pass", "fail", "uncertain")}
+                      for gold in ("ready", "repair")},
+    }
+    risk = {}
+    for threshold in ROUTE_THRESHOLDS:
+        accepted = [(r, score) for r, score in probabilities if score >= threshold or score <= 1 - threshold]
+        errors = sum((r["gold"] == "ready") != (score >= threshold) for r, score in accepted)
+        class_counts = {gold: {"eligible": sum(r["gold"] == gold for r, _ in probabilities),
+                               "accepted": sum(r["gold"] == gold for r, _ in accepted),
+                               "errors": sum(r["gold"] == gold and (r["gold"] == "ready") != (score >= threshold)
+                                             for r, score in accepted)}
+                        for gold in ("ready", "repair")}
+        risk[str(threshold)] = {"n": len(accepted), "errors": errors,
+                                "coverage_known": len(accepted) / len(labeled) if labeled else None,
+                                "risk": errors / len(accepted) if accepted else None,
+                                "by_class": class_counts}
+    result["risk_coverage"] = risk
+    return result
+
+
+def _fit_oof(rows: list[dict], method: str, parts: tuple[str, ...]) -> list[dict]:
+    """Return fold records while adding predictions only for held-out cases."""
+    eligible = []
+    for row in rows:
+        if row["gold"] == "unclear":
+            row["methods"][method] = {"state": "excluded_unclear"}
+            continue
+        feature_maps = [_features(row["arms"].get(part, {})) for part in parts]
+        if any(f is None for f in feature_maps):
+            row["methods"][method] = {"state": "excluded_incomplete", "missing_parts": [part for part, f in zip(parts, feature_maps) if f is None]}
+            continue
+        flat = {f"{part}.{key}": value for part, feature in zip(parts, feature_maps) for key, value in feature.items()}
+        eligible.append((row, flat))
+    if not eligible:
+        return []
+    keys = sorted({key for _, feature in eligible for key in feature})
+    if any(set(feature) != set(keys) for _, feature in eligible):
+        raise ValueError(f"Inconsistent feature schema for {method}")
+    if len({row["group_id"] for row, _ in eligible}) < 5:
+        for row, _ in eligible:
+            row["methods"][method] = {"state": "excluded_insufficient_groups"}
+        return []
+    x = np.array([[feature[key] for key in keys] for _, feature in eligible], dtype=float)
+    y = np.array([row["gold"] == "ready" for row, _ in eligible], dtype=int)
+    groups = np.array([row["group_id"] for row, _ in eligible])
+    splitter = StratifiedGroupKFold(n_splits=5, shuffle=True, random_state=SEED)
+    folds = []
+    for fold_id, (train, test) in enumerate(splitter.split(x, y, groups)):
+        train_groups, test_groups = set(groups[train]), set(groups[test])
+        if train_groups & test_groups:
+            raise AssertionError("Family leakage between train and test")
+        if len(set(y[train])) < 2:
+            raise ValueError("A training fold has only one human class")
+        family_counts = Counter(groups[train])
+        sample_weight = np.array([1 / family_counts[groups[i]] for i in train], dtype=float)
+        estimator = make_pipeline(StandardScaler(), LogisticRegression(
+            C=0.1, class_weight="balanced", max_iter=2000, random_state=SEED))
+        estimator.fit(x[train], y[train], logisticregression__sample_weight=sample_weight)
+        scores = estimator.predict_proba(x[test])[:, 1]
+        for position, score in zip(test, scores):
+            row = eligible[position][0]
+            row["methods"][method] = {"state": "completed", "score": float(score),
+                                       "prediction": "pass" if score >= 0.5 else "fail",
+                                       "route_08": _route(float(score)), "fold": fold_id}
+        folds.append({"method": method, "fold": fold_id, "train_case_ids": [eligible[i][0]["case_id"] for i in train],
+                      "test_case_ids": [eligible[i][0]["case_id"] for i in test],
+                      "train_group_ids": sorted(str(v) for v in train_groups),
+                      "test_group_ids": sorted(str(v) for v in test_groups),
+                      "train_class_counts": dict(Counter("ready" if y[i] else "repair" for i in train)),
+                      "test_class_counts": dict(Counter("ready" if y[i] else "repair" for i in test)),
+                      "feature_ids": keys, "scaler_mean": estimator.named_steps["standardscaler"].mean_.tolist()})
+    return folds
+
+
+def _prepare_rows(cases: list[dict], records: list[dict]) -> list[dict]:
+    if not isinstance(cases, list) or not isinstance(records, list):
+        raise ValueError("Cases and records must be lists")
+    by_id = {r["case_id"]: r for r in records}
+    if len(by_id) != len(records) or len({c["case_id"] for c in cases}) != len(cases) or set(by_id) != {c["case_id"] for c in cases}:
+        raise ValueError("Records must contain exactly one row for each dataset case")
+    rows = []
+    for case in cases:
+        rec = by_id[case["case_id"]]
+        if any(rec.get(key) != case.get(key) for key in ("post_id", "group_id", "human")):
+            raise ValueError(f"Identity or human judgment drift: {case['case_id']}")
+        arms = rec.get("arms")
+        if not isinstance(arms, dict):
+            raise ValueError("Record missing arms")
+        methods = {}
+        for arm in ARM_ORDER:
+            payload = arms.get(arm, {"state": "missing"})
+            state = payload.get("state", "missing")
+            if state not in ("completed", "held", "technical_error", "missing"):
+                raise ValueError(f"Unknown arm state: {state}")
+            prediction = _prediction(payload)
+            methods[arm] = {"state": state, "prediction": prediction, "score": _score(payload)}
+            if state == "completed" and arm != "matrix" and prediction is None:
+                raise ValueError(f"Completed {arm} has no answer verdict")
+            if state == "completed" and arm in ("atomic", "focused"):
+                actual = _features(payload)
+                if actual is None or set(actual) != set(questions.FEATURE_IDS):
+                    raise ValueError(f"Invalid fixed 48-feature identity: {case['case_id']} {arm}")
+            if state == "completed" and arm == "matrix":
+                actual = _features(payload)
+                if actual is None or set(actual) != set(questions.MATRIX_SUMMARY_IDS):
+                    raise ValueError(f"Invalid fixed matrix summary identity: {case['case_id']}")
+            if arm == "atomic":
+                # Atomic answer_quality is the frozen rule. Its stored score is
+                # the separate broad Choice from the same request, never a
+                # probability for the rule's verdict.
+                methods[arm]["broad_choice_score"] = methods[arm]["score"]
+                methods[arm]["score"] = None
+        rows.append({"case_id": case["case_id"], "post_id": case["post_id"],
+                     "group_id": case["group_id"], "human": case["human"],
+                     "gold": _label(case["human"]), "input": case["input"],
+                     "image_path": case.get("image_path"), "image_error": case.get("image_error"),
+                     "comments": case.get("comments", []), "observation": rec.get("observation"),
+                     "selected_comment_ids": rec.get("selected_comment_ids", []),
+                     "selection_metadata": rec.get("selection_metadata"),
+                     "arms": arms, "methods": methods})
+    return rows
+
+
+def _priority(row: dict) -> tuple:
+    if row["gold"] == "unclear":
+        rank = 4
+    else:
+        expected = "pass" if row["gold"] == "ready" else "fail"
+        broad = row["methods"]["broad_observation"]["prediction"]
+        best = row["methods"].get("learned_combined", {}).get("prediction")
+        if broad != expected and best == expected:
+            rank = 0  # candidate architecture win
+        elif best not in (None, expected):
+            rank = 1  # held-out learned error
+        elif any(row["methods"][name]["prediction"] not in (None, expected) for name in ("broad_text", "atomic", "focused")):
+            rank = 2
+        else:
+            rank = 3
+    return rank, hashlib.sha256(f"review-v1:{row['case_id']}".encode()).hexdigest()
+
+
+def _display(value: Any) -> str:
+    if isinstance(value, str):
+        return html.escape(value, quote=True)
+    return html.escape(json.dumps(value, ensure_ascii=False, sort_keys=True), quote=True)
+
+
+def _render(rows: list[dict], summary: dict, output: Path, dataset: Path) -> None:
+    asset_dir = output / "assets"
+    asset_dir.mkdir()
+    cards = []
+    prioritized = {r["case_id"] for r in sorted(rows, key=_priority)[:12]}
+    for row in sorted(rows, key=_priority):
+        tags = [row["gold"]]
+        if row["case_id"] in prioritized:
+            tags.append("priority")
+        if any(v["state"] == "technical_error" for v in row["methods"].values()):
+            tags.append("technical")
+        image_markup = ""
+        image = row.get("image_path")
+        if image:
+            source = Path(image)
+            if not source.resolve().is_relative_to(dataset.resolve()):
+                raise ValueError("Image path escapes dataset")
+            if not source.is_file():
+                raise ValueError("Missing review image")
+            name = source.name
+            target = asset_dir / name
+            if target.exists() and _sha(target) != _sha(source):
+                raise ValueError("Conflicting image asset names")
+            if not target.exists():
+                shutil.copyfile(source, target)
+            image_markup = f'<img src="assets/{html.escape(name, quote=True)}" alt="Meme image for case {html.escape(str(row["case_id"]), quote=True)}">'
+        method_rows = []
+        for name in (*ARM_ORDER, *LEARNED):
+            value = row["methods"].get(name, {"state": "missing"})
+            raw = row["arms"].get(name, {})
+            signal = raw.get("features", {})
+            score = value.get("score") if name != "atomic" else value.get("broad_choice_score")
+            method_rows.append(f'<tr><th>{_display(name)}</th><td>{_display(value.get("state"))}</td>'
+                               f'<td>{_display(value.get("prediction"))}</td><td>{"—" if score is None else f"{score:.3f}"}{" (broad)" if name == "atomic" and score is not None else ""}</td>'
+                               f'<td><details><summary>Signals</summary><pre>{_display(signal)}</pre></details></td></tr>')
+        selected_ids = set(row.get("selected_comment_ids") or [])
+        repeats = [v for v in summary.get("runtime", {}).get("repeat_deltas", []) if v.get("case_id") == row["case_id"]]
+        singles = [v for v in summary.get("runtime", {}).get("batch_single_deltas", []) if v.get("case_id") == row["case_id"]]
+        comments = "".join(f'<li class="{"selected" if c.get("id") in selected_ids else ""}"><b>{_display(c.get("id"))}</b> '
+                           f'{"<em>selected</em> " if c.get("id") in selected_ids else ""}{_display(c.get("text"))}</li>'
+                           for c in row["comments"])
+        cards.append(f'<article class="case" data-tags="{html.escape(" ".join(tags), quote=True)}">'
+                     f'<header><div><small>{_display(row["case_id"])} · group {_display(row["group_id"])}</small>'
+                     f'<h2>{_display(row["gold"])} <span>{" · priority review" if "priority" in tags else ""}</span></h2></div></header>'
+                     f'<div class="body"><div class="visual">{image_markup}<p>{_display(row.get("image_error") or "")}</p></div>'
+                     f'<div class="narrative"><h3>Exact candidate answer</h3><p>{_display(row["input"].get("explanation", ""))}</p>'
+                     f'<h3>Human judgment and note</h3><pre>{_display(row["human"])}</pre>'
+                     f'<h3>Frozen image observation</h3><pre>{_display(row.get("observation"))}</pre>'
+                     f'<h3>Method decisions</h3><table><thead><tr><th>Method</th><th>State</th><th>Decision</th><th>P(pass)</th><th>Detail</th></tr></thead>'
+                     f'<tbody>{"".join(method_rows)}</tbody></table>'
+                     f'<h3>Selected evidence IDs</h3><p>{_display(row.get("selected_comment_ids"))}</p>'
+                     f'<details><summary>Selection scores and repeat measurements</summary><pre>{_display({"selection": row.get("selection_metadata"), "repeats": repeats, "batch_vs_single": singles})}</pre></details>'
+                     f'<details><summary>All supplied comments ({len(row["comments"])})</summary><ol>{comments}</ol></details></div></div></article>')
+    css = """*{box-sizing:border-box}body{margin:0;background:#f4f1eb;color:#211f1a;font:15px/1.5 system-ui,sans-serif}main{max-width:1420px;margin:auto;padding:2rem}h1{font-size:2.3rem;margin:.2rem 0}h2{margin:.2rem 0;color:#204c42}h2 span{font-size:.8rem;color:#a5482e}h3{margin:1.2rem 0 .3rem;font-size:1rem}.intro{max-width:72ch;color:#514d45}.toolbar{position:sticky;top:0;z-index:2;background:#f4f1eb;padding:.7rem 0;border-bottom:1px solid #cbc4b7;display:flex;gap:.6rem;flex-wrap:wrap}button,input{font:inherit;border:1px solid #adab9f;border-radius:7px;background:white;padding:.5rem .8rem}button.active{background:#204c42;color:white}.case{background:white;border:1px solid #d8d2c6;border-radius:12px;margin:1.3rem 0;overflow:hidden;box-shadow:0 3px 15px #0000000a}.case header{background:#e9e5db;padding:.8rem 1.2rem}.body{display:grid;grid-template-columns:minmax(240px,32%) 1fr;gap:1.4rem;padding:1.2rem}.visual img{width:100%;height:auto;object-fit:contain;max-height:520px;background:#eee}.narrative p,.narrative pre{overflow-wrap:anywhere;white-space:pre-wrap}pre{background:#f7f6f2;padding:.7rem;border-radius:6px;font:12px/1.5 ui-monospace,monospace}table{width:100%;border-collapse:collapse;font-size:.88rem}th,td{text-align:left;border-bottom:1px solid #e5e1d9;padding:.35rem;vertical-align:top}td pre{max-height:180px;overflow:auto}summary{cursor:pointer;color:#205b51}.selected{background:#e4f2eb}.selected em{color:#1c694c;font-weight:700;font-style:normal}.stats{display:flex;gap:1rem;flex-wrap:wrap}.stats b{font-size:1.4rem;display:block}@media(max-width:800px){main{padding:1rem}.body{grid-template-columns:1fr}table{display:block;overflow-x:auto}}"""
+    script = """const buttons=[...document.querySelectorAll('[data-filter]')];const cards=[...document.querySelectorAll('.case')];const query=document.querySelector('#search');let filter='all';function refresh(){const q=query.value.toLowerCase();let count=0;for(const c of cards){const ok=(filter==='all'||c.dataset.tags.split(' ').includes(filter))&&c.textContent.toLowerCase().includes(q);c.hidden=!ok;if(ok)count++}document.querySelector('#shown').textContent=count}for(const b of buttons)b.addEventListener('click',()=>{filter=b.dataset.filter;for(const x of buttons)x.classList.toggle('active',x===b);refresh()});query.addEventListener('input',refresh);refresh();"""
+    runtime = summary.get("runtime", {})
+    cost = runtime.get("accounted_usd")
+    cost_text = f"${cost:.3f}" if isinstance(cost, (int, float)) else "unavailable"
+    markup = f'''<!doctype html><html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Jev architecture review</title><style>{css}</style><main><h1>Jev architecture review</h1><p class="intro">Frozen, exposed human review cases. Ready and repair refer to whether the unchanged answer gets the same joke. Scores are out of fold for learned methods. Technical holds remain visible.</p><div class="stats"><div><b>{len(rows)}</b>cases</div><div><b>{sum(r["gold"]=="ready" for r in rows)}</b>ready</div><div><b>{sum(r["gold"]=="repair" for r in rows)}</b>repair</div><div><b>{sum(r["gold"]=="unclear" for r in rows)}</b>unclear</div><div><b>{_display(runtime.get("calls", "—"))}</b>calls</div><div><b>{_display(runtime.get("questions", "—"))}</b>questions</div><div><b>{cost_text}</b>accounted cost</div></div><details><summary>Latency and call accounting by stage</summary><pre>{_display(runtime.get("latency_by_stage", {}))}</pre></details><div class="toolbar"><button data-filter="all" class="active">All</button><button data-filter="priority">Priority 12</button><button data-filter="ready">Ready</button><button data-filter="repair">Repair</button><button data-filter="unclear">Unclear</button><button data-filter="technical">Technical</button><input id="search" type="search" placeholder="Find text or ID" aria-label="Search cases"><span><b id="shown"></b> shown</span></div>{''.join(cards)}</main><script>{script}</script></html>'''
+    (output / "index.html").write_text(markup, encoding="utf-8")
+
+
+def prepare(root: Path | str, output: Path | str) -> dict:
+    """Verify a completed saved run, then make immutable analysis and review files."""
+    root, output = Path(root), Path(output)
+    if output.exists():
+        raise FileExistsError("Use a new analysis output directory")
+    dataset = root / "dataset"
+    _check_manifest(dataset, "manifest.json")
+    records_manifest = _check_manifest(root, "records-manifest.json")
+    if records_manifest["files"].get("dataset/manifest.json") != _sha(dataset / "manifest.json"):
+        raise ValueError("Dataset manifest was not bound to records")
+    cases, records, plan, runtime = (_json(dataset / "cases.json"), _json(root / "records.json"),
+                                    _json(root / "plan.json"), _json(root / "runtime_report.json"))
+    if plan.get("dataset_manifest_sha256") != _sha(dataset / "manifest.json"):
+        raise ValueError("Plan dataset hash mismatch")
+    if plan.get("experiment_id") != digest({k: v for k, v in plan.items() if k != "experiment_id"}):
+        raise ValueError("Plan identity mismatch")
+    if runtime.get("experiment_id") != plan.get("experiment_id"):
+        raise ValueError("Runtime report does not belong to this plan")
+    if not runtime.get("complete") and runtime.get("stop_reason") not in ("budget_cap", "call_ceiling"):
+        raise ValueError("Run is incomplete without a declared budget or call cap stop")
+    rows = _prepare_rows(cases, records)
+    folds = []
+    folds.extend(_fit_oof(rows, "learned_atomic", ("atomic",)))
+    folds.extend(_fit_oof(rows, "learned_combined", ("atomic", "matrix", "focused")))
+    methods = {name: _metric(rows, name) for name in (*ARM_ORDER, *LEARNED) if name != "matrix"}
+    summary = {"version": VERSION, "experiment_id": plan.get("experiment_id"),
+               "case_count": len(rows), "known_group_count": len({r["group_id"] for r in rows}),
+               "methods": methods, "runtime": runtime, "partial_due_to_cap": not runtime.get("complete"),
+               "limitations": ["Exposed development cases; group separation prevents direct overlap, not design exposure.",
+                               "Human unclear labels are excluded from fitting and accuracy denominators.",
+                               "Image observations are fallible machine evidence; held image arms remain in denominators."]}
+    output.parent.mkdir(parents=True, exist_ok=True)
+    staging = Path(tempfile.mkdtemp(prefix=".jev-analysis-", dir=output.parent))
+    try:
+        _write(staging / "cases.json", rows)
+        _write(staging / "folds.json", folds)
+        _write(staging / "summary.json", summary)
+        _render(rows, summary, staging, dataset)
+        manifest = {"version": VERSION, "source_manifest_sha256": _sha(root / "records-manifest.json"),
+                    "code_sha256": _sha(Path(__file__)),
+                    "files": {str(p.relative_to(staging)): _sha(p) for p in sorted(staging.rglob("*")) if p.is_file()}}
+        manifest["analysis_id"] = digest(manifest)
+        _write(staging / "manifest.json", manifest)
+        staging.rename(output)
+    finally:
+        if staging.exists():
+            shutil.rmtree(staging)
+    return summary
+
+
+if __name__ == "__main__":
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("root", type=Path)
+    parser.add_argument("output", type=Path)
+    args = parser.parse_args()
+    print(json.dumps(prepare(args.root, args.output), indent=2))
