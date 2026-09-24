@@ -21,7 +21,8 @@ def _save(path: Path, value: object) -> None:
     path.write_text(json.dumps(value, sort_keys=True), encoding="utf-8")
 
 
-def _run_fixture(tmp_path: Path, *, incomplete: bool = False) -> Path:
+def _run_fixture(tmp_path: Path, *, incomplete: bool = False, cap_stop: bool = False,
+                 single_class: bool = False) -> Path:
     root = tmp_path / "run"
     dataset = root / "dataset"
     dataset.mkdir(parents=True)
@@ -29,11 +30,13 @@ def _run_fixture(tmp_path: Path, *, incomplete: bool = False) -> Path:
     (dataset / "assets" / "image.png").write_bytes(b"frozen image")
     cases, records = [], []
     for i in range(12):
-        gold = "ready" if i % 2 == 0 else "repair"
+        gold = "ready" if single_class or i % 2 == 0 else "repair"
         if i == 11:
             gold = "unclear"
         case_id = f"case-{i}"
-        human = {"quality": gold, "events": [{"notes": "<script>alert('x')</script>" if i == 0 else "Original human note"}]}
+        human = {"quality": gold, "events": [{"quality": gold, "notes": "<script>alert('x')</script>" if i == 0 else "Original human note"}]}
+        if i == 0:
+            human["events"].append({"quality": gold, "notes": "Second exact note\nwith line break"})
         case = {"case_id": case_id, "post_id": f"post-{i // 2}", "group_id": f"family-{i // 2}",
                 "human": human, "input": {"explanation": "<img src=x onerror=alert(1)>" if i == 0 else f"Answer {i}",
                                            "comment_evidence": "evidence", "image_sha256": "image"},
@@ -52,14 +55,17 @@ def _run_fixture(tmp_path: Path, *, incomplete: bool = False) -> Path:
             arms["focused"] = {"state": "technical_error", "answer_quality": None, "error": "timeout"}
         cases.append(case)
         records.append({"case_id": case_id, "post_id": case["post_id"], "group_id": case["group_id"], "human": human,
-                        "arms": arms, "observation": {"visible_text": "<script>bad</script>"}, "selected_comment_ids": ["c0"]})
+                        "arms": arms, "observation": {"visible_text": "<script>bad</script>",
+                                                   "visible_scene": "<b>scene</b>", "uncertainties": ["uncertain text"]},
+                        "selected_comment_ids": ["c0"]})
     _save(dataset / "cases.json", cases)
     _save(dataset / "manifest.json", {"files": {"cases.json": _sha(dataset / "cases.json"), "assets/image.png": _sha(dataset / "assets" / "image.png")}})
     _save(root / "records.json", records)
     plan = {"dataset_manifest_sha256": _sha(dataset / "manifest.json")}
     plan["experiment_id"] = digest(plan)
     _save(root / "plan.json", plan)
-    _save(root / "runtime_report.json", {"experiment_id": plan["experiment_id"], "complete": True,
+    _save(root / "runtime_report.json", {"experiment_id": plan["experiment_id"], "complete": not cap_stop,
+                                          "stop_reason": "budget_cap" if cap_stop else None,
                                           "cost_usd": 0.1, "question_counts": {"atomic": 48}})
     _save(root / "records-manifest.json", {"files": {name: _sha(root / name) for name in
                                                    ("records.json", "plan.json", "runtime_report.json", "dataset/manifest.json")}})
@@ -102,6 +108,10 @@ def test_technical_denominators_and_escaped_review(tmp_path: Path) -> None:
     assert "&lt;script&gt;alert" in page
     assert "&lt;img src=x onerror=alert(1)&gt;" in page
     assert "&lt;svg onload=alert(1)&gt;" in page
+    assert "Second exact note\nwith line break" in page
+    assert "Full human judgment and provenance (2 events)" in page
+    assert "Machine image observation" in page and "fallible; not human ground truth" in page
+    assert "&lt;b&gt;scene&lt;/b&gt;" in page and "uncertain text" in page
     assert "<script>alert" not in page
     assert "<svg onload" not in page
     assert (out / "assets" / "image.png").read_bytes() == b"frozen image"
@@ -129,3 +139,14 @@ def test_identity_drift_rejected(tmp_path: Path) -> None:
     _save(root / "records-manifest.json", manifest)
     with pytest.raises(ValueError, match="drift"):
         prepare(root, tmp_path / "analysis")
+
+
+def test_cap_stopped_single_class_retains_base_arm_report(tmp_path: Path) -> None:
+    root = _run_fixture(tmp_path, cap_stop=True, single_class=True)
+    out = tmp_path / "analysis"
+    summary = prepare(root, out)
+    assert summary["partial_due_to_cap"] is True
+    assert summary["methods"]["broad_text"]["completed_known"] == 11
+    assert summary["methods"]["learned_atomic"]["state_counts"]["excluded_insufficient_classes"] == 11
+    assert summary["methods"]["learned_combined"]["state_counts"]["excluded_insufficient_classes"] == 11
+    assert json.loads((out / "folds.json").read_text()) == []

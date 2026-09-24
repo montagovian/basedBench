@@ -14,6 +14,7 @@ from pathlib import Path
 import shutil
 import tempfile
 from typing import Any
+import warnings
 
 import numpy as np
 from sklearn.linear_model import LogisticRegression
@@ -205,13 +206,21 @@ def _fit_oof(rows: list[dict], method: str, parts: tuple[str, ...]) -> list[dict
     y = np.array([row["gold"] == "ready" for row, _ in eligible], dtype=int)
     groups = np.array([row["group_id"] for row, _ in eligible])
     splitter = StratifiedGroupKFold(n_splits=5, shuffle=True, random_state=SEED)
+    try:
+        with warnings.catch_warnings():
+            warnings.filterwarnings("ignore", message="The least populated class in y has only")
+            splits = list(splitter.split(x, y, groups))
+    except ValueError:
+        splits = []
+    if len(splits) != 5 or any(len(set(y[train])) < 2 for train, _ in splits):
+        for row, _ in eligible:
+            row["methods"][method] = {"state": "excluded_insufficient_classes"}
+        return []
     folds = []
-    for fold_id, (train, test) in enumerate(splitter.split(x, y, groups)):
+    for fold_id, (train, test) in enumerate(splits):
         train_groups, test_groups = set(groups[train]), set(groups[test])
         if train_groups & test_groups:
             raise AssertionError("Family leakage between train and test")
-        if len(set(y[train])) < 2:
-            raise ValueError("A training fold has only one human class")
         family_counts = Counter(groups[train])
         sample_weight = np.array([1 / family_counts[groups[i]] for i in train], dtype=float)
         estimator = make_pipeline(StandardScaler(), LogisticRegression(
@@ -306,6 +315,37 @@ def _display(value: Any) -> str:
     return html.escape(json.dumps(value, ensure_ascii=False, sort_keys=True), quote=True)
 
 
+def _human_markup(human: dict, gold: str) -> str:
+    events = human.get("events") if isinstance(human.get("events"), list) else []
+    notes = [(event.get("quality"), event["notes"]) for event in events
+             if isinstance(event, dict) and isinstance(event.get("notes"), str) and event["notes"]]
+    if notes:
+        note_markup = "".join(f'<li><small>{_display(quality or "judgment")}</small><p>{_display(note)}</p></li>'
+                              for quality, note in notes)
+        note_markup = f'<ol class="human-notes">{note_markup}</ol>'
+    else:
+        note_markup = '<p class="quiet">No written note was recorded for this judgment.</p>'
+    return (f'<h3>Human answer judgment</h3><p class="judgment">{_display(gold)}</p>'
+            f'<h3>Exact human notes</h3>{note_markup}'
+            f'<details><summary>Full human judgment and provenance ({len(events)} event{"s" if len(events) != 1 else ""})</summary>'
+            f'<pre>{_display(human)}</pre></details>')
+
+
+def _observation_markup(observation: Any) -> str:
+    heading = '<h3>Machine image observation <small>fallible; not human ground truth</small></h3>'
+    if not isinstance(observation, dict):
+        return heading + '<p class="quiet">No image observation was available.</p>'
+    uncertainties = observation.get("uncertainties", [])
+    if not isinstance(uncertainties, list):
+        uncertainties = []
+    uncertainty_markup = ("".join(f'<li>{_display(item)}</li>' for item in uncertainties)
+                          if uncertainties else '<li>None recorded.</li>')
+    return (heading + f'<dl class="observation"><dt>Visible text</dt><dd>{_display(observation.get("visible_text", ""))}</dd>'
+            f'<dt>Visible scene</dt><dd>{_display(observation.get("visible_scene", ""))}</dd>'
+            f'<dt>Uncertainties</dt><dd><ul>{uncertainty_markup}</ul></dd></dl>'
+            f'<details><summary>Full machine observation JSON</summary><pre>{_display(observation)}</pre></details>')
+
+
 def _render(rows: list[dict], summary: dict, output: Path, dataset: Path) -> None:
     asset_dir = output / "assets"
     asset_dir.mkdir()
@@ -352,14 +392,14 @@ def _render(rows: list[dict], summary: dict, output: Path, dataset: Path) -> Non
                      f'<h2>{_display(row["gold"])} <span>{" · priority review" if "priority" in tags else ""}</span></h2></div></header>'
                      f'<div class="body"><div class="visual">{image_markup}<p>{_display(row.get("image_error") or "")}</p></div>'
                      f'<div class="narrative"><h3>Exact candidate answer</h3><p>{_display(row["input"].get("explanation", ""))}</p>'
-                     f'<h3>Human judgment and note</h3><pre>{_display(row["human"])}</pre>'
-                     f'<h3>Frozen image observation</h3><pre>{_display(row.get("observation"))}</pre>'
+                     f'{_human_markup(row["human"], row["gold"])}'
+                     f'{_observation_markup(row.get("observation"))}'
                      f'<h3>Method decisions</h3><table><thead><tr><th>Method</th><th>State</th><th>Decision</th><th>P(pass)</th><th>Detail</th></tr></thead>'
                      f'<tbody>{"".join(method_rows)}</tbody></table>'
                      f'<h3>Selected evidence IDs</h3><p>{_display(row.get("selected_comment_ids"))}</p>'
                      f'<details><summary>Selection scores and repeat measurements</summary><pre>{_display({"selection": row.get("selection_metadata"), "repeats": repeats, "batch_vs_single": singles})}</pre></details>'
                      f'<details><summary>All supplied comments ({len(row["comments"])})</summary><ol>{comments}</ol></details></div></div></article>')
-    css = """*{box-sizing:border-box}body{margin:0;background:#f4f1eb;color:#211f1a;font:15px/1.5 system-ui,sans-serif}main{max-width:1420px;margin:auto;padding:2rem}h1{font-size:2.3rem;margin:.2rem 0}h2{margin:.2rem 0;color:#204c42}h2 span{font-size:.8rem;color:#a5482e}h3{margin:1.2rem 0 .3rem;font-size:1rem}.intro{max-width:72ch;color:#514d45}.toolbar{position:sticky;top:0;z-index:2;background:#f4f1eb;padding:.7rem 0;border-bottom:1px solid #cbc4b7;display:flex;gap:.6rem;flex-wrap:wrap}button,input{font:inherit;border:1px solid #adab9f;border-radius:7px;background:white;padding:.5rem .8rem}button.active{background:#204c42;color:white}.case{background:white;border:1px solid #d8d2c6;border-radius:12px;margin:1.3rem 0;overflow:hidden;box-shadow:0 3px 15px #0000000a}.case header{background:#e9e5db;padding:.8rem 1.2rem}.body{display:grid;grid-template-columns:minmax(240px,32%) 1fr;gap:1.4rem;padding:1.2rem}.visual img{width:100%;height:auto;object-fit:contain;max-height:520px;background:#eee}.narrative p,.narrative pre{overflow-wrap:anywhere;white-space:pre-wrap}pre{background:#f7f6f2;padding:.7rem;border-radius:6px;font:12px/1.5 ui-monospace,monospace}table{width:100%;border-collapse:collapse;font-size:.88rem}th,td{text-align:left;border-bottom:1px solid #e5e1d9;padding:.35rem;vertical-align:top}td pre{max-height:180px;overflow:auto}summary{cursor:pointer;color:#205b51}.selected{background:#e4f2eb}.selected em{color:#1c694c;font-weight:700;font-style:normal}.stats{display:flex;gap:1rem;flex-wrap:wrap}.stats b{font-size:1.4rem;display:block}@media(max-width:800px){main{padding:1rem}.body{grid-template-columns:1fr}table{display:block;overflow-x:auto}}"""
+    css = """*{box-sizing:border-box}body{margin:0;background:#f4f1eb;color:#211f1a;font:15px/1.5 system-ui,sans-serif}main{max-width:1420px;margin:auto;padding:2rem}h1{font-size:2.3rem;margin:.2rem 0}h2{margin:.2rem 0;color:#204c42}h2 span{font-size:.8rem;color:#a5482e}h3{margin:1.2rem 0 .3rem;font-size:1rem}h3 small{font-weight:400;color:#625f57}.intro{max-width:72ch;color:#514d45}.toolbar{position:sticky;top:0;z-index:2;background:#f4f1eb;padding:.7rem 0;border-bottom:1px solid #cbc4b7;display:flex;gap:.6rem;flex-wrap:wrap}button,input{font:inherit;border:1px solid #adab9f;border-radius:7px;background:white;padding:.5rem .8rem}button.active{background:#204c42;color:white}.case{background:white;border:1px solid #d8d2c6;border-radius:12px;margin:1.3rem 0;overflow:hidden;box-shadow:0 3px 15px #0000000a}.case header{background:#e9e5db;padding:.8rem 1.2rem}.body{display:grid;grid-template-columns:minmax(240px,32%) 1fr;gap:1.4rem;padding:1.2rem}.visual img{width:100%;height:auto;object-fit:contain;max-height:520px;background:#eee}.narrative p,.narrative pre{overflow-wrap:anywhere;white-space:pre-wrap}pre{background:#f7f6f2;padding:.7rem;border-radius:6px;font:12px/1.5 ui-monospace,monospace}.judgment{display:inline-block;margin:.2rem 0;padding:.2rem .7rem;background:#e4f2eb;color:#204c42;border-radius:2rem;font-weight:700}.human-notes{margin:.3rem 0 1rem;padding-left:1.3rem}.human-notes li{margin:.5rem 0;padding:.6rem;background:#f9f6ef;border-left:3px solid #bd9761}.human-notes p{margin:.2rem 0;white-space:pre-wrap}.human-notes small,.quiet{color:#67635c}.observation{display:grid;grid-template-columns:7.5rem 1fr;gap:.4rem .8rem;margin:.4rem 0 1rem;padding:.8rem;background:#f2f5f4;border-radius:6px}.observation dt{font-weight:700;color:#29534b}.observation dd{margin:0;white-space:pre-wrap;overflow-wrap:anywhere}.observation ul{margin:0;padding-left:1.2rem}table{width:100%;border-collapse:collapse;font-size:.88rem}th,td{text-align:left;border-bottom:1px solid #e5e1d9;padding:.35rem;vertical-align:top}td pre{max-height:180px;overflow:auto}summary{cursor:pointer;color:#205b51}.selected{background:#e4f2eb}.selected em{color:#1c694c;font-weight:700;font-style:normal}.stats{display:flex;gap:1rem;flex-wrap:wrap}.stats b{font-size:1.4rem;display:block}@media(max-width:800px){main{padding:1rem}.body{grid-template-columns:1fr}.observation{grid-template-columns:1fr}table{display:block;overflow-x:auto}}"""
     script = """const buttons=[...document.querySelectorAll('[data-filter]')];const cards=[...document.querySelectorAll('.case')];const query=document.querySelector('#search');let filter='all';function refresh(){const q=query.value.toLowerCase();let count=0;for(const c of cards){const ok=(filter==='all'||c.dataset.tags.split(' ').includes(filter))&&c.textContent.toLowerCase().includes(q);c.hidden=!ok;if(ok)count++}document.querySelector('#shown').textContent=count}for(const b of buttons)b.addEventListener('click',()=>{filter=b.dataset.filter;for(const x of buttons)x.classList.toggle('active',x===b);refresh()});query.addEventListener('input',refresh);refresh();"""
     runtime = summary.get("runtime", {})
     cost = runtime.get("accounted_usd")

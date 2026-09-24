@@ -217,6 +217,14 @@ New paid execution is pending the user's spending-cap answer. No performance
 claim can be made from request construction or mocked-provider tests. The
 implementation includes no automatic admissions or changes to existing gates.
 
+Implementation validation: 630 tests pass using the project's existing complete
+environment (including optional encoder dependencies). Bandit reports no findings
+in the four new modules; `git diff --check` is clean. Browser inspection of an
+explicitly marked synthetic fixture verified image display, exact-note escaping,
+the repair filter, search within that filter, and the readable review layout.
+All 39,381 protected prior files match their pre-work hashes. These checks validate
+the implementation, not Jev's live performance.
+
 Use the project's Python environment with the `curation` extra. The source
 corpus and new root below are private local paths; never commit their contents.
 The dataset preparation has already run and must not be repeated into the same
