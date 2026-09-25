@@ -13,9 +13,12 @@ The local candidate freezes 519 legacy items; 118 development identities stay
 outside membership, with eight exact human-ready versions preserved. Historical
 image bindings are unavailable, so the report separates stored legacy history
 from zero current certified score coverage. #10 remains open for the qualified
-new cohort/evaluation. #9 is unlaunched; its
-[bounded proposal](chronological-expansion-proposal.md) still needs a scope,
-policy/model and spending decision. No dataset publication or merge occurred.
+new cohort/evaluation. The user subsequently authorized #9's June 27–July 26
+development backfill with a 1,000-post ceiling and $10 total model-call cap.
+Use the [chronological results](chronological-backfill-results.md) and
+[execution plan](chronological-backfill-plan.md) for that later work. The original
+proposal below is historical, not a pending approval request. No dataset
+publication or merge occurred.
 
 The remainder is the original pre-execution handoff record.
 

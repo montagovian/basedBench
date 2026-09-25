@@ -1,4 +1,12 @@
-# Chronological expansion proposal — not launched
+# Chronological expansion proposal — authorization update
+
+September 23 update: the user approved this date window, two-source scope and
+1,000-post ceiling, with up to **$10** in model costs if needed. The executable
+[backfill plan](chronological-backfill-plan.md) supersedes the proposed $5 cap and
+open decisions below. Collection and processing are tracked in
+[#33](https://github.com/montagovian/basedBench/issues/33) and
+[#34](https://github.com/montagovian/basedBench/issues/34). The original proposal
+is retained below as the pre-authorization record.
 
 September 23, 2026. Parent: [#9](https://github.com/montagovian/basedBench/issues/9).
 This is a concrete proposal following release engineering, not spending or
