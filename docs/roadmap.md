@@ -8,6 +8,16 @@ status; this document records direction and scope.
 
 ## Current direction
 
+The user has approved the [PR stack closeout](pr-stack-closeout.md): retain the
+engineering and reproducible research code from #32, #35, #37, #39 and #42, and
+close the reviewed #38/#40/#41 research milestones. This accepts completed
+negative findings and the GEPA investigation; the stopped optimization attempt
+remains inconclusive. It does not promote an automatic checker/filter, change
+release membership or start VLM #43. #9 and #10 retain their unfinished coverage,
+qualification and evaluation scope; #43 remains a separate proposed experiment.
+The milestone narratives below preserve their historical outcomes and review
+boundaries. GitHub records the actual merge and issue state.
+
 The [immutable existing-pool candidate](release-candidate-results.md) is now
 frozen: 519 legacy items, zero newly admitted development items, an exact-byte
 export and a reproducible offline baseline. The eight #26/#27 ready versions
