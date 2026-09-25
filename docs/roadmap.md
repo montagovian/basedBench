@@ -1,6 +1,6 @@
 # BasedBench roadmap and work backlog
 
-Updated September 23, 2026. This is the short work index; detailed plans and
+Updated September 24, 2026. This is the short work index; detailed plans and
 experiment reports remain the design record. The
 [GitHub roadmap tracker](https://github.com/montagovian/basedBench/issues/15)
 links all twelve work items. GitHub issues are the source of truth for work
@@ -51,10 +51,19 @@ the Seinfeld case and researched external references. The
 [source-evidence proposal](source-evidence-policy-proposal.md) recommends support
 for essential claims through images, verified references and/or substantive
 comments, with researched KYM entries as preferred sources. Following further
-user feedback, validation should reconstruct the existing labeled corpus and
-reuse compatible saved checks before considering supplemental examples.
-It remains a proposal: no code, active policy, frozen
-outcomes, human labels or release membership changed.
+user feedback, [#36's completed replay](source-evidence-replay-results.md)
+reconstructs 99 exact versions across 88 posts and reuses 379 saved checks.
+The 112-call comparison costs about 9.5 cents within its $1 cap. The revised
+checker clears three human-ready answers' old holds explicitly based on supporter
+count, but a known repair also clears the gate; answer regressions and 23
+response-validation failures remain. Added
+references change none of nine valid paired decisions, an inconclusive result.
+Do not promote this checker or automatically start another tuning run. The
+claim-specific evidence principle remains the proposed direction; the existing
+labels suffice for this milestone. All 607 tests pass, completed replay costs
+zero further calls, and 39,023 protected prior files remain unchanged. No active
+policy, frozen outcomes, human labels or release membership changed. #9 and #10
+retain their coverage and qualification gaps.
 
 The following milestones preserve the earlier evidence and decisions. References
 to expansion being pending describe those earlier checkpoints; the authorization

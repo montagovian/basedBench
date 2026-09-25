@@ -1,8 +1,17 @@
 # Proposal: evidence sufficient to recover the joke
 
 September 24, 2026. **Proposed, not adopted.** Parent context: #9; follows the
-[chronological results](chronological-backfill-results.md). No code, active policy,
-paid experiment, frozen result, human label or release membership changes.
+[chronological results](chronological-backfill-results.md). The proposal itself
+changed no active policy, frozen result, human label or release membership.
+
+Subsequent authorization: the user approved the retrospective reconstruction and
+bounded comparison in [#36's execution plan](source-evidence-replay-plan.md).
+The [completed replay](source-evidence-replay-results.md) finds three human-ready
+count-only recoveries, but also retained answer defects, regressions and protocol
+failures. The existing labels were sufficient; no new annotation round was
+needed. Keep the evidence principle as the candidate direction and do not promote
+the tested checker to automatic admission. The paragraphs below preserve the
+proposal and its rationale.
 
 ## Recommendation
 
@@ -224,8 +233,10 @@ the exact input manifest and resulting maximum call count. Retain a **proposed
 $1 total ceiling, one fixed comparison and no repair loop**, with conservative
 reservations and reuse of compatible saved results. If the corpus cannot fit
 that cap, report the deterministic unfinished portion and required budget before
-proposing more work. This is a future proposal, not remaining authorization from
-the completed backfill. No new model calls were made.
+proposing more work. At proposal time, this required separate authorization from
+the completed backfill and no new model calls had been made. The subsequently
+authorized [#36 replay](source-evidence-replay-results.md) completed 112 calls
+within that $1 ceiling.
 
 Report answer errors against actual labels separately from evidence-sufficiency
 changes. Adoption should retain known-ready controls, catch known material defects
@@ -260,7 +271,7 @@ and exact human feedback remain frozen, and the 94 automatic accepts remain
 development candidates until separately qualified. This document proposes the
 change; it does not adopt it or reopen the completed backfill.
 
-## Investigation performed
+## Investigation performed at proposal time
 
 Read the existing prompts, validators, collection/preflight gates, roadmap and
 relevant issue history. Inspected the frozen Seinfeld packet, researched the
