@@ -401,7 +401,8 @@ def _comparison_markup(rows: list[dict]) -> str:
 
 
 def _verdict(value: str | None) -> str:
-    return {"ready": "Looks complete", "pass": "Looks complete", "repair": "Needs work",
+    # These are display labels for model verdicts, not authentication values.
+    return {"ready": "Looks complete", "pass": "Looks complete", "repair": "Needs work",  # nosec B105
             "fail": "Needs work", "unclear": "Uncertain", "uncertain": "Uncertain"}.get(value, "Unavailable")
 
 
