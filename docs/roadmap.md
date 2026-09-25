@@ -8,6 +8,16 @@ status; this document records direction and scope.
 
 ## Current direction
 
+The user has approved the [PR stack closeout](pr-stack-closeout.md): retain the
+engineering and reproducible research code from #32, #35, #37, #39 and #42, and
+close the reviewed #38/#40/#41 research milestones. This accepts completed
+negative findings and the GEPA investigation; the stopped optimization attempt
+remains inconclusive. It does not promote an automatic checker/filter, change
+release membership or start VLM #43. #9 and #10 retain their unfinished coverage,
+qualification and evaluation scope; #43 remains a separate proposed experiment.
+The milestone narratives below preserve their historical outcomes and review
+boundaries. GitHub records the actual merge and issue state.
+
 The [immutable existing-pool candidate](release-candidate-results.md) is now
 frozen: 519 legacy items, zero newly admitted development items, an exact-byte
 export and a reproducible offline baseline. The eight #26/#27 ready versions
@@ -99,6 +109,37 @@ maximum. It made 118 calls, including two OpenAI reflections, with $0.06565371
 spent or reserved; no final comparison decisions exist. This does not establish
 a GEPA gain. Preserve the attempt and review a case-abstention policy for malformed
 typed responses before a new run. Both #38 and #40 remain open; no policy promotion.
+
+The approved [#41 evidence-ranking comparison](jev-evidence-ranking-results.md)
+now tests a different Jev role directly: informativeness ranking and duplicate
+collation under the same reading budget as saved comment order. All 81 families
+and 760 comments completed: 213 calls, 11,608 typed decisions, $0.075391344 within
+the new $1 cap, zero abstentions and no pending charges. Credential-free replay
+reproduces every pack and verifies 516 frozen artifacts. A 16-family blinded
+review is ready, with exact excerpts, locally saved ratings and method reveal
+after saving. The subsequent [human analysis](jev-evidence-ranking-human-results.md)
+accounts for 13 reviewed families and three skips. On nine reviewed sampled
+families, clue retention is 8/9 for saved order and 9/9 for both Jev methods;
+misleading flags are 5/9, 4/9 and 5/9. Five decisive sampled button choices fall
+short of the required eight, and identical lists qualify two preferences across
+the full review. Plain ranking is the most promising preliminary direction;
+irrelevance, useful stopping points and the fixed word cap need separate attention.
+Keep #41 open for review alongside #38/#40. No promotion or automatic tuning follows.
+
+The user explicitly chose a [bounded selection follow-up](jev-comment-selection-plan.md).
+Its [completed results](jev-comment-selection-results.md) do not justify adoption:
+the relevance/riff filter retains 6/7 explicitly praised comments, versus 7/7 for
+cached ranking. It excludes both unwanted comments from the full lists, but both
+were already outside the baseline's initial three under the revised display.
+Pointwise ordering retains 6/7 praised comments in the initial three and fixes the
+one first-position constraint; pairwise achieves 4/7 and misses that constraint.
+Both new methods fail the development rule. All 81 families completed with 249
+calls / 13,128 decisions for $0.100736118; cumulative #41 spending is $0.176127462
+within $1. All 742 tests pass, and replay verifies 589 new frozen artifacts plus
+the unchanged prior run and human journal. A simpler eight-case review is ready;
+the known regression already rejects adoption without requiring all eight reviews.
+Stop this fixed comparison, retain the private case analysis, and keep #41 open
+for human review. No automatic retuning; VLM #43 remains separate.
 
 The following milestones preserve the earlier evidence and decisions. References
 to expansion being pending describe those earlier checkpoints; the authorization
