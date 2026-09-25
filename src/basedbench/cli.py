@@ -22,6 +22,7 @@ from basedbench.pipeline import judge as judge_pipe
 from basedbench.pipeline import predict as predict_pipe
 from basedbench.pipeline import snapshot as snapshot_pipe
 from basedbench.pipeline import tracer as tracer_pipe
+from basedbench.release_cli import app as release_app
 
 app = typer.Typer(
     name="basedbench",
@@ -36,6 +37,178 @@ consensus_eval_app = typer.Typer(
 )
 app.add_typer(snapshot_app, name="snapshot")
 app.add_typer(consensus_eval_app, name="consensus-eval")
+app.add_typer(release_app, name="release")
+curation_app = typer.Typer(help="Freeze historical curation evidence and run local baselines.", no_args_is_help=True)
+app.add_typer(curation_app, name="curation")
+
+
+@curation_app.command("review-prepare")
+def curation_review_prepare(
+    corpus: Path = typer.Argument(..., help="Frozen historical corpus."),
+    run: Path = typer.Option(..., help="Saved decomposed Luna/JEV run; no API calls are made."),
+    prior_feedback: Path = typer.Option(..., help="Append-only conversational reassessments."),
+    output: Path = typer.Option(..., help="New local review packet directory under data/."),
+) -> None:
+    """Prepare 28 mixed review cases and preserve the previous feedback round."""
+    from basedbench.curation_review import prepare_packet
+
+    try:
+        result = prepare_packet(corpus, run, prior_feedback, output)
+    except (ValueError, OSError, KeyError) as exc:
+        raise typer.BadParameter(str(exc)) from exc
+    Console().print({"packet_id": result["packet_id"], "counts": result["counts"], "output": str(output)})
+
+
+@curation_app.command("review-serve")
+def curation_review_serve(
+    packet: Path = typer.Argument(..., help="Prepared local review packet."),
+    port: int = typer.Option(8766, min=1024, max=65535),
+) -> None:
+    """Open a local gallery that saves versioned feedback without editing the corpus."""
+    from basedbench.curation_review import serve
+
+    try:
+        serve(packet, port)
+    except (ValueError, OSError, KeyError) as exc:
+        raise typer.BadParameter(str(exc)) from exc
+
+
+@curation_app.command("build")
+def curation_build(
+    output: Path = typer.Option(..., help="New frozen corpus directory under data/."),
+    db: Path = typer.Option(Path("data/basedbench.db"), help="Existing database, opened read-only."),
+    project_root: Path = typer.Option(Path("."), help="Root for relative image paths."),
+    seed: str = typer.Option("basedbench-curation-v1", help="Stable group split seed."),
+    other_confirmed_manual: bool = typer.Option(False, help="Use only after confirming the provenance of 'other' reviews."),
+    families: Path | None = typer.Option(None, help="JSON mapping of post ID to joke-family ID."),
+) -> None:
+    """Freeze original generation logs, labels, image bytes, groups, and splits."""
+    from basedbench.pipeline.curation_corpus import build_corpus
+
+    try:
+        result = build_corpus(db, output, project_root=project_root, seed=seed,
+                              other_provenance="confirmed_manual" if other_confirmed_manual else "inferred_manual",
+                              family_file=families)
+    except (ValueError, OSError) as exc:
+        raise typer.BadParameter(str(exc)) from exc
+    Console().print({"corpus_id": result["corpus_id"], "counts": result["counts"], "output": str(output)})
+
+
+@curation_app.command("baseline")
+def curation_baseline(
+    corpus: Path = typer.Argument(..., help="Frozen corpus directory."),
+    output: Path = typer.Option(..., help="New results directory under data/."),
+    accept_threshold: float = typer.Option(0.9, min=0.0, max=1.0),
+    reject_threshold: float = typer.Option(0.1, min=0.0, max=1.0),
+    history_audit: Path | None = typer.Option(None, help="Audit of prior use across corpus versions."),
+) -> None:
+    """Train TF-IDF/logistic on development and evaluate calibration only."""
+    from basedbench.pipeline.curation_eval import run_baseline
+
+    try:
+        result = run_baseline(corpus, output, accept_threshold=accept_threshold,
+                              reject_threshold=reject_threshold, history_audit=history_audit)
+    except (ValueError, OSError, RuntimeError) as exc:
+        raise typer.BadParameter(str(exc)) from exc
+    Console().print({"metrics": result["metrics"], "final_test_evaluated": False, "output": str(output)})
+
+
+@curation_app.command("audit-history")
+def curation_audit_history(
+    corpus: Path = typer.Argument(..., help="Current frozen corpus; its split will not change."),
+    history: Path = typer.Option(..., help="JSON list of {corpus, run} paths, relative to this file."),
+    output: Path = typer.Option(..., help="New JSON audit file under data/."),
+) -> None:
+    """Check whether reserved examples were used in earlier experiments."""
+    from basedbench.pipeline.curation_history import audit_history
+
+    try:
+        result = audit_history(corpus, history, output)
+    except (ValueError, OSError, KeyError, TypeError) as exc:
+        raise typer.BadParameter(str(exc)) from exc
+    Console().print({"audit_id": result["audit_id"], "counts": result["counts"], "status": result["status"]})
+
+
+@curation_app.command("encoder")
+def curation_encoder(
+    corpus: Path = typer.Argument(..., help="Frozen corpus directory."),
+    output: Path = typer.Option(..., help="New results directory under data/."),
+    history_audit: Path = typer.Option(..., help="Verified audit of previous experiments on this corpus."),
+    model_cache: Path = typer.Option(Path("data/curation/models"), help="Local pretrained model cache."),
+    batch_size: int = typer.Option(32, min=1, help="Number of text pieces to encode at once."),
+    accept_threshold: float = typer.Option(0.9, min=0.0, max=1.0),
+    reject_threshold: float = typer.Option(0.1, min=0.0, max=1.0),
+) -> None:
+    """Compare a frozen MiniLM encoder using the existing practice split."""
+    from basedbench.pipeline.curation_encoder import run_encoder
+
+    try:
+        result = run_encoder(corpus, output, history_audit=history_audit, model_cache=model_cache,
+                             batch_size=batch_size, accept_threshold=accept_threshold, reject_threshold=reject_threshold)
+    except (ValueError, OSError, RuntimeError) as exc:
+        raise typer.BadParameter(str(exc)) from exc
+    Console().print({"metrics": result["metrics"], "history_audit": result["history_audit"], "output": str(output)})
+
+
+@curation_app.command("llm")
+def curation_llm(
+    corpus: Path = typer.Argument(..., help="Frozen corpus directory."),
+    output: Path = typer.Option(..., help="Experiment directory; identical interrupted runs can resume."),
+    history_audit: Path = typer.Option(..., help="Verified history audit for this corpus."),
+    split: str = typer.Option("calibration", help="development or calibration; reserved examples cannot be selected."),
+    limit: int = typer.Option(80, min=1, help="Target sample size; whole groups may exceed it slightly."),
+    concurrency: int = typer.Option(4, min=1, max=8, help="Maximum simultaneous API requests."),
+    baseline_run: list[Path] | None = typer.Option(None, help="Existing baseline run to compare on the same selected examples."),
+    include_jev: bool = typer.Option(False, help="Add JEV with the same text and reference examples."),
+) -> None:
+    """Legacy GPT-5.5 experiment. Use 'curation checks' for budgeted Luna/JEV."""
+    import os
+    from dotenv import dotenv_values
+    from basedbench.pipeline.curation_llm import run_llm
+
+    key = os.getenv("OPENAI_API_KEY") or dotenv_values(".env").get("OPENAI_API_KEY")
+    if not key:
+        raise typer.BadParameter("OPENAI_API_KEY is required for this paid API experiment")
+    jev_key = os.getenv("JEV_API_KEY") or os.getenv("TYPESAFE_API_KEY") or dotenv_values(".env").get("JEV_API_KEY") or dotenv_values(".env").get("TYPESAFE_API_KEY")
+    if include_jev and not jev_key:
+        raise typer.BadParameter("JEV_API_KEY or TYPESAFE_API_KEY is required for --include-jev")
+    try:
+        result = asyncio.run(run_llm(corpus, output, history_audit=history_audit, api_key=key,
+                                    split=split, limit=limit, concurrency=concurrency,
+                                    baseline_runs=baseline_run or [], jev_api_key=jev_key if include_jev else None))
+    except (ValueError, OSError, RuntimeError) as exc:
+        raise typer.BadParameter(str(exc)) from exc
+    Console().print({"metrics": result["metrics"], "cost": result["cost"], "output": str(output)})
+
+
+@curation_app.command("checks")
+def curation_checks(
+    corpus: Path = typer.Argument(..., help="Frozen historical corpus."),
+    output: Path = typer.Option(..., help="New experiment directory, or identical run to resume."),
+    history_audit: Path = typer.Option(..., help="Verified history audit."),
+    budget_usd: float = typer.Option(..., min=0.000001, help="Dispatch budget including pending/unknown requests; no automatic retries."),
+    split: str = typer.Option("development", help="development or calibration only."),
+    limit: int = typer.Option(8, min=1, help="Whole-group target sample size."),
+    concurrency: int = typer.Option(4, min=1, max=8),
+    jev_only: bool = typer.Option(False, help="Run just the cheap decomposed JEV variant."),
+) -> None:
+    """Compare three explicit checks with Luna and JEV under a spending limit."""
+    import os
+    from dotenv import dotenv_values
+    from basedbench.pipeline.curation_checks import run_checks
+
+    local = dotenv_values(".env")
+    key = os.getenv("OPENAI_API_KEY") or local.get("OPENAI_API_KEY")
+    jev_key = os.getenv("JEV_API_KEY") or os.getenv("TYPESAFE_API_KEY") or local.get("JEV_API_KEY") or local.get("TYPESAFE_API_KEY")
+    if not jev_key or (not jev_only and not key):
+        raise typer.BadParameter("JEV_API_KEY (or TYPESAFE_API_KEY) is required; Luna also needs OPENAI_API_KEY")
+    try:
+        result = asyncio.run(run_checks(corpus, output, history_audit=history_audit, api_key=key,
+                                       jev_api_key=jev_key, budget_usd=budget_usd, split=split,
+                                       limit=limit, concurrency=concurrency, jev_only=jev_only))
+    except (ValueError, OSError, RuntimeError) as exc:
+        raise typer.BadParameter(str(exc)) from exc
+    Console().print({"metrics": result["metrics"], "cost": result["cost"], "output": str(output)})
 
 
 def _load() -> tuple[Database, Config]:
@@ -345,7 +518,7 @@ def snapshot_create(
     name: str = typer.Option(..., help="Snapshot name."),
     description: str | None = typer.Option(None, help="Free-text description."),
 ) -> None:
-    """Freeze validated memes into an immutable snapshot."""
+    """Record legacy membership; use `release freeze` to freeze exact content."""
     db, _ = _load()
     snapshot_pipe.create(db, name=name, description=description)
 

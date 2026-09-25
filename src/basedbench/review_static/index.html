@@ -1,0 +1,50 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>BasedBench · Curation studio</title>
+  <link rel="stylesheet" href="/review.css">
+  <script src="/review.js" defer></script>
+</head>
+<body>
+  <header class="page-head">
+    <div class="brand">BASED<span>BENCH</span> <span class="pill">CURATION STUDIO</span></div>
+    <div class="intro"><div><p class="eyebrow">A clearer signal, one meme at a time</p>
+      <h1>Worth a place<br>in the benchmark?</h1>
+      <p class="lede">Start with the image and answer. Add context when you need it.<br>A good meme can need a better answer. An easy one can still belong.</p>
+    </div><aside class="progress-box"><span id="progress-number">—</span><span>new cases reviewed</span><div class="track"><div id="progress-bar"></div></div><small id="draft-count">Feedback saves on this computer.</small></aside></div>
+    <details class="guide"><summary>What are we judging?</summary>
+      <div id="rubric-principles"></div>
+      <p>28 new review cases: 16 random controls and 12 selected model disagreements or non-acceptances. These are development feedback, not a new held-out test. Earlier historical and model exposure remains. No reserved test cases or new model calls.</p>
+    </details>
+  </header>
+  <main>
+    <nav class="toolbar" aria-label="Gallery controls">
+      <div class="tabs"><button id="fresh-tab" aria-pressed="true">New round <span>28</span></button><button id="previous-tab" aria-pressed="false">Revisit discussion <span id="previous-count">22</span></button></div>
+      <label class="filter-label">Show <select id="status-filter"><option value="all">All cases</option><option value="todo">Not saved yet</option><option value="saved">Saved feedback</option><option value="draft">Unsaved drafts</option></select></label>
+    </nav>
+    <div class="gallery-caption"><p id="gallery-count">Loading local images…</p><p>Choose an image to review · context stays hidden until you ask</p></div>
+    <p id="load-error" role="alert" hidden></p>
+    <section id="gallery" class="gallery" aria-label="Meme gallery"></section>
+  </main>
+  <footer>Local research workspace · Original reviews and answers remain intact · Rubric v1</footer>
+  <dialog id="review-dialog" aria-labelledby="case-heading">
+    <header class="review-head"><div><p class="eyebrow" id="case-number"></p><h2 id="case-heading">Review case</h2></div><div class="review-nav"><button id="prev-case" aria-label="Previous case">←</button><button id="next-case" aria-label="Next case">→</button><button id="close-review">Close</button></div></header>
+    <div class="review-layout"><section class="evidence-column" aria-label="Image and evidence">
+      <button class="large-image" id="enlarge-image" aria-label="Enlarge meme"><img id="case-image" alt="Meme under review"></button>
+      <div class="answer-box"><p class="eyebrow">Stored answer · may need repair</p><p id="case-answer"></p></div>
+      <p class="exposure-note" id="exposure-note"></p>
+      <section class="context-block"><button id="show-comments" class="context-button">Reveal source comments</button><p class="help">Helpful if the reference is unfamiliar. Your current draft is recorded before the reveal.</p><pre id="comments" hidden></pre></section>
+      <section class="context-block"><button id="show-opinions" class="context-button">Reveal past decisions &amp; model opinions</button><p class="help">Saved model judgments can be wrong. Your current draft is recorded before the reveal.</p><div id="opinions" hidden></div></section>
+    </section><section class="feedback-column" aria-label="Your feedback">
+      <div class="feedback-title"><h3>Your judgment</h3><span class="pill">PARTIAL IS FINE</span></div>
+      <form id="feedback-form"><div id="fields"></div><label class="notes-label" for="notes">What is going on here?</label><textarea id="notes" rows="5" maxlength="12000" placeholder="A missing reference, the real punchline, a policy concern, or how the answer needs to change…"></textarea>
+        <div class="save-area"><p id="save-status" role="status" aria-live="polite"></p><div class="save-buttons"><button id="save" type="submit">Save feedback</button><button id="save-next" type="button" class="secondary">Save &amp; next →</button><button id="restore-saved" type="button" class="secondary" hidden>Discard draft; load latest save</button></div><p class="help">Blank fields stay blank. Saving appends a revision; it does not publish the item or edit its answer.</p></div>
+      </form>
+      <details id="history-block" hidden><summary>Latest saved feedback</summary><div id="history"></div></details>
+    </section></div>
+  </dialog>
+  <dialog id="image-dialog" aria-label="Enlarged meme"><button id="close-image">Close image</button><img id="zoom-image" alt="Enlarged meme"></dialog>
+</body>
+</html>

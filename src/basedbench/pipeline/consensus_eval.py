@@ -1,4 +1,4 @@
-"""Consensus eval harness: seed balanced cases, run prompts, report results."""
+"""Legacy consensus-Boolean diagnostics; answer_eval tests written explanations."""
 
 from __future__ import annotations
 
@@ -185,7 +185,10 @@ async def run(
             continue
 
         call_id = queries.insert_llm_call(db, record) if record is not None else None
-        ok = result.has_consensus == item.expected_has_consensus
+        # `passed` is retained for database compatibility. It measures only the
+        # Boolean decision, never the meaning/correctness of the explanation.
+        error = record.error if record is not None else None
+        ok = not error and result.has_consensus == item.expected_has_consensus
         queries.insert_consensus_eval_result(
             db,
             run_id,
@@ -196,6 +199,7 @@ async def run(
             agreeing_comment_ids=result.agreeing_comment_ids,
             reasoning=result.reasoning,
             passed=ok,
+            error=error,
             latency_ms=record.latency_ms if record is not None else None,
             llm_call_id=call_id,
         )
@@ -204,7 +208,7 @@ async def run(
         else:
             failed += 1
 
-    console.print(f"\n[bold]Summary:[/bold] {passed} passed, {failed} failed")
+    console.print(f"\n[bold]Boolean summary:[/bold] {passed} matched, {failed} mismatched or errored")
     report(db, run_id, console=console)
     return run_id
 
@@ -226,22 +230,26 @@ def report(
         return
 
     total = len(results)
-    passed = sum(1 for r in results if r.passed)
+    passed = sum(1 for r in results if r.passed and not r.error)
+    errors = sum(bool(r.error) for r in results)
     expected_yes = sum(1 for r in results if r.expected_has_consensus)
     expected_no = total - expected_yes
     false_positive = sum(
         1
         for r in results
-        if not r.expected_has_consensus and r.actual_has_consensus
+        if not r.error and not r.expected_has_consensus and r.actual_has_consensus
     )
     false_negative = sum(
         1
         for r in results
-        if r.expected_has_consensus and not r.actual_has_consensus
+        if not r.error and r.expected_has_consensus and not r.actual_has_consensus
     )
 
     console.print(f"\n[bold]Consensus Eval Report:[/bold] {run_id}")
-    console.print(f"  Accuracy:        {passed}/{total} ({passed / total:.1%})")
+    console.print(f"  Boolean matches: {passed}/{total} ({passed / total:.1%}; errors count as unmatched)")
+    console.print(f"  Technical errors: {errors}")
+    console.print("  Explanation correctness: NOT EVALUATED. A matching Boolean can accompany a wrong answer.")
+    console.print("  Use the answer_eval development workflow for image-grounded checks and bounded repairs.")
     console.print(f"  Expected yes/no: {expected_yes}/{expected_no}")
     console.print(f"  False positive:  {false_positive}")
     console.print(f"  False negative:  {false_negative}")
@@ -249,13 +257,13 @@ def report(
     by_category: dict[str, Counter[str]] = defaultdict(Counter)
     for result in results:
         by_category[result.category]["total"] += 1
-        by_category[result.category]["passed" if result.passed else "failed"] += 1
+        by_category[result.category]["passed" if result.passed and not result.error else "failed"] += 1
 
     table = Table(title="By Category")
     table.add_column("Category")
-    table.add_column("Passed", justify="right")
-    table.add_column("Failed", justify="right")
-    table.add_column("Accuracy", justify="right")
+    table.add_column("Boolean matched", justify="right")
+    table.add_column("Mismatch/error", justify="right")
+    table.add_column("Match rate", justify="right")
     for category, counts in sorted(by_category.items()):
         cat_total = counts["total"]
         cat_passed = counts["passed"]
@@ -267,8 +275,8 @@ def report(
         )
     console.print(table)
 
-    detail_results = [r for r in results if not r.passed] if failed_only else results
-    failures = [r for r in detail_results if not r.passed]
+    detail_results = [r for r in results if not r.passed or r.error] if failed_only else results
+    failures = [r for r in detail_results if not r.passed or r.error]
     if failures:
         console.print("\n[bold]Failures:[/bold]")
         for result in failures[:25]:

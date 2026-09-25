@@ -1,0 +1,36 @@
+{
+  "version": "connection-packet-v1",
+  "exposure": "Selected development cases, previously inspected; not human gold or unseen validation.",
+  "pilot_cases": {
+    "1ueh8cd": "hypothesis_wordplay_coverage",
+    "1udr4rh": "hypothesis_panel_coverage",
+    "1ucl7ul": "hypothesis_wrong_and_missing_decoding",
+    "1udlwwn": "hypothesis_competing_intent",
+    "1ubvmoj": "hypothesis_competing_intent",
+    "1ubuulz": "hypothesis_substantive_support",
+    "1udqk4m": "mechanical_citations",
+    "1ufp0ob": "hypothesis_task_boundary",
+    "1ubia3x": "hypothesis_task_boundary",
+    "1udm14c": "hypothesis_task_boundary",
+    "1ug8i86": "hypothesis_task_boundary",
+    "1udmcvg": "object_only_control",
+    "1ue3n4g": "two_comment_control",
+    "1ufpe81": "retention_reference",
+    "1udvihp": "retention_peripheral_detail_tolerance",
+    "1uc4qnv": "retention_simple_reference",
+    "1uc6d4d": "retention_reference",
+    "1ucsgt3": "retention_multi_part_rebus",
+    "1uf4jf1": "retention_text_screenshot",
+    "1uc7iqc": "retention_simple_wordplay",
+    "1ue5z6v": "retention_duplicate_semantics",
+    "1uczut7": "retention_duplicate_semantics"
+  },
+  "historical_cases": {
+    "1jley2r": "human_defect_repair_control",
+    "1mksov2": "human_defect_repair_control",
+    "198kcl9": "human_defect_repair_control",
+    "1o96j16-corrected": "human_ready_control",
+    "1fpageg": "human_ready_tolerance_control",
+    "1j5w6z3": "human_ready_tolerance_control"
+  }
+}
