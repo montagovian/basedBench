@@ -65,6 +65,41 @@ zero further calls, and 39,023 protected prior files remain unchanged. No active
 policy, frozen outcomes, human labels or release membership changed. #9 and #10
 retain their coverage and qualification gaps.
 
+The user then requested a broader Jev architecture experiment. The
+[#38 comparison](jev-decomposition-results.md) is complete: 706 calls and 16,294
+typed judgments for an estimated $0.107015 within the approved $5 cap. Native
+49-question batches took a median 119 ms. On 94 matched known cases, the combined
+learned features caught 6/17 repairs versus 2/17 for the broad image-aware check,
+but rejected 16/77 ready answers versus 10/77. The atomic rule deferred 83/94;
+focusing evidence did not improve decisions. One dense-image helper incomplete
+response and one animated-image hold are retained. All 630 tests pass, completed
+replay makes zero calls, and 39,381 protected files are unchanged. No checker or
+release membership changed. [Draft PR #39](https://github.com/montagovian/basedBench/pull/39)
+contains the additive implementation and findings. **Keep #38 open until the user
+reviews the experiment and explicitly approves closure.**
+
+The user next suggested GEPA / `optimize_anything` and a deeper data investigation.
+[#40's groundwork](jev-optimization-findings.md) audits all 18 repair versions and
+16 combined false alarms, six controlled repair/ready families, and seven images
+in detail. It proposes candidate-blind evidence roles followed by explicit answer
+coverage checks, with a constrained GEPA policy search. The saved-score frontier
+also exposes a possible calibration opportunity, so a training-only calibration
+control is included before attributing gains to prompt/program search. That
+control restores three ready answers and catches one additional repair, reaching
+64/77 ready passed and 7/17 repair caught; its one new repair catch has an
+ambiguous-ground-truth note, and only one of six corrected pairs separates. This is
+zero-provider-call development groundwork.
+The [plan](jev-optimization-plan.md) preserves all labels and old runs, separates
+adaptive validation from outer evaluation, and keeps #38 and #40 open for review.
+
+The reviewed [bounded implementation](jev-optimization-execution-plan.md) is now
+complete and tested. Its [first paid attempt](jev-optimization-run-results.md)
+stopped in fold one when a Jev selected choice disagreed with its probability
+maximum. It made 118 calls, including two OpenAI reflections, with $0.06565371
+spent or reserved; no final comparison decisions exist. This does not establish
+a GEPA gain. Preserve the attempt and review a case-abstention policy for malformed
+typed responses before a new run. Both #38 and #40 remain open; no policy promotion.
+
 The following milestones preserve the earlier evidence and decisions. References
 to expansion being pending describe those earlier checkpoints; the authorization
 above is the current collection scope.
